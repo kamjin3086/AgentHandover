@@ -6,6 +6,7 @@ pub mod macos_accessibility;
 pub mod macos_windows;
 #[cfg(target_os = "macos")]
 pub mod macos_power;
+pub mod electron_detect;
 
 #[cfg(target_os = "macos")]
 pub use macos::IdleDetector;
