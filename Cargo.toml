@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/daemon",
     "crates/common",
+    "crates/storage",
 ]
 
 [workspace.package]
@@ -21,3 +22,4 @@ thiserror = "2"
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 regex = "1"
+rusqlite = { version = "0.32", features = ["bundled", "backup"] }

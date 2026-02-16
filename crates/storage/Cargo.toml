@@ -1,0 +1,18 @@
+[package]
+name = "oc-apprentice-storage"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+oc-apprentice-common = { path = "../common" }
+rusqlite.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+
+[dev-dependencies]
+tempfile = "3"
