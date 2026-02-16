@@ -653,6 +653,7 @@ dependencies = [
  "core-foundation",
  "core-graphics",
  "hex",
+ "libc",
  "oc-apprentice-common",
  "serde",
  "serde_json",
@@ -684,6 +685,21 @@ dependencies = [
  "tracing",
  "uuid",
  "zstd",
+]
+
+[[package]]
+name = "oc-apprentice-test-harness"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "oc-apprentice-common",
+ "oc-apprentice-storage",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]

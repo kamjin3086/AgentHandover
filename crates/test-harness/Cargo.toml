@@ -1,0 +1,17 @@
+[package]
+name = "oc-apprentice-test-harness"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+oc-apprentice-common = { path = "../common" }
+oc-apprentice-storage = { path = "../storage" }
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tempfile = "3"
