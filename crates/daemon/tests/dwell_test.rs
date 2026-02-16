@@ -3,7 +3,7 @@ use std::time::Duration;
 
 #[test]
 fn test_dwell_starts_inactive() {
-    let tracker = DwellTracker::new(Duration::from_secs(3), Duration::from_secs(8));
+    let mut tracker = DwellTracker::new(Duration::from_secs(3), Duration::from_secs(8));
     assert!(!tracker.is_dwelling());
     assert!(!tracker.is_scroll_reading());
 }

@@ -102,6 +102,11 @@ class SOPInducer:
             slug = self._generate_slug(pattern_steps)
             title = self._generate_title(pattern_steps, apps)
 
+            # Detect preconditions, postconditions, and exceptions
+            preconditions = self._detect_preconditions(all_instances)
+            postconditions = self._detect_postconditions(all_instances)
+            exceptions = self._detect_exceptions(non_empty, pattern_codes, code_to_signature)
+
             results.append({
                 "slug": slug,
                 "title": title,
@@ -110,6 +115,9 @@ class SOPInducer:
                 "confidence_avg": round(confidence_avg, 4),
                 "episode_count": support_count,
                 "apps_involved": sorted(set(apps)),
+                "preconditions": preconditions,
+                "postconditions": postconditions,
+                "exceptions_seen": exceptions,
             })
 
         return results
@@ -433,6 +441,108 @@ class SOPInducer:
                     total += conf
                     count += 1
         return total / count if count > 0 else 0.0
+
+    def _detect_preconditions(self, instances: list[list[dict]]) -> list[str]:
+        """Detect what apps/URLs must be open before the SOP starts.
+
+        Examines the first step of each instance to identify common
+        preconditions (app must be open, URL must be navigated to).
+        """
+        preconditions: list[str] = []
+        app_counts: Counter[str] = Counter()
+        url_counts: Counter[str] = Counter()
+
+        for instance in instances:
+            if not instance:
+                continue
+            first_step = instance[0]
+            pre_state = first_step.get("pre_state", {})
+            if isinstance(pre_state, dict):
+                app = pre_state.get("app_id") or pre_state.get("app")
+                if app:
+                    app_counts[app] += 1
+                url = pre_state.get("url")
+                if url:
+                    url_counts[url] += 1
+
+        # If an app appears in >= 80% of instances, it's a precondition
+        threshold = max(1, len(instances) * 0.8)
+        for app, count in app_counts.most_common():
+            if count >= threshold:
+                preconditions.append(f"app_open:{app}")
+
+        for url, count in url_counts.most_common():
+            if count >= threshold:
+                preconditions.append(f"url_open:{url}")
+
+        return preconditions
+
+    def _detect_postconditions(self, instances: list[list[dict]]) -> list[str]:
+        """Detect the final state after the SOP completes.
+
+        Examines the last step of each instance to identify common
+        postconditions (file saved, email sent, navigation completed).
+        """
+        postconditions: list[str] = []
+        final_intents: Counter[str] = Counter()
+        final_targets: Counter[str] = Counter()
+
+        for instance in instances:
+            if not instance:
+                continue
+            last_step = instance[-1]
+            intent = last_step.get("step", "")
+            target = last_step.get("target", "")
+            if intent:
+                final_intents[intent] += 1
+            if target:
+                final_targets[target] += 1
+
+        # Common final actions indicate postconditions
+        threshold = max(1, len(instances) * 0.5)
+        for intent, count in final_intents.most_common():
+            if count >= threshold:
+                postconditions.append(f"final_action:{intent}")
+
+        for target, count in final_targets.most_common(3):
+            if count >= threshold:
+                postconditions.append(f"final_target:{target}")
+
+        return postconditions
+
+    def _detect_exceptions(
+        self,
+        episodes: list[list[dict]],
+        pattern_codes: list[int],
+        code_to_signature: dict[int, str],
+    ) -> list[str]:
+        """Collect error/cancel events observed in episodes containing the pattern.
+
+        Looks for events with error/cancel indicators in their intent or
+        target that occur in episodes where the pattern was found.
+        """
+        exceptions: list[str] = []
+        error_indicators = {"cancel", "error", "undo", "revert", "discard", "close"}
+        pattern_sigs = [code_to_signature[c] for c in pattern_codes]
+        seen: set[str] = set()
+
+        for episode in episodes:
+            ep_sigs = [self._step_signature(s) for s in episode]
+            matches = self._find_subsequence(ep_sigs, pattern_sigs)
+            if not matches:
+                continue
+
+            for step in episode:
+                intent = step.get("step", "").lower()
+                target = step.get("target", "").lower()
+                for indicator in error_indicators:
+                    if indicator in intent or indicator in target:
+                        desc = f"{intent}:{target}" if target else intent
+                        if desc not in seen:
+                            seen.add(desc)
+                            exceptions.append(desc)
+
+        return exceptions
 
     def _generate_slug(self, steps: list[dict]) -> str:
         """Generate a URL-safe slug from the pattern's first few steps.

@@ -36,6 +36,9 @@ class ConfidenceScore:
     provenance_score: float  # 0.0-0.20
     reasons: list[str] = field(default_factory=list)
     decision: str = "reject"  # "accept", "accept_flagged", "reject"
+    evidence: dict = field(default_factory=dict)
+    # Evidence dict contains: dom_anchor, ax_path, vision_bbox,
+    # screenshot_id, url, window_title
 
 
 class ConfidenceScorer:
@@ -88,6 +91,9 @@ class ConfidenceScorer:
 
         decision = self._decide(total)
 
+        # Build evidence dict from translation and context
+        evidence = self._build_evidence(translation, context)
+
         return ConfidenceScore(
             total=total,
             ui_anchor_score=ui_score,
@@ -95,6 +101,7 @@ class ConfidenceScorer:
             provenance_score=provenance,
             reasons=reasons,
             decision=decision,
+            evidence=evidence,
         )
 
     # ------------------------------------------------------------------
@@ -169,6 +176,48 @@ class ConfidenceScorer:
             score += 0.10
 
         return min(score, 0.20)
+
+    # ------------------------------------------------------------------
+    # Evidence building
+    # ------------------------------------------------------------------
+
+    def _build_evidence(
+        self,
+        translation: TranslationResult,
+        context: dict,
+    ) -> dict:
+        """Build evidence dict from translation and context.
+
+        Collects dom_anchor, ax_path, vision_bbox, screenshot_id,
+        url, and window_title from the translation's target, pre_state,
+        and scoring context.
+        """
+        evidence: dict = {
+            "dom_anchor": None,
+            "ax_path": None,
+            "vision_bbox": None,
+            "screenshot_id": None,
+            "url": None,
+            "window_title": None,
+        }
+
+        # Extract from UI anchor
+        if translation.target is not None:
+            if translation.target.method in ("aria_label", "test_id", "inner_text"):
+                evidence["dom_anchor"] = translation.target.selector
+            elif translation.target.method == "role_position":
+                evidence["ax_path"] = translation.target.selector
+            elif translation.target.method == "vision_bbox":
+                evidence["vision_bbox"] = translation.target.raw_evidence
+
+        # Extract from pre_state
+        evidence["url"] = translation.pre_state.get("url")
+        evidence["window_title"] = translation.pre_state.get("window_title")
+
+        # Extract screenshot_id from context if available
+        evidence["screenshot_id"] = context.get("screenshot_id")
+
+        return evidence
 
     # ------------------------------------------------------------------
     # Decision logic

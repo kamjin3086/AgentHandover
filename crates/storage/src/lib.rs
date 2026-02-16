@@ -6,11 +6,13 @@ pub mod maintenance;
 use anyhow::Result;
 use oc_apprentice_common::event::*;
 use rusqlite::{params, Connection};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use tracing::info;
 use uuid::Uuid;
 
 pub struct EventStore {
     conn: Connection,
+    db_path: PathBuf,
 }
 
 impl EventStore {
@@ -23,9 +25,34 @@ impl EventStore {
         conn.pragma_update(None, "foreign_keys", "ON")?;
         conn.pragma_update(None, "busy_timeout", 5000)?;
 
-        let store = Self { conn };
+        let store = Self {
+            conn,
+            db_path: path.to_path_buf(),
+        };
         store.run_migrations()?;
         Ok(store)
+    }
+
+    /// Create a backup of the database using rusqlite's backup API.
+    /// The backup is written to `{db_path}.bak-{timestamp}`.
+    fn backup_before_migrate(&self) -> Result<PathBuf> {
+        let timestamp = chrono::Utc::now().format("%Y%m%dT%H%M%SZ");
+        let backup_path = PathBuf::from(format!(
+            "{}.bak-{}",
+            self.db_path.display(),
+            timestamp
+        ));
+
+        let mut dst = Connection::open(&backup_path)?;
+        let backup = rusqlite::backup::Backup::new(&self.conn, &mut dst)?;
+        backup.run_to_completion(100, std::time::Duration::from_millis(10), None)?;
+
+        info!(
+            backup_path = %backup_path.display(),
+            "Created pre-migration backup"
+        );
+
+        Ok(backup_path)
     }
 
     fn run_migrations(&self) -> Result<()> {
@@ -33,14 +60,32 @@ impl EventStore {
             .conn
             .pragma_query_value(None, "user_version", |row| row.get(0))?;
 
-        if current_version < 1 {
-            self.conn
-                .execute_batch(include_str!("migrations/v001_initial.sql"))?;
+        if current_version < schema::CURRENT_SCHEMA_VERSION {
+            // Create a backup before applying migrations, but only if the DB
+            // file already exists with content (not a brand-new database).
+            if self.db_path.exists() && std::fs::metadata(&self.db_path).map(|m| m.len()).unwrap_or(0) > 0 && current_version > 0 {
+                self.backup_before_migrate()?;
+            }
+
+            if current_version < 1 {
+                self.conn
+                    .execute_batch(include_str!("migrations/v001_initial.sql"))?;
+            }
+
+            if current_version < 2 {
+                self.conn
+                    .execute_batch(include_str!("migrations/v002_add_display_ids_spanned.sql"))?;
+            }
+
             self.conn
                 .pragma_update(None, "user_version", schema::CURRENT_SCHEMA_VERSION)?;
         }
 
         Ok(())
+    }
+
+    pub fn db_path(&self) -> &Path {
+        &self.db_path
     }
 
     pub fn connection(&self) -> &Connection {
@@ -64,11 +109,17 @@ impl EventStore {
     pub fn insert_event(&self, event: &Event) -> Result<()> {
         let cursor_x = event.cursor_global_px.as_ref().map(|c| c.x);
         let cursor_y = event.cursor_global_px.as_ref().map(|c| c.y);
+        let display_ids_spanned_json = event
+            .display_ids_spanned
+            .as_ref()
+            .map(|ids| serde_json::to_string(ids))
+            .transpose()?;
 
         self.conn.execute(
             "INSERT INTO events (id, timestamp, kind_json, window_json, display_topology_json, \
-             primary_display_id, cursor_x, cursor_y, ui_scale, artifact_ids_json, metadata_json) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+             primary_display_id, cursor_x, cursor_y, ui_scale, artifact_ids_json, metadata_json, \
+             display_ids_spanned_json) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
             params![
                 event.id.to_string(),
                 event.timestamp.to_rfc3339(),
@@ -85,6 +136,7 @@ impl EventStore {
                 event.ui_scale,
                 serde_json::to_string(&event.artifact_ids)?,
                 event.metadata.to_string(),
+                display_ids_spanned_json,
             ],
         )?;
         Ok(())
@@ -95,7 +147,8 @@ impl EventStore {
 
         let mut stmt = self.conn.prepare(
             "SELECT id, timestamp, kind_json, window_json, display_topology_json, \
-             primary_display_id, cursor_x, cursor_y, ui_scale, artifact_ids_json, metadata_json \
+             primary_display_id, cursor_x, cursor_y, ui_scale, artifact_ids_json, metadata_json, \
+             display_ids_spanned_json \
              FROM events WHERE id = ?1",
         )?;
 
@@ -112,6 +165,7 @@ impl EventStore {
                 let ui_scale: Option<f64> = row.get(8)?;
                 let artifact_ids_json: String = row.get(9)?;
                 let metadata_json: String = row.get(10)?;
+                let display_ids_spanned_json: Option<String> = row.get(11)?;
 
                 Ok((
                     id_str,
@@ -125,6 +179,7 @@ impl EventStore {
                     ui_scale,
                     artifact_ids_json,
                     metadata_json,
+                    display_ids_spanned_json,
                 ))
             })
             .optional();
@@ -142,6 +197,7 @@ impl EventStore {
                 ui_scale,
                 artifact_ids_json,
                 metadata_json,
+                display_ids_spanned_json,
             ))) => {
                 let event = Self::row_to_event(
                     id_str,
@@ -155,6 +211,7 @@ impl EventStore {
                     ui_scale,
                     artifact_ids_json,
                     metadata_json,
+                    display_ids_spanned_json,
                 )?;
                 Ok(Some(event))
             }
@@ -166,7 +223,8 @@ impl EventStore {
     pub fn get_unprocessed_events(&self, limit: u32) -> Result<Vec<Event>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, timestamp, kind_json, window_json, display_topology_json, \
-             primary_display_id, cursor_x, cursor_y, ui_scale, artifact_ids_json, metadata_json \
+             primary_display_id, cursor_x, cursor_y, ui_scale, artifact_ids_json, metadata_json, \
+             display_ids_spanned_json \
              FROM events WHERE processed = 0 ORDER BY timestamp ASC LIMIT ?1",
         )?;
 
@@ -182,6 +240,7 @@ impl EventStore {
             let ui_scale: Option<f64> = row.get(8)?;
             let artifact_ids_json: String = row.get(9)?;
             let metadata_json: String = row.get(10)?;
+            let display_ids_spanned_json: Option<String> = row.get(11)?;
             Ok((
                 id_str,
                 ts_str,
@@ -194,6 +253,7 @@ impl EventStore {
                 ui_scale,
                 artifact_ids_json,
                 metadata_json,
+                display_ids_spanned_json,
             ))
         })?;
 
@@ -211,6 +271,7 @@ impl EventStore {
                 ui_scale,
                 artifact_ids_json,
                 metadata_json,
+                display_ids_spanned_json,
             ) = row?;
             let event = Self::row_to_event(
                 id_str,
@@ -224,6 +285,7 @@ impl EventStore {
                 ui_scale,
                 artifact_ids_json,
                 metadata_json,
+                display_ids_spanned_json,
             )?;
             events.push(event);
         }
@@ -243,6 +305,7 @@ impl EventStore {
         ui_scale: Option<f64>,
         artifact_ids_json: String,
         metadata_json: String,
+        display_ids_spanned_json: Option<String>,
     ) -> Result<Event> {
         Ok(Event {
             id: Uuid::parse_str(&id_str)?,
@@ -262,6 +325,9 @@ impl EventStore {
             ui_scale,
             artifact_ids: serde_json::from_str(&artifact_ids_json)?,
             metadata: serde_json::from_str(&metadata_json)?,
+            display_ids_spanned: display_ids_spanned_json
+                .map(|j| serde_json::from_str(&j))
+                .transpose()?,
         })
     }
 }

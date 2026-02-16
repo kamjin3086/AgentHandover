@@ -50,6 +50,19 @@ impl<'a> MaintenanceRunner<'a> {
         Ok(paths)
     }
 
+    /// Delete episodes older than `retention_days` that are closed.
+    /// Returns the number of rows deleted.
+    pub fn purge_old_episodes(&self, retention_days: u32) -> Result<usize> {
+        let deleted = self.conn.execute(
+            "DELETE FROM episodes WHERE status = 'closed' AND datetime(start_time) < datetime('now', ?1)",
+            [format!("-{} days", retention_days)],
+        )?;
+        if deleted > 0 {
+            info!(deleted, retention_days, "Purged old closed episodes");
+        }
+        Ok(deleted)
+    }
+
     /// Delete expired VLM queue entries.
     pub fn purge_expired_vlm_jobs(&self) -> Result<usize> {
         let deleted = self.conn.execute(
@@ -62,10 +75,10 @@ impl<'a> MaintenanceRunner<'a> {
         Ok(deleted)
     }
 
-    /// Run WAL checkpoint (PASSIVE mode -- non-blocking).
+    /// Run WAL checkpoint (TRUNCATE mode -- reclaims WAL file space).
     pub fn wal_checkpoint(&self) -> Result<()> {
-        self.conn.execute_batch("PRAGMA wal_checkpoint(PASSIVE);")?;
-        info!("WAL checkpoint completed");
+        self.conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
+        info!("WAL checkpoint completed (TRUNCATE)");
         Ok(())
     }
 
@@ -119,11 +132,13 @@ impl<'a> MaintenanceRunner<'a> {
         &self,
         db_path: &Path,
         retention_days_raw: u32,
+        retention_days_episodes: u32,
         min_free_gb: u64,
         vacuum_safety_multiplier: f64,
     ) -> Result<MaintenanceReport> {
         let events_purged = self.purge_old_events(retention_days_raw)?;
         let artifact_paths = self.purge_old_artifacts(retention_days_raw)?;
+        let episodes_purged = self.purge_old_episodes(retention_days_episodes)?;
         let vlm_purged = self.purge_expired_vlm_jobs()?;
         self.wal_checkpoint()?;
         let vacuumed = self.vacuum_if_safe(db_path, min_free_gb, vacuum_safety_multiplier)?;
@@ -131,6 +146,7 @@ impl<'a> MaintenanceRunner<'a> {
         Ok(MaintenanceReport {
             events_purged,
             artifact_paths_to_delete: artifact_paths,
+            episodes_purged,
             vlm_jobs_purged: vlm_purged,
             vacuumed,
         })
@@ -141,6 +157,7 @@ impl<'a> MaintenanceRunner<'a> {
 pub struct MaintenanceReport {
     pub events_purged: usize,
     pub artifact_paths_to_delete: Vec<String>,
+    pub episodes_purged: usize,
     pub vlm_jobs_purged: usize,
     pub vacuumed: bool,
 }

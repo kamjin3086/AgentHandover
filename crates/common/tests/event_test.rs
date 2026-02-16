@@ -29,6 +29,7 @@ fn test_event_creation_and_serialization() {
         ui_scale: Some(2.0),
         artifact_ids: vec![],
         metadata: serde_json::json!({}),
+        display_ids_spanned: None,
     };
 
     let json = serde_json::to_string(&event).unwrap();

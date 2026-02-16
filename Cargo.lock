@@ -656,6 +656,7 @@ dependencies = [
  "libc",
  "oc-apprentice-common",
  "oc-apprentice-storage",
+ "rusqlite",
  "serde",
  "serde_json",
  "sha2",

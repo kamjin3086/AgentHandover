@@ -29,6 +29,7 @@ fn make_test_event(kind: EventKind) -> Event {
         ui_scale: Some(2.0),
         artifact_ids: vec![],
         metadata: serde_json::json!({}),
+        display_ids_spanned: None,
     }
 }
 

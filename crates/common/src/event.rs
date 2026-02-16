@@ -14,6 +14,10 @@ pub struct Event {
     pub ui_scale: Option<f64>,
     pub artifact_ids: Vec<Uuid>,
     pub metadata: serde_json::Value,
+    /// IDs of displays that the window spans across, if it spans multiple.
+    /// None if there is no window or it fits within a single display.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_ids_spanned: Option<Vec<u32>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

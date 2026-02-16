@@ -17,10 +17,13 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from urllib.parse import urlparse
+
+from oc_apprentice_worker.clipboard_linker import ClipboardLink, ClipboardLinker
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +39,8 @@ class Episode:
     events: list[dict] = field(default_factory=list)
     start_time: datetime | None = None
     end_time: datetime | None = None
+    metadata: dict = field(default_factory=dict)
+    clipboard_links: list[ClipboardLink] = field(default_factory=list)
 
     @property
     def duration_minutes(self) -> float:
@@ -76,9 +81,11 @@ class EpisodeBuilder:
         self,
         soft_cap_minutes: float = 15.0,
         hard_cap_events: int = 200,
+        clipboard_linker: ClipboardLinker | None = None,
     ) -> None:
         self.soft_cap_minutes = soft_cap_minutes
         self.hard_cap_events = hard_cap_events
+        self._clipboard_linker = clipboard_linker or ClipboardLinker()
 
     # ------------------------------------------------------------------
     # Public API
@@ -125,28 +132,71 @@ class EpisodeBuilder:
 
         # Sort by start_time so output is deterministic
         completed.sort(key=lambda e: e.start_time or datetime.min.replace(tzinfo=timezone.utc))
+
+        # Annotate episodes with clipboard copy-paste links
+        self._annotate_clipboard_links(completed)
+
         return completed
+
+    def _annotate_clipboard_links(self, episodes: list[Episode]) -> None:
+        """Find clipboard copy-paste links across all episodes and annotate."""
+        all_events: list[dict] = []
+        for ep in episodes:
+            all_events.extend(ep.events)
+
+        if not all_events:
+            return
+
+        links = self._clipboard_linker.find_links(all_events)
+        if not links:
+            return
+
+        # Build event_id -> episode mapping
+        event_to_episode: dict[str, Episode] = {}
+        for ep in episodes:
+            for ev in ep.events:
+                eid = ev.get("id", "")
+                if eid:
+                    event_to_episode[eid] = ep
+
+        # Assign links to episodes containing the paste event
+        for link in links:
+            paste_ep = event_to_episode.get(link.paste_event_id)
+            if paste_ep is not None:
+                paste_ep.clipboard_links.append(link)
 
     # ------------------------------------------------------------------
     # Thread identification
     # ------------------------------------------------------------------
 
     def _get_thread_id(self, event: dict) -> str:
-        """Determine thread ID from event's app_id and URL domain.
+        """Determine thread ID from event's app_id, URL domain, and entities.
+
+        Entity-based clustering signals (extracted from window titles and URLs):
+        - Ticket IDs: JIRA-123, PROJ-456, #789 patterns
+        - Filenames: "document.pdf - Preview" patterns
 
         Thread ID format:
-        - ``{app_id}:{url_domain}`` when a URL is present in metadata
-        - ``{app_id}`` when no URL is found
+        - ``{app_id}:{url_domain}:{entity}`` when entity found
+        - ``{app_id}:{url_domain}`` when URL present but no entity
+        - ``{app_id}:{entity}`` when entity found but no URL
+        - ``{app_id}`` when no URL or entity found
         - ``unknown`` when no app_id can be extracted
         """
         app_id = self._extract_app_id(event)
         url_domain = self._extract_url_domain(event)
+        entity = self._extract_entity(event)
 
         if not app_id:
             return "unknown"
+
+        parts = [app_id]
         if url_domain:
-            return f"{app_id}:{url_domain}"
-        return app_id
+            parts.append(url_domain)
+        if entity:
+            parts.append(entity)
+
+        return ":".join(parts)
 
     def _extract_app_id(self, event: dict) -> str:
         """Extract app_id from the event's window_json field."""
@@ -182,6 +232,58 @@ class EpisodeBuilder:
         except Exception:
             return ""
 
+    # Regex patterns for entity extraction
+    _TICKET_PATTERN = re.compile(r"([A-Z][A-Z0-9]+-\d+)")
+    _ISSUE_PATTERN = re.compile(r"#(\d+)")
+    _FILENAME_PATTERN = re.compile(r"([\w.-]+\.\w{1,10})\s*[-\u2014\u2013]")
+
+    def _extract_entity(self, event: dict) -> str:
+        """Extract entity identifiers from window title and URL.
+
+        Looks for:
+        - Ticket IDs like JIRA-123, PROJ-456
+        - Issue numbers like #789
+        - Filenames like document.pdf from window titles
+        """
+        window_json = event.get("window_json")
+        title = ""
+        if window_json:
+            try:
+                window = json.loads(window_json) if isinstance(window_json, str) else window_json
+                title = window.get("title", "")
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        metadata_json = event.get("metadata_json")
+        url = ""
+        if metadata_json:
+            try:
+                metadata = json.loads(metadata_json) if isinstance(metadata_json, str) else metadata_json
+                url = metadata.get("url", "")
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        # Check both title and URL for entities
+        combined = f"{title} {url}"
+
+        # Try ticket ID first (highest priority)
+        match = self._TICKET_PATTERN.search(combined)
+        if match:
+            return match.group(1)
+
+        # Try issue number from URL (e.g. github.com/repo/issues/123)
+        match = self._ISSUE_PATTERN.search(combined)
+        if match:
+            return f"#{match.group(1)}"
+
+        # Try filename from window title
+        if title:
+            match = self._FILENAME_PATTERN.search(title)
+            if match:
+                return match.group(1)
+
+        return ""
+
     # ------------------------------------------------------------------
     # Splitting logic
     # ------------------------------------------------------------------
@@ -211,12 +313,19 @@ class EpisodeBuilder:
         return False
 
     def _split_episode(self, current: Episode) -> Episode:
-        """Create a new segment linked to *current*."""
+        """Create a new segment linked to *current*.
+
+        Sets ``metadata["continuation_of"]`` to the previous episode's
+        unique segment identifier so downstream consumers can reconstruct
+        the full episode chain.
+        """
+        prev_id = f"{current.episode_id}:seg{current.segment_id}"
         new_segment = Episode(
             episode_id=current.episode_id,
             segment_id=current.segment_id + 1,
             prev_segment_id=current.segment_id,
             thread_id=current.thread_id,
+            metadata={"continuation_of": prev_id},
         )
         return new_segment
 

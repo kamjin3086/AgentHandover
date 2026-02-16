@@ -28,6 +28,7 @@ fn make_test_event() -> Event {
         ui_scale: Some(2.0),
         artifact_ids: vec![],
         metadata: serde_json::json!({}),
+        display_ids_spanned: None,
     }
 }
 
@@ -59,7 +60,7 @@ fn test_schema_version() {
     let tmp = TempDir::new().unwrap();
     let db_path = tmp.path().join("test_ver.db");
     let store = EventStore::open(&db_path).unwrap();
-    assert_eq!(store.schema_version(), 1);
+    assert_eq!(store.schema_version(), 2);
 }
 
 #[test]
@@ -74,4 +75,27 @@ fn test_get_unprocessed_events() {
 
     let unprocessed = store.get_unprocessed_events(10).unwrap();
     assert_eq!(unprocessed.len(), 5);
+}
+
+#[test]
+fn test_db_path_accessor() {
+    let tmp = TempDir::new().unwrap();
+    let db_path = tmp.path().join("test_path.db");
+    let store = EventStore::open(&db_path).unwrap();
+    assert_eq!(store.db_path(), db_path.as_path());
+}
+
+#[test]
+fn test_no_backup_on_fresh_db() {
+    let tmp = TempDir::new().unwrap();
+    let db_path = tmp.path().join("fresh.db");
+    let _store = EventStore::open(&db_path).unwrap();
+
+    // A fresh database should not create a backup file
+    let backup_files: Vec<_> = std::fs::read_dir(tmp.path())
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_name().to_string_lossy().contains(".bak-"))
+        .collect();
+    assert_eq!(backup_files.len(), 0, "No backup should be created for a brand-new database");
 }

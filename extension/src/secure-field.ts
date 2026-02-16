@@ -10,6 +10,10 @@
  *   - <input autocomplete="current-password">
  *   - <input autocomplete="new-password">
  *   - <input type="hidden" name="...password...">
+ *   - Credit card fields (autocomplete: cc-number, cc-exp, cc-exp-month,
+ *     cc-exp-year, cc-csc, cc-name, cc-type)
+ *   - Credit card fields (name/id patterns: card-number, cardnumber,
+ *     cc-num, cvv, cvc, security-code, expiry, card-expiry, card-holder)
  */
 
 // ---------------------------------------------------------------------------
@@ -21,11 +25,39 @@ export interface SecureFieldState {
 }
 
 // ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+/** Autocomplete attribute values indicating credit card fields. */
+const CC_AUTOCOMPLETE_VALUES: ReadonlySet<string> = new Set([
+  'cc-number',
+  'cc-exp',
+  'cc-exp-month',
+  'cc-exp-year',
+  'cc-csc',
+  'cc-name',
+  'cc-type',
+]);
+
+/** Name/ID substrings indicating credit card fields. */
+const CC_NAME_PATTERNS: readonly string[] = [
+  'card-number',
+  'cardnumber',
+  'cc-num',
+  'cvv',
+  'cvc',
+  'security-code',
+  'expiry',
+  'card-expiry',
+  'card-holder',
+];
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
 /**
- * Determine whether a given element is a secure (password-related) field.
+ * Determine whether a given element is a secure (password or credit card) field.
  */
 export function isSecureField(el: Element | null): boolean {
   if (!el) return false;
@@ -36,11 +68,14 @@ export function isSecureField(el: Element | null): boolean {
     return true;
   }
 
-  // Autocomplete attributes indicating password fields
+  // Autocomplete attributes indicating password or credit card fields
   const autocomplete = el.getAttribute('autocomplete');
   if (autocomplete) {
     const normalised = autocomplete.toLowerCase().trim();
     if (normalised === 'current-password' || normalised === 'new-password') {
+      return true;
+    }
+    if (CC_AUTOCOMPLETE_VALUES.has(normalised)) {
       return true;
     }
   }
@@ -49,6 +84,15 @@ export function isSecureField(el: Element | null): boolean {
   if (el.type === 'hidden') {
     const name = (el.name || '').toLowerCase();
     if (name.includes('password')) {
+      return true;
+    }
+  }
+
+  // Credit card fields detected by name or id patterns
+  const elName = (el.name || '').toLowerCase();
+  const elId = (el.id || '').toLowerCase();
+  for (const pattern of CC_NAME_PATTERNS) {
+    if (elName.includes(pattern) || elId.includes(pattern)) {
       return true;
     }
   }

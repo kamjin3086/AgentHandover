@@ -2,11 +2,13 @@ use anyhow::Result;
 use chrono::Utc;
 use oc_apprentice_common::event::*;
 use oc_apprentice_common::redaction::Redactor;
+use oc_apprentice_storage::artifact_store::ArtifactStore;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::time;
-use tracing::{info, debug, error};
+use tracing::{info, debug, warn, error};
 use uuid::Uuid;
 
 /// Messages sent from the observer to the storage writer.
@@ -45,6 +47,7 @@ pub async fn run_observer_loop(
     config: ObserverConfig,
     tx: mpsc::Sender<ObserverMessage>,
     mut shutdown_rx: tokio::sync::watch::Receiver<bool>,
+    artifact_store: Option<Arc<ArtifactStore>>,
 ) -> Result<()> {
     info!("Observer event loop starting");
 
@@ -111,15 +114,16 @@ pub async fn run_observer_loop(
                 // App switch detection
                 if current_app != last_app_id {
                     if let (Some(from), Some(to)) = (&last_app_id, &current_app) {
-                        let event = make_event(
+                        let mut event = make_event(
                             EventKind::AppSwitch {
-                                from_app: redactor.redact(from),
-                                to_app: redactor.redact(to),
+                                from_app: from.clone(),
+                                to_app: to.clone(),
                             },
                             &window,
                             &display_topology,
                             &primary_display_id,
                         );
+                        redact_event(&mut event, &redactor);
                         let _ = tx.send(ObserverMessage::Event(event)).await;
                         dwell.on_manipulation_input();
                     }
@@ -129,12 +133,13 @@ pub async fn run_observer_loop(
                 // Title change detection
                 if current_title != last_window_title {
                     if last_window_title.is_some() {
-                        let event = make_event(
+                        let mut event = make_event(
                             EventKind::WindowTitleChange,
                             &window,
                             &display_topology,
                             &primary_display_id,
                         );
+                        redact_event(&mut event, &redactor);
                         let _ = tx.send(ObserverMessage::Event(event)).await;
                     }
                     last_window_title = current_title;
@@ -144,30 +149,52 @@ pub async fn run_observer_loop(
                 dwell.tick();
 
                 if dwell.is_dwelling() {
-                    let event = make_event(
+                    let mut event = make_event(
                         EventKind::DwellSnapshot,
                         &window,
                         &display_topology,
                         &primary_display_id,
                     );
+
+                    // Capture screenshot on dwell if enabled and under rate limit
+                    if config.capture_screenshots
+                        && screenshot_count_this_minute < config.screenshot_max_per_minute
+                    {
+                        if let Some(ref store) = artifact_store {
+                            event.artifact_ids = capture_and_store_screenshot(store);
+                            if !event.artifact_ids.is_empty() {
+                                screenshot_count_this_minute += 1;
+                            }
+                        }
+                    }
+
+                    redact_event(&mut event, &redactor);
                     let _ = tx.send(ObserverMessage::Event(event)).await;
                 }
 
                 if dwell.is_scroll_reading() {
-                    let event = make_event(
+                    let mut event = make_event(
                         EventKind::ScrollReadSnapshot,
                         &window,
                         &display_topology,
                         &primary_display_id,
                     );
+
+                    // Capture screenshot on scroll-read if enabled and under rate limit
+                    if config.capture_screenshots
+                        && screenshot_count_this_minute < config.screenshot_max_per_minute
+                    {
+                        if let Some(ref store) = artifact_store {
+                            event.artifact_ids = capture_and_store_screenshot(store);
+                            if !event.artifact_ids.is_empty() {
+                                screenshot_count_this_minute += 1;
+                            }
+                        }
+                    }
+
+                    redact_event(&mut event, &redactor);
                     let _ = tx.send(ObserverMessage::Event(event)).await;
                 }
-
-                // Suppress unused variable warnings for screenshot rate limiter
-                // (will be used when screenshot capture is wired in)
-                let _ = screenshot_count_this_minute;
-                let _ = config.screenshot_max_per_minute;
-                let _ = config.capture_screenshots;
             }
             _ = shutdown_rx.changed() => {
                 info!("Observer loop: shutdown watch triggered");
@@ -213,12 +240,67 @@ pub async fn run_storage_writer(
     Ok(())
 }
 
+/// Capture a screenshot and store it as an artifact.
+/// Returns a vec with a UUID for the artifact on success, or empty vec on failure.
+/// The UUID is used as the event's artifact_ids; the ArtifactStore's content-hash
+/// based ID is logged for filesystem correlation.
+#[cfg(target_os = "macos")]
+fn capture_and_store_screenshot(store: &ArtifactStore) -> Vec<Uuid> {
+    match crate::capture::screenshot::capture_main_display() {
+        Some((_width, _height, raw_pixels)) => {
+            match store.store(&raw_pixels, "screenshot") {
+                Ok(artifact_id) => {
+                    let uuid = Uuid::new_v4();
+                    debug!(uuid = %uuid, store_id = %artifact_id, "Screenshot captured and stored");
+                    vec![uuid]
+                }
+                Err(e) => {
+                    warn!(error = %e, "Failed to store screenshot artifact");
+                    vec![]
+                }
+            }
+        }
+        None => {
+            debug!("Screenshot capture returned None (no permission?)");
+            vec![]
+        }
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn capture_and_store_screenshot(_store: &ArtifactStore) -> Vec<Uuid> {
+    vec![]
+}
+
 fn make_event(
     kind: EventKind,
     window: &Option<WindowInfo>,
     display_topology: &[DisplayInfo],
     primary_display_id: &str,
 ) -> Event {
+    let display_ids_spanned = detect_spanning_displays(window, display_topology);
+
+    // Get cursor position from CoreGraphics.
+    #[cfg(target_os = "macos")]
+    let cursor_global_px = crate::platform::window_capture::get_cursor_position();
+    #[cfg(not(target_os = "macos"))]
+    let cursor_global_px: Option<CursorPosition> = None;
+
+    // Determine ui_scale based on which display the cursor is on.
+    let ui_scale = cursor_global_px
+        .as_ref()
+        .and_then(|cursor| {
+            #[cfg(target_os = "macos")]
+            {
+                crate::platform::window_capture::get_ui_scale_for_position(cursor, display_topology)
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                let _ = cursor;
+                None
+            }
+        });
+
     Event {
         id: Uuid::new_v4(),
         timestamp: Utc::now(),
@@ -226,9 +308,339 @@ fn make_event(
         window: window.clone(),
         display_topology: display_topology.to_vec(),
         primary_display_id: primary_display_id.to_string(),
-        cursor_global_px: None, // Will be populated with actual cursor tracking
-        ui_scale: None,
+        cursor_global_px,
+        ui_scale,
         artifact_ids: vec![],
         metadata: serde_json::json!({}),
+        display_ids_spanned,
+    }
+}
+
+/// Detect if a window spans multiple displays by checking if any of the
+/// window's four corners fall within different displays' bounds.
+/// Returns Some(vec) with the display IDs if spanning, None otherwise.
+fn detect_spanning_displays(
+    window: &Option<WindowInfo>,
+    displays: &[DisplayInfo],
+) -> Option<Vec<u32>> {
+    let win = window.as_ref()?;
+    if displays.len() < 2 {
+        return None;
+    }
+
+    let [wx, wy, ww, wh] = win.bounds_global_px;
+    // Window corners: top-left, top-right, bottom-left, bottom-right
+    let corners = [
+        (wx, wy),
+        (wx + ww - 1, wy),
+        (wx, wy + wh - 1),
+        (wx + ww - 1, wy + wh - 1),
+    ];
+
+    let mut spanned_ids: Vec<u32> = Vec::new();
+
+    for display in displays {
+        let [dx, dy, dw, dh] = display.bounds_global_px;
+        let contains_corner = corners.iter().any(|&(cx, cy)| {
+            cx >= dx && cx < dx + dw && cy >= dy && cy < dy + dh
+        });
+        if contains_corner {
+            if let Ok(id) = display.display_id.parse::<u32>() {
+                if !spanned_ids.contains(&id) {
+                    spanned_ids.push(id);
+                }
+            }
+        }
+    }
+
+    if spanned_ids.len() > 1 {
+        Some(spanned_ids)
+    } else {
+        None
+    }
+}
+
+/// Apply the Redactor to all text fields in an Event that could contain secrets.
+fn redact_event(event: &mut Event, redactor: &Redactor) {
+    // Redact EventKind fields
+    match &mut event.kind {
+        EventKind::AppSwitch { from_app, to_app } => {
+            *from_app = redactor.redact(from_app);
+            *to_app = redactor.redact(to_app);
+        }
+        EventKind::ClickIntent { target_description } => {
+            *target_description = redactor.redact(target_description);
+        }
+        EventKind::ClipboardChange { content_hash, .. } => {
+            *content_hash = redactor.redact(content_hash);
+        }
+        EventKind::PasteDetected { matched_copy_hash } => {
+            if let Some(hash) = matched_copy_hash {
+                *hash = redactor.redact(hash);
+            }
+        }
+        _ => {}
+    }
+
+    // Redact window title
+    if let Some(ref mut win) = event.window {
+        win.title = redactor.redact(&win.title);
+    }
+
+    // Redact metadata_json string values recursively
+    event.metadata = redact_json_value(&event.metadata, redactor);
+}
+
+/// Recursively redact all string values in a serde_json::Value.
+fn redact_json_value(value: &serde_json::Value, redactor: &Redactor) -> serde_json::Value {
+    match value {
+        serde_json::Value::String(s) => serde_json::Value::String(redactor.redact(s)),
+        serde_json::Value::Object(map) => {
+            let redacted: serde_json::Map<String, serde_json::Value> = map
+                .iter()
+                .map(|(k, v)| (k.clone(), redact_json_value(v, redactor)))
+                .collect();
+            serde_json::Value::Object(redacted)
+        }
+        serde_json::Value::Array(arr) => {
+            let redacted: Vec<serde_json::Value> = arr
+                .iter()
+                .map(|v| redact_json_value(v, redactor))
+                .collect();
+            serde_json::Value::Array(redacted)
+        }
+        other => other.clone(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_test_event_with_kind(kind: EventKind) -> Event {
+        Event {
+            id: Uuid::new_v4(),
+            timestamp: Utc::now(),
+            kind,
+            window: Some(WindowInfo {
+                window_id: "win1".into(),
+                app_id: "com.app.Test".into(),
+                title: "My Title".into(),
+                bounds_global_px: [0, 0, 800, 600],
+                z_order: 0,
+                is_fullscreen: false,
+            }),
+            display_topology: vec![],
+            primary_display_id: "d1".into(),
+            cursor_global_px: None,
+            ui_scale: None,
+            artifact_ids: vec![],
+            metadata: serde_json::json!({}),
+            display_ids_spanned: None,
+        }
+    }
+
+    #[test]
+    fn test_redact_event_window_title_with_secret() {
+        let redactor = Redactor::new();
+        let mut event = make_test_event_with_kind(EventKind::FocusChange);
+        event.window.as_mut().unwrap().title = "Edit: api_key=sk_live_ABC1234567890123456789".into();
+
+        redact_event(&mut event, &redactor);
+
+        let title = &event.window.as_ref().unwrap().title;
+        assert!(!title.contains("sk_live_ABC1234567890123456789"), "Secret should be redacted from window title");
+        assert!(title.contains("[REDACTED"), "Window title should contain redaction marker");
+    }
+
+    #[test]
+    fn test_redact_event_app_switch_with_secret() {
+        let redactor = Redactor::new();
+        let mut event = make_test_event_with_kind(EventKind::AppSwitch {
+            from_app: "com.app.Test ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijkl".into(),
+            to_app: "com.app.Other".into(),
+        });
+
+        redact_event(&mut event, &redactor);
+
+        if let EventKind::AppSwitch { from_app, .. } = &event.kind {
+            assert!(!from_app.contains("ghp_"), "GitHub token should be redacted from from_app");
+            assert!(from_app.contains("[REDACTED_GITHUB_TOKEN]"));
+        } else {
+            panic!("Expected AppSwitch kind");
+        }
+    }
+
+    #[test]
+    fn test_redact_event_click_intent_with_secret() {
+        let redactor = Redactor::new();
+        let mut event = make_test_event_with_kind(EventKind::ClickIntent {
+            target_description: "Button with api_token=mySecretTokenValue1234".into(),
+        });
+
+        redact_event(&mut event, &redactor);
+
+        if let EventKind::ClickIntent { target_description } = &event.kind {
+            assert!(!target_description.contains("mySecretTokenValue1234"), "Secret should be redacted from click target");
+        } else {
+            panic!("Expected ClickIntent kind");
+        }
+    }
+
+    #[test]
+    fn test_redact_event_metadata_with_secret() {
+        let redactor = Redactor::new();
+        let mut event = make_test_event_with_kind(EventKind::FocusChange);
+        event.metadata = serde_json::json!({
+            "url": "https://example.com",
+            "token": "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijkl",
+            "nested": {
+                "secret": "AKIAIOSFODNN7EXAMPLE1"
+            }
+        });
+
+        redact_event(&mut event, &redactor);
+
+        let meta = &event.metadata;
+        assert!(!meta["token"].as_str().unwrap().contains("ghp_"), "GitHub token in metadata should be redacted");
+        assert!(!meta["nested"]["secret"].as_str().unwrap().contains("AKIA"), "AWS key in nested metadata should be redacted");
+        // Non-secret values should remain
+        assert_eq!(meta["url"].as_str().unwrap(), "https://example.com");
+    }
+
+    #[test]
+    fn test_redact_json_value_preserves_non_strings() {
+        let redactor = Redactor::new();
+        let input = serde_json::json!({
+            "count": 42,
+            "active": true,
+            "tags": ["safe", "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijkl"]
+        });
+
+        let output = redact_json_value(&input, &redactor);
+
+        assert_eq!(output["count"], 42);
+        assert_eq!(output["active"], true);
+        assert_eq!(output["tags"][0].as_str().unwrap(), "safe");
+        assert!(output["tags"][1].as_str().unwrap().contains("[REDACTED_GITHUB_TOKEN]"));
+    }
+
+    #[test]
+    fn test_redact_event_no_window_no_panic() {
+        let redactor = Redactor::new();
+        let mut event = Event {
+            id: Uuid::new_v4(),
+            timestamp: Utc::now(),
+            kind: EventKind::FocusChange,
+            window: None,
+            display_topology: vec![],
+            primary_display_id: "d1".into(),
+            cursor_global_px: None,
+            ui_scale: None,
+            artifact_ids: vec![],
+            metadata: serde_json::json!({}),
+            display_ids_spanned: None,
+        };
+
+        // Should not panic with no window
+        redact_event(&mut event, &redactor);
+        assert!(event.window.is_none());
+    }
+
+    #[test]
+    fn test_detect_spanning_single_display() {
+        let window = Some(WindowInfo {
+            window_id: "w1".into(),
+            app_id: "com.app.Test".into(),
+            title: "Test".into(),
+            bounds_global_px: [100, 100, 800, 600],
+            z_order: 0,
+            is_fullscreen: false,
+        });
+        let displays = vec![DisplayInfo {
+            display_id: "1".into(),
+            bounds_global_px: [0, 0, 2560, 1440],
+            scale_factor: 2.0,
+            orientation: 0,
+        }];
+
+        let result = detect_spanning_displays(&window, &displays);
+        assert!(result.is_none(), "Single display should not report spanning");
+    }
+
+    #[test]
+    fn test_detect_spanning_across_two_displays() {
+        let window = Some(WindowInfo {
+            window_id: "w1".into(),
+            app_id: "com.app.Test".into(),
+            title: "Test".into(),
+            // Window straddles the boundary between two side-by-side displays
+            bounds_global_px: [2400, 100, 400, 600],
+            z_order: 0,
+            is_fullscreen: false,
+        });
+        let displays = vec![
+            DisplayInfo {
+                display_id: "1".into(),
+                bounds_global_px: [0, 0, 2560, 1440],
+                scale_factor: 2.0,
+                orientation: 0,
+            },
+            DisplayInfo {
+                display_id: "2".into(),
+                bounds_global_px: [2560, 0, 1920, 1080],
+                scale_factor: 1.0,
+                orientation: 0,
+            },
+        ];
+
+        let result = detect_spanning_displays(&window, &displays);
+        assert!(result.is_some(), "Window spanning two displays should be detected");
+        let ids = result.unwrap();
+        assert_eq!(ids.len(), 2);
+        assert!(ids.contains(&1));
+        assert!(ids.contains(&2));
+    }
+
+    #[test]
+    fn test_detect_spanning_window_within_single_display_multi_monitor() {
+        let window = Some(WindowInfo {
+            window_id: "w1".into(),
+            app_id: "com.app.Test".into(),
+            title: "Test".into(),
+            bounds_global_px: [100, 100, 400, 300],
+            z_order: 0,
+            is_fullscreen: false,
+        });
+        let displays = vec![
+            DisplayInfo {
+                display_id: "1".into(),
+                bounds_global_px: [0, 0, 2560, 1440],
+                scale_factor: 2.0,
+                orientation: 0,
+            },
+            DisplayInfo {
+                display_id: "2".into(),
+                bounds_global_px: [2560, 0, 1920, 1080],
+                scale_factor: 1.0,
+                orientation: 0,
+            },
+        ];
+
+        let result = detect_spanning_displays(&window, &displays);
+        assert!(result.is_none(), "Window within a single display should not report spanning");
+    }
+
+    #[test]
+    fn test_detect_spanning_no_window() {
+        let displays = vec![DisplayInfo {
+            display_id: "1".into(),
+            bounds_global_px: [0, 0, 2560, 1440],
+            scale_factor: 2.0,
+            orientation: 0,
+        }];
+
+        let result = detect_spanning_displays(&None, &displays);
+        assert!(result.is_none(), "No window should return None");
     }
 }

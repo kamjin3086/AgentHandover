@@ -14,7 +14,7 @@ async fn test_observer_loop_starts_and_stops() {
 
     // Run the loop for a short time then signal shutdown
     let handle = tokio::spawn(async move {
-        run_observer_loop(config, tx, shutdown_rx).await
+        run_observer_loop(config, tx, shutdown_rx, None).await
     });
 
     // Let it run briefly

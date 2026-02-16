@@ -10,8 +10,12 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 const HEADER_MAGIC: &[u8; 4] = b"OCAA"; // OpenClaw Apprentice Artifact
-const ARTIFACT_VERSION: u8 = 1;
+const ARTIFACT_VERSION: u8 = 2;
 const NONCE_SIZE: usize = 24; // XChaCha20 uses 24-byte nonces
+
+// Algorithm identifiers for the binary header
+const COMPRESSION_ZSTD: u8 = 1;
+const ENCRYPTION_XCHACHA20POLY1305: u8 = 1;
 
 pub struct ArtifactStore {
     base_path: PathBuf,
@@ -58,9 +62,11 @@ impl ArtifactStore {
         let nonce_bytes: [u8; NONCE_SIZE] = nonce.into();
 
         let mut file = fs::File::create(&tmp_path)?;
-        // Write header
+        // Write header (v2: magic + version + compression_algo + encryption_algo + nonce_len + nonce + original_size)
         file.write_all(HEADER_MAGIC)?;
         file.write_all(&[ARTIFACT_VERSION])?;
+        file.write_all(&[COMPRESSION_ZSTD])?;
+        file.write_all(&[ENCRYPTION_XCHACHA20POLY1305])?;
         file.write_all(&(NONCE_SIZE as u16).to_le_bytes())?;
         file.write_all(&nonce_bytes)?;
         file.write_all(&(data.len() as u64).to_le_bytes())?; // original size for verification
@@ -75,6 +81,7 @@ impl ArtifactStore {
     }
 
     /// Retrieve: read -> decrypt -> decompress (reverse of store)
+    /// Handles both v1 (no algo bytes) and v2 (with algo bytes) headers.
     pub fn retrieve(&self, artifact_id: &str) -> Result<Vec<u8>> {
         let path = self.artifact_path(artifact_id);
         let raw = fs::read(&path)?;
@@ -86,17 +93,28 @@ impl ArtifactStore {
         if &raw[0..4] != HEADER_MAGIC {
             anyhow::bail!("Invalid artifact magic bytes");
         }
-        let _version = raw[4];
-        let nonce_len = u16::from_le_bytes([raw[5], raw[6]]) as usize;
+        let version = raw[4];
 
-        let header_size = 7 + nonce_len + 8; // magic(4) + version(1) + nonce_len_field(2) + nonce + original_size(8)
+        // v1 header: magic(4) + version(1) + nonce_len(2) + nonce + original_size(8)
+        // v2 header: magic(4) + version(1) + compression_algo(1) + encryption_algo(1) + nonce_len(2) + nonce + original_size(8)
+        let (nonce_offset, nonce_len) = if version >= 2 {
+            let _compression_algo = raw[5];
+            let _encryption_algo = raw[6];
+            let nlen = u16::from_le_bytes([raw[7], raw[8]]) as usize;
+            (9, nlen)
+        } else {
+            let nlen = u16::from_le_bytes([raw[5], raw[6]]) as usize;
+            (7, nlen)
+        };
+
+        let header_size = nonce_offset + nonce_len + 8;
         if raw.len() < header_size {
             anyhow::bail!("Artifact file too small for declared nonce length");
         }
 
-        let nonce_bytes = &raw[7..7 + nonce_len];
+        let nonce_bytes = &raw[nonce_offset..nonce_offset + nonce_len];
         let _original_size = u64::from_le_bytes(
-            raw[7 + nonce_len..15 + nonce_len]
+            raw[nonce_offset + nonce_len..nonce_offset + nonce_len + 8]
                 .try_into()
                 .map_err(|_| anyhow::anyhow!("Failed to parse original size"))?,
         );

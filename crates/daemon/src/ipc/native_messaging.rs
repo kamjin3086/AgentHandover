@@ -378,6 +378,7 @@ fn convert_to_event(msg: &ExtensionMessage) -> Option<Event> {
         ui_scale: None,
         artifact_ids: vec![],
         metadata: msg.payload.clone(),
+        display_ids_spanned: None,
     })
 }
 

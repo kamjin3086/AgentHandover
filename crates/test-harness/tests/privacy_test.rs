@@ -25,6 +25,7 @@ fn make_event_with_title(title: &str) -> Event {
         ui_scale: None,
         artifact_ids: vec![],
         metadata: serde_json::json!({}),
+        display_ids_spanned: None,
     }
 }
 
@@ -40,6 +41,7 @@ fn make_event_with_metadata(key: &str, value: &str) -> Event {
         ui_scale: None,
         artifact_ids: vec![],
         metadata: serde_json::json!({ key: value }),
+        display_ids_spanned: None,
     }
 }
 

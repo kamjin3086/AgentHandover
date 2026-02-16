@@ -110,6 +110,49 @@ class WorkerDB:
         return self._rows_to_dicts(cur.fetchall())
 
     # ------------------------------------------------------------------
+    # Write operations (via separate writable connection)
+    # ------------------------------------------------------------------
+
+    def mark_events_processed(self, event_ids: list[str]) -> int:
+        """Mark the given events as processed (``processed = 1``).
+
+        Opens a **separate** writable connection for this operation since
+        the main connection is read-only.  The writable connection is
+        opened and closed within this call to minimise lock contention
+        with the daemon.
+
+        Returns the number of rows updated.
+        """
+        if not event_ids:
+            return 0
+
+        resolved = self._conn.execute(
+            "PRAGMA database_list"
+        ).fetchone()
+        # Extract the file path from our read-only connection
+        db_path = resolved["file"] if resolved else None
+        if not db_path:
+            logger.error("Cannot determine database path for writable connection")
+            return 0
+
+        try:
+            write_conn = sqlite3.connect(db_path)
+            write_conn.execute("PRAGMA busy_timeout = 5000;")
+            placeholders = ",".join("?" for _ in event_ids)
+            cursor = write_conn.execute(
+                f"UPDATE events SET processed = 1 WHERE id IN ({placeholders})",
+                event_ids,
+            )
+            write_conn.commit()
+            updated = cursor.rowcount
+            write_conn.close()
+            logger.info("Marked %d events as processed", updated)
+            return updated
+        except sqlite3.Error as exc:
+            logger.error("Failed to mark events as processed: %s", exc)
+            return 0
+
+    # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
 

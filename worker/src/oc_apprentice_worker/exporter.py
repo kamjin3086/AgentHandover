@@ -123,6 +123,7 @@ class IndexGenerator:
                 ep_count = entry.get("episode_count", 0)
                 apps = entry.get("apps_involved", [])
                 steps = entry.get("steps", [])
+                variables = entry.get("variables", [])
 
                 lines.append(f"### {title}")
                 lines.append("")
@@ -133,6 +134,17 @@ class IndexGenerator:
                 if apps:
                     lines.append(f"- **Apps:** {', '.join(apps)}")
                 lines.append(f"- **Steps:** {len(steps)}")
+                lines.append(f"- **Last learned:** {now}")
+
+                # Required inputs from variables
+                if variables:
+                    inputs_parts = []
+                    for var in variables:
+                        var_name = var.get("name", "unknown")
+                        var_type = var.get("type", "string")
+                        inputs_parts.append(f"`{var_name}` ({var_type})")
+                    lines.append(f"- **Required inputs:** {', '.join(inputs_parts)}")
+
                 lines.append("")
 
         return "\n".join(lines)

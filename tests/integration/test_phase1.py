@@ -357,8 +357,10 @@ class TestFullE2EPipeline:
 
         # GitHub events (with URL) go to one thread, Slack events to another
         thread_ids = {ep.thread_id for ep in episodes}
-        assert "com.google.Chrome:github.com" in thread_ids, (
-            f"Expected GitHub thread, got: {thread_ids}"
+        # Entity-based clustering appends ticket/issue IDs (e.g. #42 from PR URL)
+        github_thread = [t for t in thread_ids if t.startswith("com.google.Chrome:github.com")]
+        assert len(github_thread) == 1, (
+            f"Expected one GitHub thread, got: {thread_ids}"
         )
         assert "com.tinyspeck.slackmacgap" in thread_ids, (
             f"Expected Slack thread, got: {thread_ids}"
@@ -366,7 +368,7 @@ class TestFullE2EPipeline:
 
         # GitHub thread should have 6 events (ev1-4, ev7-8)
         github_episodes = [
-            ep for ep in episodes if ep.thread_id == "com.google.Chrome:github.com"
+            ep for ep in episodes if ep.thread_id == github_thread[0]
         ]
         github_event_count = sum(ep.event_count for ep in github_episodes)
         assert github_event_count == 6, (
@@ -602,8 +604,9 @@ class TestEpisodeSegmentation:
         episodes = builder.process_events(events)
 
         # All episodes should be for the same thread
+        # Entity-based clustering may enrich thread_id (e.g. "com.microsoft.VSCode:main.rs")
         vscode_episodes = [
-            ep for ep in episodes if ep.thread_id == app_id
+            ep for ep in episodes if ep.thread_id.startswith(app_id)
         ]
         assert len(vscode_episodes) >= 3, (
             f"Expected at least 3 segments for 45-minute session, got {len(vscode_episodes)}"

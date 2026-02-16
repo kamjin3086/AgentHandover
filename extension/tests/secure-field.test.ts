@@ -97,6 +97,194 @@ describe('isSecureField', () => {
     input.setAttribute('autocomplete', 'Current-Password');
     expect(isSecureField(input)).toBe(true);
   });
+
+  // ----- Credit card autocomplete values -----
+
+  it('should detect autocomplete="cc-number"', () => {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.setAttribute('autocomplete', 'cc-number');
+    expect(isSecureField(input)).toBe(true);
+  });
+
+  it('should detect autocomplete="cc-exp"', () => {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.setAttribute('autocomplete', 'cc-exp');
+    expect(isSecureField(input)).toBe(true);
+  });
+
+  it('should detect autocomplete="cc-exp-month"', () => {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.setAttribute('autocomplete', 'cc-exp-month');
+    expect(isSecureField(input)).toBe(true);
+  });
+
+  it('should detect autocomplete="cc-exp-year"', () => {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.setAttribute('autocomplete', 'cc-exp-year');
+    expect(isSecureField(input)).toBe(true);
+  });
+
+  it('should detect autocomplete="cc-csc"', () => {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.setAttribute('autocomplete', 'cc-csc');
+    expect(isSecureField(input)).toBe(true);
+  });
+
+  it('should detect autocomplete="cc-name"', () => {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.setAttribute('autocomplete', 'cc-name');
+    expect(isSecureField(input)).toBe(true);
+  });
+
+  it('should detect autocomplete="cc-type"', () => {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.setAttribute('autocomplete', 'cc-type');
+    expect(isSecureField(input)).toBe(true);
+  });
+
+  it('should detect case-insensitive cc autocomplete (CC-NUMBER)', () => {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.setAttribute('autocomplete', 'CC-NUMBER');
+    expect(isSecureField(input)).toBe(true);
+  });
+
+  // ----- Credit card name/id patterns -----
+
+  it('should detect name="card-number"', () => {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.name = 'card-number';
+    expect(isSecureField(input)).toBe(true);
+  });
+
+  it('should detect name="cardnumber"', () => {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.name = 'cardnumber';
+    expect(isSecureField(input)).toBe(true);
+  });
+
+  it('should detect name="cc-num"', () => {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.name = 'cc-num';
+    expect(isSecureField(input)).toBe(true);
+  });
+
+  it('should detect name="cvv"', () => {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.name = 'cvv';
+    expect(isSecureField(input)).toBe(true);
+  });
+
+  it('should detect name="cvc"', () => {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.name = 'cvc';
+    expect(isSecureField(input)).toBe(true);
+  });
+
+  it('should detect name="security-code"', () => {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.name = 'security-code';
+    expect(isSecureField(input)).toBe(true);
+  });
+
+  it('should detect name="expiry"', () => {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.name = 'expiry';
+    expect(isSecureField(input)).toBe(true);
+  });
+
+  it('should detect name="card-expiry"', () => {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.name = 'card-expiry';
+    expect(isSecureField(input)).toBe(true);
+  });
+
+  it('should detect name="card-holder"', () => {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.name = 'card-holder';
+    expect(isSecureField(input)).toBe(true);
+  });
+
+  it('should detect id="card-number" (via id, not name)', () => {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.id = 'card-number';
+    expect(isSecureField(input)).toBe(true);
+  });
+
+  it('should detect id containing cc pattern (e.g. "payment-cvv-field")', () => {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.id = 'payment-cvv-field';
+    expect(isSecureField(input)).toBe(true);
+  });
+
+  it('should detect name with cc pattern substring (e.g. "billing_cardnumber_input")', () => {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.name = 'billing_cardnumber_input';
+    expect(isSecureField(input)).toBe(true);
+  });
+
+  it('should detect case-insensitive name pattern (e.g. "CardNumber")', () => {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.name = 'CardNumber';
+    expect(isSecureField(input)).toBe(true);
+  });
+
+  // ----- Non-credit-card fields should NOT be flagged -----
+
+  it('should NOT flag a regular text input with unrelated name', () => {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.name = 'username';
+    expect(isSecureField(input)).toBe(false);
+  });
+
+  it('should NOT flag a tel input', () => {
+    const input = document.createElement('input');
+    input.type = 'tel';
+    input.name = 'phone';
+    expect(isSecureField(input)).toBe(false);
+  });
+
+  it('should NOT flag an email input', () => {
+    const input = document.createElement('input');
+    input.type = 'email';
+    input.name = 'email';
+    expect(isSecureField(input)).toBe(false);
+  });
+
+  it('should NOT flag an input with autocomplete="name"', () => {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.setAttribute('autocomplete', 'name');
+    expect(isSecureField(input)).toBe(false);
+  });
+
+  it('should NOT flag an input with autocomplete="email"', () => {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.setAttribute('autocomplete', 'email');
+    expect(isSecureField(input)).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------

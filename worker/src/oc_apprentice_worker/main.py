@@ -1,8 +1,8 @@
 """OpenMimic apprentice worker entry-point.
 
 Provides the main loop that reads from the daemon's SQLite database
-and will (in later tasks) drive episode building, semantic translation,
-and SOP induction.
+and drives episode building, semantic translation, confidence scoring,
+VLM fallback enqueuing, SOP induction, formatting, and export.
 """
 
 from __future__ import annotations
@@ -12,14 +12,30 @@ import logging
 import signal
 import sys
 import time
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
+from oc_apprentice_worker.clipboard_linker import ClipboardLinker
+from oc_apprentice_worker.confidence import ConfidenceScorer
 from oc_apprentice_worker.db import WorkerDB
+from oc_apprentice_worker.deep_scan import DeepScanner
+from oc_apprentice_worker.episode_builder import EpisodeBuilder
+from oc_apprentice_worker.exporter import IndexGenerator
+from oc_apprentice_worker.negative_demo import NegativeDemoPruner
+from oc_apprentice_worker.openclaw_writer import OpenClawWriter
+from oc_apprentice_worker.scheduler import IdleJobGate, SchedulerConfig
+from oc_apprentice_worker.sop_format import SOPFormatter
+from oc_apprentice_worker.sop_versioner import SOPVersioner
+from oc_apprentice_worker.translator import SemanticTranslator
+from oc_apprentice_worker.vlm_queue import VLMFallbackQueue, VLMJob
 
 logger = logging.getLogger("oc_apprentice_worker")
 
 DEFAULT_DB_PATH = Path.home() / ".local" / "share" / "oc-apprentice" / "events.db"
+DEFAULT_SOPS_DIR = Path.home() / ".openclaw" / "workspace" / "memory" / "apprentice"
 POLL_INTERVAL_SECONDS = 2.0
+VLM_REJECT_THRESHOLD = 0.60
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -34,6 +50,15 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help=(
             "Path to the daemon's SQLite database "
             f"(default: {DEFAULT_DB_PATH})"
+        ),
+    )
+    parser.add_argument(
+        "--sops-dir",
+        type=Path,
+        default=DEFAULT_SOPS_DIR,
+        help=(
+            "Path to the SOP output directory "
+            f"(default: {DEFAULT_SOPS_DIR})"
         ),
     )
     parser.add_argument(
@@ -52,6 +77,181 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Logging verbosity (default: INFO)",
     )
     return parser.parse_args(argv)
+
+
+def run_pipeline(
+    events: list[dict],
+    *,
+    episode_builder: EpisodeBuilder,
+    clipboard_linker: ClipboardLinker,
+    pruner: NegativeDemoPruner,
+    translator: SemanticTranslator,
+    scorer: ConfidenceScorer,
+    vlm_queue: VLMFallbackQueue,
+    openclaw_writer: OpenClawWriter,
+    formatter: SOPFormatter,
+    versioner: SOPVersioner,
+    index_generator: IndexGenerator,
+    sop_inducer: object | None = None,
+) -> dict:
+    """Run the full D->E->F pipeline on a batch of events.
+
+    Returns a summary dict with counts and results for monitoring.
+    """
+    summary: dict = {
+        "events_in": len(events),
+        "episodes": 0,
+        "positive_events": 0,
+        "negative_events": 0,
+        "translations": 0,
+        "vlm_enqueued": 0,
+        "sops_induced": 0,
+        "sops_exported": 0,
+    }
+
+    if not events:
+        return summary
+
+    # Step D1: Build episodes from raw events
+    episodes = episode_builder.process_events(events)
+    summary["episodes"] = len(episodes)
+    logger.info("Built %d episodes from %d events", len(episodes), len(events))
+
+    # Step D2: Link clipboard copy-paste pairs across episode events
+    all_episode_events = []
+    for ep in episodes:
+        all_episode_events.extend(ep.events)
+    clipboard_links = clipboard_linker.find_links(all_episode_events)
+    logger.debug("Found %d clipboard links", len(clipboard_links))
+
+    # Build a set of paste event IDs that have clipboard provenance
+    paste_ids_with_provenance: set[str] = set()
+    for link in clipboard_links:
+        paste_ids_with_provenance.add(link.paste_event_id)
+
+    # Step D3: Prune negative demonstrations per episode
+    positive_episodes_events: list[list[dict]] = []
+    total_positive = 0
+    total_negative = 0
+
+    for ep in episodes:
+        prune_result = pruner.prune(ep.events)
+        total_positive += len(prune_result.positive_events)
+        total_negative += len(prune_result.negative_events)
+        if prune_result.positive_events:
+            positive_episodes_events.append(prune_result.positive_events)
+
+    summary["positive_events"] = total_positive
+    summary["negative_events"] = total_negative
+    logger.info(
+        "Pruned: %d positive, %d negative events",
+        total_positive,
+        total_negative,
+    )
+
+    # Step E: Translate positive events into semantic steps
+    all_translations = []
+    episode_sop_steps: list[list[dict]] = []
+
+    for ep_events in positive_episodes_events:
+        translations = translator.translate_batch(ep_events)
+        all_translations.extend(translations)
+
+        # Score each translation and handle VLM fallback
+        sop_steps_for_episode: list[dict] = []
+
+        for idx, tr in enumerate(translations):
+            # Build scoring context
+            context: dict = {}
+            if tr.pre_state.get("window_title"):
+                context["expected_title"] = tr.pre_state["window_title"]
+            if tr.pre_state.get("url"):
+                context["expected_url"] = tr.pre_state["url"]
+            if tr.pre_state.get("app_id"):
+                context["expected_app"] = tr.pre_state["app_id"]
+
+            # Check clipboard provenance
+            raw_event_id = tr.raw_event_id
+            if raw_event_id in paste_ids_with_provenance:
+                context["clipboard_link"] = True
+
+            # Check dwell snapshot provenance
+            if tr.intent == "read":
+                context["dwell_snapshot"] = True
+
+            conf = scorer.score(tr, context)
+
+            # Auto-enqueue VLM job for rejected translations
+            if conf.decision == "reject" and conf.total < VLM_REJECT_THRESHOLD:
+                job = VLMJob(
+                    job_id=str(uuid.uuid4()),
+                    event_id=tr.raw_event_id,
+                    episode_id="",
+                    semantic_step_index=idx,
+                    confidence_score=conf.total,
+                    priority_score=vlm_queue.compute_priority(
+                        conf.total,
+                        tr.intent,
+                        datetime.now(timezone.utc),
+                    ),
+                )
+                if vlm_queue.enqueue(job):
+                    summary["vlm_enqueued"] += 1
+
+            # Build SOP step dict for high-confidence translations
+            if conf.decision in ("accept", "accept_flagged"):
+                target_desc = ""
+                selector = None
+                if tr.target:
+                    target_desc = tr.target.selector
+                    selector = tr.target.selector
+
+                sop_step = {
+                    "step": tr.intent,
+                    "target": target_desc,
+                    "selector": selector,
+                    "parameters": tr.parameters,
+                    "confidence": conf.total,
+                    "pre_state": tr.pre_state,
+                }
+                sop_steps_for_episode.append(sop_step)
+
+        if sop_steps_for_episode:
+            episode_sop_steps.append(sop_steps_for_episode)
+
+    summary["translations"] = len(all_translations)
+    logger.info(
+        "Translated %d events, enqueued %d VLM jobs",
+        len(all_translations),
+        summary["vlm_enqueued"],
+    )
+
+    # Step F: Induce SOPs from episode step sequences
+    # Only attempt if we have the sop_inducer (requires prefixspan)
+    sop_templates: list[dict] = []
+    if sop_inducer is not None and episode_sop_steps:
+        try:
+            sop_templates = sop_inducer.induce(episode_sop_steps)
+            summary["sops_induced"] = len(sop_templates)
+            logger.info("Induced %d SOP templates", len(sop_templates))
+        except Exception:
+            logger.exception("SOP induction failed")
+
+    # Step F2: Format, version, and export SOPs
+    if sop_templates:
+        try:
+            paths = openclaw_writer.write_all_sops(sop_templates)
+            summary["sops_exported"] = len(paths)
+
+            # Update index with all SOP templates
+            index_generator.update_index(
+                openclaw_writer.sops_dir, sop_templates
+            )
+            logger.info("Exported %d SOPs", len(paths))
+        except Exception:
+            logger.exception("SOP export failed")
+
+    return summary
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -86,6 +286,34 @@ def main(argv: list[str] | None = None) -> None:
     signal.signal(signal.SIGINT, _handle_signal)
     signal.signal(signal.SIGTERM, _handle_signal)
 
+    # Initialize pipeline components
+    episode_builder = EpisodeBuilder()
+    clipboard_linker = ClipboardLinker()
+    pruner = NegativeDemoPruner()
+    translator = SemanticTranslator()
+    scorer = ConfidenceScorer()
+    vlm_queue = VLMFallbackQueue()
+    formatter = SOPFormatter()
+    versioner = SOPVersioner(sops_dir=args.sops_dir / "sops")
+    index_generator = IndexGenerator()
+    openclaw_writer = OpenClawWriter(workspace_dir=args.sops_dir.parent.parent)
+
+    # Try to import SOPInducer (requires prefixspan)
+    sop_inducer = None
+    try:
+        from oc_apprentice_worker.sop_inducer import SOPInducer
+        sop_inducer = SOPInducer()
+        logger.info("SOPInducer loaded (prefixspan available)")
+    except ImportError:
+        logger.warning(
+            "prefixspan not installed — SOP induction disabled. "
+            "Install with: pip install prefixspan"
+        )
+
+    # Initialize scheduler gate (GAP 5) and deep scanner (GAP 6)
+    idle_gate = IdleJobGate(SchedulerConfig())
+    deep_scanner = DeepScanner()
+
     with WorkerDB(args.db_path) as db:
         logger.info("Connected to database, entering main loop")
 
@@ -102,10 +330,63 @@ def main(argv: list[str] | None = None) -> None:
             else:
                 logger.debug("Poll: nothing to do")
 
-            # Future tasks will add processing logic here:
-            #   - Episode boundary detection
-            #   - VLM screenshot description
-            #   - Semantic SOP extraction
+            if unprocessed:
+                # Check scheduler gate before running heavy pipeline
+                gate_result = idle_gate.check()
+                if not gate_result.can_run:
+                    logger.debug(
+                        "Idle gate blocked: %s — deferring pipeline",
+                        gate_result.blockers,
+                    )
+                    time.sleep(args.poll_interval)
+                    continue
+
+                summary = run_pipeline(
+                    unprocessed,
+                    episode_builder=episode_builder,
+                    clipboard_linker=clipboard_linker,
+                    pruner=pruner,
+                    translator=translator,
+                    scorer=scorer,
+                    vlm_queue=vlm_queue,
+                    openclaw_writer=openclaw_writer,
+                    formatter=formatter,
+                    versioner=versioner,
+                    index_generator=index_generator,
+                    sop_inducer=sop_inducer,
+                )
+                logger.info("Pipeline summary: %s", summary)
+
+                # Mark processed events so they are not re-read (GAP 4)
+                event_ids = [ev["id"] for ev in unprocessed if "id" in ev]
+                if event_ids:
+                    db.mark_events_processed(event_ids)
+
+                # Run Tier 2 deep scan on any text artifacts from this batch
+                text_artifacts = []
+                for ev in unprocessed:
+                    # Extract any text-like fields for deep scan
+                    window_json = ev.get("window_json")
+                    if window_json:
+                        text_artifacts.append({
+                            "id": ev.get("id", "unknown"),
+                            "text": window_json,
+                        })
+                    metadata_json = ev.get("metadata_json")
+                    if metadata_json:
+                        text_artifacts.append({
+                            "id": ev.get("id", "unknown"),
+                            "text": metadata_json,
+                        })
+
+                if text_artifacts:
+                    scan_result = deep_scanner.scan_artifacts(text_artifacts)
+                    if scan_result.has_pii:
+                        logger.warning(
+                            "Deep scan found %d PII match(es) in %d artifact(s)",
+                            scan_result.total_pii,
+                            scan_result.artifacts_scanned,
+                        )
 
             time.sleep(args.poll_interval)
 
