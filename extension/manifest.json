@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "OpenMimic Observer",
+  "version": "0.1.0",
+  "description": "Silent observer for workflow learning - captures DOM snapshots, click intent, and accessibility metadata",
+  "permissions": ["nativeMessaging", "activeTab"],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAplaceholderDevKeyForStableExtensionID"
+}
