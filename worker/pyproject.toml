@@ -7,7 +7,7 @@ name = "oc-apprentice-worker"
 version = "0.1.0"
 description = "OpenMimic apprentice worker — episode building, semantic translation, SOP induction"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = ["prefixspan>=0.5.2", "pyyaml>=6.0"]
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0", "pytest-cov"]

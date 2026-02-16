@@ -1,0 +1,503 @@
+"""SOP Inducer — mine repeated subgraphs from episodes to produce SOP templates.
+
+Implements section 10.1 of the OpenMimic spec.  Uses PrefixSpan to discover
+frequent sequential patterns across episodes, then abstracts variable slots
+where values differ across instances.
+
+The inducer takes lists of semantic step dicts (from ``SemanticStep.to_sop_step()``)
+grouped by episode and produces SOP template dicts ready for formatting.
+"""
+
+from __future__ import annotations
+
+import re
+import unicodedata
+from collections import Counter, defaultdict
+from datetime import datetime
+
+from prefixspan import PrefixSpan
+
+
+class SOPInducer:
+    """Mine frequent patterns from episodes and produce SOP templates.
+
+    Parameters
+    ----------
+    min_support:
+        Minimum fraction of episodes a pattern must appear in (0.0-1.0).
+    min_pattern_length:
+        Minimum number of steps in a pattern to be considered.
+    """
+
+    def __init__(self, min_support: float = 0.3, min_pattern_length: int = 3):
+        self.min_support = min_support
+        self.min_pattern_length = min_pattern_length
+
+    def induce(self, episodes: list[list[dict]]) -> list[dict]:
+        """Mine frequent patterns from episodes and produce SOP templates.
+
+        Args:
+            episodes: list of episodes, each episode is a list of semantic steps
+                (dicts from SemanticStep.to_sop_step())
+
+        Returns:
+            list of SOP template dicts, each containing:
+            {
+                "slug": "task_name",
+                "title": "Human-Readable Task Title",
+                "steps": [{"step": "click", "target": "Submit button", ...}],
+                "variables": [{"name": "customer_name", "type": "string", "example": "..."}],
+                "confidence_avg": 0.87,
+                "episode_count": 5,
+                "apps_involved": ["Chrome", "Excel"],
+            }
+        """
+        if not episodes:
+            return []
+
+        # Filter out empty episodes
+        non_empty = [ep for ep in episodes if ep]
+        if not non_empty:
+            return []
+
+        # Build encoding tables
+        encoded, code_to_signature, signature_to_steps = self._encode_steps(non_empty)
+
+        # Mine frequent patterns
+        raw_patterns = self._mine_patterns(encoded, len(non_empty))
+        if not raw_patterns:
+            return []
+
+        results: list[dict] = []
+        for support_count, pattern_codes in raw_patterns:
+            # Decode pattern codes back to step signatures
+            pattern_steps = []
+            for code in pattern_codes:
+                sig = code_to_signature.get(code)
+                if sig is None:
+                    continue
+                # Take a representative step for this signature
+                candidates = signature_to_steps.get(sig, [])
+                if candidates:
+                    pattern_steps.append(candidates[0].copy())
+
+            if len(pattern_steps) < self.min_pattern_length:
+                continue
+
+            # Collect all matching instances across episodes for variable abstraction
+            all_instances = self._collect_instances(
+                non_empty, pattern_codes, code_to_signature, signature_to_steps
+            )
+
+            # Abstract variables
+            variables = self._abstract_variables(pattern_steps, all_instances)
+
+            # Extract apps involved
+            apps = self._extract_apps(non_empty, pattern_codes, code_to_signature)
+
+            # Compute average confidence
+            confidence_avg = self._compute_avg_confidence(all_instances)
+
+            # Generate slug and title
+            slug = self._generate_slug(pattern_steps)
+            title = self._generate_title(pattern_steps, apps)
+
+            results.append({
+                "slug": slug,
+                "title": title,
+                "steps": pattern_steps,
+                "variables": variables,
+                "confidence_avg": round(confidence_avg, 4),
+                "episode_count": support_count,
+                "apps_involved": sorted(set(apps)),
+            })
+
+        return results
+
+    def _encode_steps(
+        self, episodes: list[list[dict]]
+    ) -> tuple[list[list[int]], dict[int, str], dict[str, list[dict]]]:
+        """Encode semantic steps as integer sequences for PrefixSpan.
+
+        Each unique step signature (intent + target) maps to a unique integer.
+
+        Returns:
+            (encoded_sequences, code_to_signature, signature_to_steps)
+        """
+        signature_to_code: dict[str, int] = {}
+        code_to_signature: dict[int, str] = {}
+        signature_to_steps: dict[str, list[dict]] = defaultdict(list)
+        next_code = 0
+
+        encoded: list[list[int]] = []
+
+        for episode in episodes:
+            seq: list[int] = []
+            for step in episode:
+                sig = self._step_signature(step)
+                if sig not in signature_to_code:
+                    signature_to_code[sig] = next_code
+                    code_to_signature[next_code] = sig
+                    next_code += 1
+
+                code = signature_to_code[sig]
+                seq.append(code)
+                signature_to_steps[sig].append(step)
+
+            encoded.append(seq)
+
+        return encoded, code_to_signature, signature_to_steps
+
+    def _step_signature(self, step: dict) -> str:
+        """Create a canonical signature for a step based on intent and target.
+
+        The signature normalizes the target to lowercase for matching,
+        so that "Submit Button" and "submit button" are treated as the same
+        step type.
+        """
+        intent = step.get("step", "unknown")
+        target = step.get("target", "")
+        # Normalize target: lowercase, strip extra whitespace
+        normalized_target = " ".join(target.lower().split())
+        return f"{intent}::{normalized_target}"
+
+    def _mine_patterns(self, encoded: list[list[int]], episode_count: int) -> list:
+        """Run PrefixSpan with minimum support.
+
+        Returns list of (support_count, pattern) tuples where pattern is a list
+        of integer codes.
+        """
+        abs_support = max(2, int(self.min_support * episode_count))
+
+        ps = PrefixSpan(encoded)
+        # Mine frequent patterns with minimum length constraint
+        raw = ps.frequent(abs_support)
+
+        # Filter by minimum pattern length
+        patterns = [
+            (count, pat) for count, pat in raw
+            if len(pat) >= self.min_pattern_length
+        ]
+
+        # Sort by support count descending, then pattern length descending
+        patterns.sort(key=lambda x: (x[0], len(x[1])), reverse=True)
+
+        return patterns
+
+    def _collect_instances(
+        self,
+        episodes: list[list[dict]],
+        pattern_codes: list[int],
+        code_to_signature: dict[int, str],
+        signature_to_steps: dict[str, list[dict]],
+    ) -> list[list[dict]]:
+        """Collect all matching instances of a pattern across episodes.
+
+        Each instance is a list of step dicts corresponding to the pattern
+        positions in a single episode.
+        """
+        pattern_sigs = [code_to_signature[c] for c in pattern_codes]
+        instances: list[list[dict]] = []
+
+        for episode in episodes:
+            ep_sigs = [self._step_signature(s) for s in episode]
+            # Find all occurrences of the pattern signature sequence in this episode
+            matches = self._find_subsequence(ep_sigs, pattern_sigs)
+            for match_indices in matches:
+                instance = [episode[i] for i in match_indices]
+                instances.append(instance)
+
+        return instances
+
+    def _find_subsequence(
+        self, sequence: list[str], pattern: list[str]
+    ) -> list[list[int]]:
+        """Find all contiguous subsequence matches of pattern in sequence.
+
+        Returns list of index lists, one per match.
+        """
+        results: list[list[int]] = []
+        pat_len = len(pattern)
+        seq_len = len(sequence)
+
+        for start in range(seq_len - pat_len + 1):
+            if sequence[start:start + pat_len] == pattern:
+                results.append(list(range(start, start + pat_len)))
+
+        return results
+
+    def _abstract_variables(
+        self, pattern_steps: list[dict], all_instances: list[list[dict]]
+    ) -> list[dict]:
+        """Detect variable slots where values differ across instances.
+
+        Variable Abstraction Rules:
+        - Named entities (customer names, IDs) -> parameterize
+        - Numeric ranges -> detect min/max
+        - Enum values -> build choice set
+        - Timestamps -> normalize to ${today}, ${date}
+        - File paths -> extract stem/extension
+        """
+        if len(all_instances) < 2:
+            return []
+
+        variables: list[dict] = []
+        seen_var_names: set[str] = set()
+
+        for step_idx in range(len(pattern_steps)):
+            # Collect all values at this position across instances
+            step_values: list[dict] = []
+            for instance in all_instances:
+                if step_idx < len(instance):
+                    step_values.append(instance[step_idx])
+
+            if len(step_values) < 2:
+                continue
+
+            # Check target field for variability
+            targets = [s.get("target", "") for s in step_values]
+            if len(set(targets)) > 1:
+                var = self._classify_variable(
+                    f"step_{step_idx + 1}_target",
+                    targets,
+                    seen_var_names,
+                )
+                if var:
+                    variables.append(var)
+                    seen_var_names.add(var["name"])
+
+            # Check parameter values for variability
+            all_param_keys: set[str] = set()
+            for sv in step_values:
+                params = sv.get("parameters", {})
+                if isinstance(params, dict):
+                    all_param_keys.update(params.keys())
+
+            for pkey in sorted(all_param_keys):
+                param_values = []
+                for sv in step_values:
+                    params = sv.get("parameters", {})
+                    if isinstance(params, dict) and pkey in params:
+                        param_values.append(params[pkey])
+
+                if len(param_values) >= 2 and len(set(str(v) for v in param_values)) > 1:
+                    var = self._classify_variable(
+                        f"step_{step_idx + 1}_{pkey}",
+                        param_values,
+                        seen_var_names,
+                    )
+                    if var:
+                        variables.append(var)
+                        seen_var_names.add(var["name"])
+
+        return variables
+
+    def _classify_variable(
+        self, base_name: str, values: list, seen_names: set[str]
+    ) -> dict | None:
+        """Classify a variable based on its observed values.
+
+        Returns a variable dict or None if the values are too uniform.
+        """
+        str_values = [str(v) for v in values]
+        unique_values = list(set(str_values))
+
+        if len(unique_values) <= 1:
+            return None
+
+        # Ensure unique name
+        name = base_name
+        counter = 1
+        while name in seen_names:
+            name = f"{base_name}_{counter}"
+            counter += 1
+
+        # Classify by type
+        # Check if all values are numeric
+        numeric_values: list[float] = []
+        all_numeric = True
+        for v in str_values:
+            try:
+                numeric_values.append(float(v))
+            except (ValueError, TypeError):
+                all_numeric = False
+                break
+
+        if all_numeric and numeric_values:
+            return {
+                "name": name,
+                "type": "number",
+                "example": str(values[0]),
+                "min": min(numeric_values),
+                "max": max(numeric_values),
+            }
+
+        # Check for timestamp-like values
+        if self._looks_like_timestamp(str_values):
+            return {
+                "name": name,
+                "type": "date",
+                "example": str(values[0]),
+            }
+
+        # Check for file paths
+        if self._looks_like_filepath(str_values):
+            return {
+                "name": name,
+                "type": "filepath",
+                "example": str(values[0]),
+            }
+
+        # If few unique values, treat as enum
+        if len(unique_values) <= 10:
+            return {
+                "name": name,
+                "type": "enum",
+                "example": str(values[0]),
+                "choices": sorted(unique_values),
+            }
+
+        # Default to string
+        return {
+            "name": name,
+            "type": "string",
+            "example": str(values[0]),
+        }
+
+    def _looks_like_timestamp(self, values: list[str]) -> bool:
+        """Heuristic check if values look like timestamps or dates."""
+        date_patterns = [
+            r"\d{4}-\d{2}-\d{2}",  # ISO date
+            r"\d{2}/\d{2}/\d{4}",  # US date
+            r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}",  # ISO datetime
+        ]
+        matches = 0
+        for v in values:
+            for pat in date_patterns:
+                if re.search(pat, v):
+                    matches += 1
+                    break
+        return matches >= len(values) * 0.8
+
+    def _looks_like_filepath(self, values: list[str]) -> bool:
+        """Heuristic check if values look like file paths."""
+        matches = 0
+        for v in values:
+            if "/" in v or "\\" in v:
+                # Check for common file path patterns
+                if re.search(r"[/\\]\w+\.\w+$", v) or v.startswith(("/", "~", "C:\\")):
+                    matches += 1
+        return matches >= len(values) * 0.8
+
+    def _extract_apps(
+        self,
+        episodes: list[list[dict]],
+        pattern_codes: list[int],
+        code_to_signature: dict[int, str],
+    ) -> list[str]:
+        """Extract all application names involved in the pattern's episodes."""
+        apps: set[str] = set()
+        pattern_sigs = [code_to_signature[c] for c in pattern_codes]
+
+        for episode in episodes:
+            ep_sigs = [self._step_signature(s) for s in episode]
+            # Check if this episode contains the pattern
+            matches = self._find_subsequence(ep_sigs, pattern_sigs)
+            if matches:
+                for step in episode:
+                    # Look for app info in parameters or pre_state
+                    params = step.get("parameters", {})
+                    if isinstance(params, dict):
+                        app = params.get("app_id") or params.get("app")
+                        if app:
+                            apps.add(app)
+
+                    # Also check the step target for well-known app names
+                    target = step.get("target", "")
+                    pre_state = step.get("pre_state", {})
+                    if isinstance(pre_state, dict):
+                        app = pre_state.get("app_id") or pre_state.get("app")
+                        if app:
+                            apps.add(app)
+
+        return sorted(apps)
+
+    def _compute_avg_confidence(self, instances: list[list[dict]]) -> float:
+        """Compute average confidence across all steps in all instances."""
+        total = 0.0
+        count = 0
+        for instance in instances:
+            for step in instance:
+                conf = step.get("confidence", 0.0)
+                if isinstance(conf, (int, float)):
+                    total += conf
+                    count += 1
+        return total / count if count > 0 else 0.0
+
+    def _generate_slug(self, steps: list[dict]) -> str:
+        """Generate a URL-safe slug from the pattern's first few steps.
+
+        Takes the first 3 steps' intents and targets, combines them into
+        a readable slug like "click_submit_type_email_click_send".
+        """
+        parts: list[str] = []
+        for step in steps[:3]:
+            intent = step.get("step", "action")
+            target = step.get("target", "")
+            # Extract first meaningful word from target
+            target_words = re.findall(r"[a-zA-Z]+", target)
+            target_word = target_words[0].lower() if target_words else ""
+
+            if target_word:
+                parts.append(f"{intent}_{target_word}")
+            else:
+                parts.append(intent)
+
+        raw = "_".join(parts)
+
+        # Normalize: remove non-ASCII, replace spaces/special chars with underscore
+        slug = unicodedata.normalize("NFKD", raw)
+        slug = re.sub(r"[^\w\s-]", "", slug).strip().lower()
+        slug = re.sub(r"[\s_]+", "_", slug)
+        slug = slug[:80]  # Cap length
+
+        return slug
+
+    def _generate_title(self, steps: list[dict], apps: list[str]) -> str:
+        """Generate a human-readable title for the SOP.
+
+        Format: "Verb Object in App" based on the pattern's dominant actions.
+        """
+        if not steps:
+            return "Untitled SOP"
+
+        # Count intents
+        intent_counts = Counter(s.get("step", "action") for s in steps)
+        dominant_intent = intent_counts.most_common(1)[0][0]
+
+        # Get a meaningful target from the first step with a target
+        target = ""
+        for step in steps:
+            t = step.get("target", "")
+            if t:
+                target = t
+                break
+
+        # Build title
+        # Capitalize intent
+        verb = dominant_intent.capitalize()
+
+        # Shorten target if too long
+        if len(target) > 40:
+            target = target[:37] + "..."
+
+        if target and apps:
+            title = f"{verb} {target} in {', '.join(apps[:2])}"
+        elif target:
+            title = f"{verb} {target}"
+        elif apps:
+            title = f"{verb} workflow in {', '.join(apps[:2])}"
+        else:
+            title = f"{verb} workflow"
+
+        return title
