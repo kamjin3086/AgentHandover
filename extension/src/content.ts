@@ -14,6 +14,11 @@
  *        - Secure field detection (secure-field)
  */
 
+import { captureViewportDOM } from './dom-capture';
+import { initClickCapture } from './click-capture';
+import { initSecureFieldDetection } from './secure-field';
+import { initDwellTracker, type DwellConfig } from './dwell-tracker';
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -85,6 +90,32 @@ export function sendToBackground(
 }
 
 // ---------------------------------------------------------------------------
+// Secure field state — shared across modules
+// ---------------------------------------------------------------------------
+
+/**
+ * Global flag: true when a password / secure input field is focused.
+ * While true, other capture modules must suppress data collection.
+ */
+let secureFieldActive = false;
+
+export function isSecureFieldActive(): boolean {
+  return secureFieldActive;
+}
+
+/**
+ * Guarded send function: wraps sendToBackground but drops messages
+ * while a secure field is active. Used by click-capture and dwell modules.
+ */
+function guardedSend(type: string, payload: Record<string, unknown>): void {
+  if (secureFieldActive) {
+    console.log('[OpenMimic:content] Suppressed', type, '— secure field active');
+    return;
+  }
+  sendToBackground(type, payload);
+}
+
+// ---------------------------------------------------------------------------
 // Background command listener
 // ---------------------------------------------------------------------------
 
@@ -97,11 +128,18 @@ chrome.runtime.onMessage.addListener(
     console.log('[OpenMimic:content] Received command:', message.type);
 
     switch (message.type) {
-      case 'request_snapshot':
-        // Future: the dom-capture module will handle this.
-        console.log('[OpenMimic:content] Snapshot requested (handler not yet registered)');
-        sendResponse({ ok: true, note: 'snapshot_not_implemented' });
+      case 'request_snapshot': {
+        console.log('[OpenMimic:content] Snapshot requested — capturing viewport DOM');
+        const nodes = captureViewportDOM();
+        console.log('[OpenMimic:content] Captured', nodes.length, 'top-level nodes');
+        sendToBackground('dom_snapshot', {
+          nodes,
+          url: window.location.href,
+          captureReason: 'request',
+        });
+        sendResponse({ ok: true, nodeCount: nodes.length });
         break;
+      }
 
       default:
         console.log('[OpenMimic:content] Unknown command:', message.type);
@@ -150,3 +188,96 @@ sendToBackground('content_ready', {
   title: document.title,
   timestamp: new Date().toISOString(),
 });
+
+// ---------------------------------------------------------------------------
+// Register built-in modules
+// ---------------------------------------------------------------------------
+
+// --- Secure Field Detection (must be registered first so the guard is active
+//     before other modules start capturing) ---
+{
+  let cleanupSecure: (() => void) | null = null;
+
+  registerModule({
+    name: 'secure-field',
+    init() {
+      cleanupSecure = initSecureFieldDetection(
+        sendToBackground, // secure field status always goes through unguarded
+        (isSecure: boolean) => {
+          secureFieldActive = isSecure;
+          console.log(
+            '[OpenMimic:content] Secure field state:',
+            isSecure ? 'ACTIVE' : 'inactive',
+          );
+        },
+      );
+    },
+    destroy() {
+      cleanupSecure?.();
+      cleanupSecure = null;
+    },
+  });
+}
+
+// --- Click Intent Capture ---
+{
+  let cleanupClick: (() => void) | null = null;
+
+  registerModule({
+    name: 'click-capture',
+    init() {
+      cleanupClick = initClickCapture(guardedSend);
+    },
+    destroy() {
+      cleanupClick?.();
+      cleanupClick = null;
+    },
+  });
+}
+
+// --- Dwell + Scroll Snapshot Triggers ---
+{
+  let cleanupDwell: (() => void) | null = null;
+
+  const dwellConfig: DwellConfig = {
+    dwellThresholdMs: 3000,
+    scrollReadThresholdMs: 8000,
+  };
+
+  registerModule({
+    name: 'dwell-tracker',
+    init() {
+      cleanupDwell = initDwellTracker(
+        dwellConfig,
+        () => {
+          if (secureFieldActive) {
+            console.log('[OpenMimic:content] Suppressed dwell_snapshot — secure field active');
+            return;
+          }
+          console.log('[OpenMimic:content] Dwell snapshot triggered');
+          sendToBackground('dwell_snapshot', {
+            url: window.location.href,
+            title: document.title,
+            timestamp: new Date().toISOString(),
+          });
+        },
+        () => {
+          if (secureFieldActive) {
+            console.log('[OpenMimic:content] Suppressed scroll_snapshot — secure field active');
+            return;
+          }
+          console.log('[OpenMimic:content] Scroll-read snapshot triggered');
+          sendToBackground('scroll_snapshot', {
+            url: window.location.href,
+            title: document.title,
+            timestamp: new Date().toISOString(),
+          });
+        },
+      );
+    },
+    destroy() {
+      cleanupDwell?.();
+      cleanupDwell = null;
+    },
+  });
+}
