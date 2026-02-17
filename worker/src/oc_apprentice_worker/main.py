@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from oc_apprentice_worker.clipboard_linker import ClipboardLinker
-from oc_apprentice_worker.confidence import ConfidenceScorer
+from oc_apprentice_worker.confidence import ConfidenceScorer, is_native_app_context
 from oc_apprentice_worker.db import WorkerDB
 from oc_apprentice_worker.deep_scan import DeepScanner
 from oc_apprentice_worker.episode_builder import EpisodeBuilder
@@ -189,17 +189,22 @@ def run_pipeline(
 
             # Auto-enqueue VLM job for rejected translations
             if conf.decision == "reject" and conf.total < VLM_REJECT_THRESHOLD:
+                priority = vlm_queue.compute_priority(
+                    conf.total,
+                    tr.intent,
+                    datetime.now(timezone.utc),
+                )
+                # Boost priority for native app events (less context available)
+                if conf.native_app:
+                    priority = min(priority + ConfidenceScorer.NATIVE_APP_VLM_BOOST, 1.0)
+
                 job = VLMJob(
                     job_id=str(uuid.uuid4()),
                     event_id=tr.raw_event_id,
                     episode_id="",
                     semantic_step_index=idx,
                     confidence_score=conf.total,
-                    priority_score=vlm_queue.compute_priority(
-                        conf.total,
-                        tr.intent,
-                        datetime.now(timezone.utc),
-                    ),
+                    priority_score=priority,
                 )
                 if vlm_queue.enqueue(job):
                     summary["vlm_enqueued"] += 1
@@ -313,6 +318,32 @@ def main(argv: list[str] | None = None) -> None:
             "prefixspan not installed — SOP induction disabled. "
             "Install with: pip install prefixspan"
         )
+
+    # Check VLM availability and hint if not installed
+    from oc_apprentice_worker.setup_vlm import check_vlm_available
+    vlm_status = check_vlm_available()
+    vlm_worker = None
+    if vlm_status["mlx_vlm"] or vlm_status["llama_cpp"]:
+        logger.info("VLM backend available — enhanced native app observation enabled")
+        # Create VLM worker for variable classification
+        try:
+            from oc_apprentice_worker.vlm_worker import VLMWorker, VLMConfig, VLMBackend
+            backend_type = (
+                VLMBackend.MLX_VLM if vlm_status["mlx_vlm"] else VLMBackend.LLAMA_CPP
+            )
+            vlm_worker = VLMWorker(config=VLMConfig(backend=backend_type))
+            logger.info("VLM worker initialized for variable classification")
+        except Exception:
+            logger.warning("Failed to initialize VLM worker", exc_info=True)
+    else:
+        logger.info(
+            "VLM not installed. For better native app observation, run: oc-setup-vlm"
+        )
+
+    # Wire VLM worker into SOPInducer if available
+    if sop_inducer is not None and vlm_worker is not None:
+        sop_inducer._vlm_worker = vlm_worker
+        logger.info("VLM-assisted variable classification enabled for SOP induction")
 
     # Initialize scheduler gate (GAP 5) and deep scanner (GAP 6)
     idle_gate = IdleJobGate(SchedulerConfig())

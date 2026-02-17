@@ -32,11 +32,26 @@ class SOPInducer:
         Minimum fraction of episodes a pattern must appear in (0.0-1.0).
     min_pattern_length:
         Minimum number of steps in a pattern to be considered.
+    vlm_worker:
+        Optional VLMWorker instance for VLM-assisted variable classification.
+        When provided and available, VLM is used to classify variables with
+        higher accuracy than heuristics alone.
+    vlm_confidence_threshold:
+        Minimum VLM confidence to trust its classification (0.0-1.0).
+        Below this threshold, falls back to heuristic classification.
     """
 
-    def __init__(self, min_support: float = 0.3, min_pattern_length: int = 3):
+    def __init__(
+        self,
+        min_support: float = 0.3,
+        min_pattern_length: int = 3,
+        vlm_worker: object | None = None,
+        vlm_confidence_threshold: float = 0.7,
+    ):
         self.min_support = min_support
         self.min_pattern_length = min_pattern_length
+        self._vlm_worker = vlm_worker
+        self._vlm_confidence_threshold = vlm_confidence_threshold
 
     def induce(self, episodes: list[list[dict]]) -> list[dict]:
         """Mine frequent patterns from episodes and produce SOP templates.
@@ -324,7 +339,12 @@ class SOPInducer:
     ) -> dict | None:
         """Classify a variable based on its observed values.
 
-        Returns a variable dict or None if the values are too uniform.
+        If a VLM worker is available and has budget, attempts VLM-assisted
+        classification first. Falls back to heuristics if VLM is unavailable,
+        returns low confidence, or classifies as "constant" (skip variable).
+
+        Returns a variable dict or None if the values are too uniform or
+        classified as constant by VLM.
         """
         str_values = [str(v) for v in values]
         unique_values = list(set(str_values))
@@ -339,7 +359,77 @@ class SOPInducer:
             name = f"{base_name}_{counter}"
             counter += 1
 
-        # Classify by type
+        # Attempt VLM-assisted classification if available
+        if self._vlm_worker is not None:
+            try:
+                vlm_result = self._vlm_worker.classify_variable(
+                    step_context=base_name,
+                    param_name=name,
+                    values=str_values[:20],
+                )
+                if vlm_result is not None:
+                    confidence = vlm_result.get("confidence", 0.0)
+                    if confidence >= self._vlm_confidence_threshold:
+                        classification = vlm_result.get("classification", "variable")
+                        if classification == "constant":
+                            logger.debug(
+                                "VLM classified %s as constant (confidence=%.2f) — skipping",
+                                name,
+                                confidence,
+                            )
+                            return None
+
+                        # VLM says it's a variable — use its type classification
+                        var_type = vlm_result.get("var_type", "string")
+                        result: dict = {
+                            "name": name,
+                            "type": var_type,
+                            "example": str(values[0]),
+                            "vlm_classified": True,
+                        }
+                        # Add type-specific fields
+                        if var_type == "number":
+                            numeric_values = []
+                            for v in str_values:
+                                try:
+                                    numeric_values.append(float(v))
+                                except (ValueError, TypeError):
+                                    pass
+                            if numeric_values:
+                                result["min"] = min(numeric_values)
+                                result["max"] = max(numeric_values)
+                        elif var_type == "enum" and len(unique_values) <= 10:
+                            result["choices"] = sorted(unique_values)
+
+                        logger.debug(
+                            "VLM classified %s as %s/%s (confidence=%.2f)",
+                            name,
+                            classification,
+                            var_type,
+                            confidence,
+                        )
+                        return result
+                    else:
+                        logger.debug(
+                            "VLM confidence too low for %s (%.2f < %.2f), falling back to heuristics",
+                            name,
+                            confidence,
+                            self._vlm_confidence_threshold,
+                        )
+            except Exception:
+                logger.debug("VLM classification failed for %s, falling back to heuristics", name)
+
+        # Heuristic classification fallback
+        return self._classify_variable_heuristic(name, str_values, unique_values, values)
+
+    def _classify_variable_heuristic(
+        self,
+        name: str,
+        str_values: list[str],
+        unique_values: list[str],
+        raw_values: list,
+    ) -> dict | None:
+        """Heuristic-only variable classification (original logic)."""
         # Check if all values are numeric
         numeric_values: list[float] = []
         all_numeric = True
@@ -354,7 +444,7 @@ class SOPInducer:
             return {
                 "name": name,
                 "type": "number",
-                "example": str(values[0]),
+                "example": str(raw_values[0]),
                 "min": min(numeric_values),
                 "max": max(numeric_values),
             }
@@ -364,7 +454,7 @@ class SOPInducer:
             return {
                 "name": name,
                 "type": "date",
-                "example": str(values[0]),
+                "example": str(raw_values[0]),
             }
 
         # Check for file paths
@@ -372,7 +462,7 @@ class SOPInducer:
             return {
                 "name": name,
                 "type": "filepath",
-                "example": str(values[0]),
+                "example": str(raw_values[0]),
             }
 
         # If few unique values, treat as enum
@@ -380,7 +470,7 @@ class SOPInducer:
             return {
                 "name": name,
                 "type": "enum",
-                "example": str(values[0]),
+                "example": str(raw_values[0]),
                 "choices": sorted(unique_values),
             }
 
@@ -388,7 +478,7 @@ class SOPInducer:
         return {
             "name": name,
             "type": "string",
-            "example": str(values[0]),
+            "example": str(raw_values[0]),
         }
 
     def _looks_like_timestamp(self, values: list[str]) -> bool:

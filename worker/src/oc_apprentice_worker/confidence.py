@@ -39,6 +39,30 @@ class ConfidenceScore:
     evidence: dict = field(default_factory=dict)
     # Evidence dict contains: dom_anchor, ax_path, vision_bbox,
     # screenshot_id, url, window_title
+    native_app: bool = False  # True when event comes from a native (non-web) app
+
+
+def is_native_app_context(translation: TranslationResult, context: dict) -> bool:
+    """Detect if this translation comes from a native (non-web) app context.
+
+    Returns True when there is no URL AND no DOM-based UI anchor
+    (aria_label, test_id, inner_text). Native app events lack the rich
+    selectors that browser DOM provides, making VLM-based identification
+    more valuable.
+    """
+    # If there's a URL, this is a web context
+    if translation.pre_state.get("url"):
+        return False
+    if context.get("expected_url"):
+        return False
+
+    # If the UI anchor is DOM-based, this is a web context
+    if translation.target is not None:
+        dom_methods = {"aria_label", "test_id", "inner_text"}
+        if translation.target.method in dom_methods:
+            return False
+
+    return True
 
 
 class ConfidenceScorer:
@@ -51,6 +75,7 @@ class ConfidenceScorer:
 
     ACCEPT_THRESHOLD: float = 0.85
     FLAG_THRESHOLD: float = 0.60
+    NATIVE_APP_VLM_BOOST: float = 0.15
 
     def score(
         self,
@@ -101,6 +126,11 @@ class ConfidenceScorer:
         if provenance >= 0.15:
             reasons.append("provenance_confirmed")
 
+        # Detect native app context
+        native_app = is_native_app_context(translation, context)
+        if native_app:
+            reasons.append("native_app_context")
+
         decision = self._decide(total)
 
         # Build evidence dict from translation and context
@@ -114,6 +144,7 @@ class ConfidenceScorer:
             reasons=reasons,
             decision=decision,
             evidence=evidence,
+            native_app=native_app,
         )
 
     # ------------------------------------------------------------------

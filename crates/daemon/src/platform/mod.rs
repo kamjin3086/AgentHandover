@@ -8,6 +8,10 @@ pub mod macos_clipboard;
 pub mod macos_windows;
 #[cfg(target_os = "macos")]
 pub mod macos_power;
+#[cfg(target_os = "macos")]
+pub mod macos_ocr;
+#[cfg(target_os = "macos")]
+pub mod applescript_bridge;
 pub mod electron_detect;
 
 #[cfg(target_os = "macos")]
@@ -31,4 +35,14 @@ pub mod window_capture {
 #[cfg(target_os = "macos")]
 pub mod power {
     pub use super::macos_power::*;
+}
+
+#[cfg(target_os = "macos")]
+pub mod ocr {
+    pub use super::macos_ocr::*;
+}
+
+#[cfg(target_os = "macos")]
+pub mod applescript {
+    pub use super::applescript_bridge::*;
 }

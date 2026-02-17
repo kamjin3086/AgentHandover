@@ -3,9 +3,10 @@ use chrono::Utc;
 use oc_apprentice_common::event::*;
 use oc_apprentice_common::redaction::Redactor;
 use oc_apprentice_storage::artifact_store::ArtifactStore;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 use tokio::time;
 use tracing::{info, debug, warn, error};
@@ -61,6 +62,12 @@ pub async fn run_observer_loop(
     let mut last_app_id: Option<String> = None;
     let mut screenshot_count_this_minute: u32 = 0;
     let mut last_minute_reset = Utc::now();
+
+    // AppleScript throttle: at most once per 2 seconds per app
+    #[cfg(target_os = "macos")]
+    let mut applescript_last_query: HashMap<String, Instant> = HashMap::new();
+    #[cfg(target_os = "macos")]
+    let applescript_throttle = Duration::from_secs(2);
 
     let mut interval = time::interval(config.poll_interval);
 
@@ -123,6 +130,39 @@ pub async fn run_observer_loop(
                             &display_topology,
                             &primary_display_id,
                         );
+
+                        // Query AppleScript state for known native apps
+                        #[cfg(target_os = "macos")]
+                        {
+                            let should_query = if let Some(last) = applescript_last_query.get(to.as_str()) {
+                                last.elapsed() >= applescript_throttle
+                            } else {
+                                true
+                            };
+
+                            if should_query {
+                                // Try by bundle ID first, then by app name
+                                let app_state = if crate::platform::applescript::is_supported_bundle_id(to) {
+                                    crate::platform::applescript::query_app_state_by_bundle_id(to)
+                                } else {
+                                    // Extract app name from bundle ID (last component)
+                                    let short_name = to.rsplit('.').next().unwrap_or(to);
+                                    if crate::platform::applescript::is_supported_app(short_name) {
+                                        crate::platform::applescript::query_app_state(short_name)
+                                    } else {
+                                        None
+                                    }
+                                };
+
+                                if let Some(state) = app_state {
+                                    if let Ok(state_json) = serde_json::to_value(&state) {
+                                        event.metadata["app_state"] = state_json;
+                                    }
+                                }
+                                applescript_last_query.insert(to.clone(), Instant::now());
+                            }
+                        }
+
                         redact_event(&mut event, &redactor);
                         let _ = tx.send(ObserverMessage::Event(event)).await;
                         dwell.on_manipulation_input();
@@ -161,8 +201,19 @@ pub async fn run_observer_loop(
                         && screenshot_count_this_minute < config.screenshot_max_per_minute
                     {
                         if let Some(ref store) = artifact_store {
-                            event.artifact_ids = capture_and_store_screenshot(store);
-                            screenshot_count_this_minute += event.artifact_ids.len() as u32;
+                            let result = capture_and_store_screenshot(store);
+                            screenshot_count_this_minute += result.artifact_ids.len() as u32;
+                            event.artifact_ids = result.artifact_ids;
+
+                            // Run OCR on captured screenshot pixels
+                            #[cfg(target_os = "macos")]
+                            if let Some((w, h, pixels)) = result.raw_pixels {
+                                if let Some(ocr_result) = crate::platform::ocr::recognize_text(&pixels, w, h) {
+                                    if let Ok(ocr_json) = serde_json::to_value(&ocr_result) {
+                                        event.metadata["ocr"] = ocr_json;
+                                    }
+                                }
+                            }
                         }
                     }
 
@@ -183,8 +234,19 @@ pub async fn run_observer_loop(
                         && screenshot_count_this_minute < config.screenshot_max_per_minute
                     {
                         if let Some(ref store) = artifact_store {
-                            event.artifact_ids = capture_and_store_screenshot(store);
-                            screenshot_count_this_minute += event.artifact_ids.len() as u32;
+                            let result = capture_and_store_screenshot(store);
+                            screenshot_count_this_minute += result.artifact_ids.len() as u32;
+                            event.artifact_ids = result.artifact_ids;
+
+                            // Run OCR on captured screenshot pixels
+                            #[cfg(target_os = "macos")]
+                            if let Some((w, h, pixels)) = result.raw_pixels {
+                                if let Some(ocr_result) = crate::platform::ocr::recognize_text(&pixels, w, h) {
+                                    if let Ok(ocr_json) = serde_json::to_value(&ocr_result) {
+                                        event.metadata["ocr"] = ocr_json;
+                                    }
+                                }
+                            }
                         }
                     }
 
@@ -236,24 +298,36 @@ pub async fn run_storage_writer(
     Ok(())
 }
 
-/// Capture a screenshot and store it as an artifact.
-/// Returns a vec with the artifact store's content-hash ID on success, or empty vec on failure.
-/// The returned ID can be used with `ArtifactStore::retrieve()` to read back the artifact.
+/// Result of screenshot capture: artifact IDs and optional raw pixel data for OCR.
+struct ScreenshotResult {
+    artifact_ids: Vec<String>,
+    /// Raw BGRA pixels + dimensions, available for OCR processing.
+    raw_pixels: Option<(usize, usize, Vec<u8>)>,
+}
+
+/// Capture a screenshot, store it as an artifact, and return raw pixels for OCR.
+/// The returned artifact ID can be used with `ArtifactStore::retrieve()` to read back the artifact.
 #[cfg(target_os = "macos")]
-fn capture_and_store_screenshot(store: &ArtifactStore) -> Vec<String> {
+fn capture_and_store_screenshot(store: &ArtifactStore) -> ScreenshotResult {
     const MAX_RETRIES: u32 = 2;
 
     for attempt in 0..=MAX_RETRIES {
         match crate::capture::screenshot::capture_main_display() {
-            Some((_width, _height, raw_pixels)) => {
+            Some((width, height, raw_pixels)) => {
                 match store.store(&raw_pixels, "screenshot") {
                     Ok(artifact_id) => {
                         debug!(artifact_id = %artifact_id, "Screenshot captured and stored");
-                        return vec![artifact_id];
+                        return ScreenshotResult {
+                            artifact_ids: vec![artifact_id],
+                            raw_pixels: Some((width, height, raw_pixels)),
+                        };
                     }
                     Err(e) => {
                         warn!(error = %e, "Failed to store screenshot artifact");
-                        return vec![];
+                        return ScreenshotResult {
+                            artifact_ids: vec![],
+                            raw_pixels: None,
+                        };
                     }
                 }
             }
@@ -267,12 +341,18 @@ fn capture_and_store_screenshot(store: &ArtifactStore) -> Vec<String> {
             }
         }
     }
-    vec![]
+    ScreenshotResult {
+        artifact_ids: vec![],
+        raw_pixels: None,
+    }
 }
 
 #[cfg(not(target_os = "macos"))]
-fn capture_and_store_screenshot(_store: &ArtifactStore) -> Vec<String> {
-    vec![]
+fn capture_and_store_screenshot(_store: &ArtifactStore) -> ScreenshotResult {
+    ScreenshotResult {
+        artifact_ids: vec![],
+        raw_pixels: None,
+    }
 }
 
 fn make_event(
