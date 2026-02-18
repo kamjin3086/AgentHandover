@@ -793,6 +793,7 @@ version = "0.1.0"
 dependencies = [
  "accessibility-sys",
  "anyhow",
+ "cc",
  "chrono",
  "core-foundation",
  "core-graphics",

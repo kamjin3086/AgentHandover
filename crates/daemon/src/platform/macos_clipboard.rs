@@ -7,17 +7,27 @@
 use crate::capture::clipboard::{hash_content, is_high_entropy};
 use chrono::{DateTime, Utc};
 use std::collections::VecDeque;
-use std::ffi::{c_long, c_void};
+use std::ffi::CStr;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
 
-// Objective-C runtime FFI bindings (libobjc.dylib ships with macOS).
-#[link(name = "objc", kind = "dylib")]
+// ── C FFI types matching objc_try_catch.m pasteboard helpers ──────────
+
+#[repr(C)]
+struct PasteboardInfo {
+    change_count: i64,
+    types: *mut *mut i8, // NULL-terminated array of C strings
+    type_count: i32,
+    data: *mut u8,
+    data_len: usize,
+    success: i32,
+}
+
 extern "C" {
-    fn objc_getClass(name: *const u8) -> *mut c_void;
-    fn sel_registerName(name: *const u8) -> *mut c_void;
-    fn objc_msgSend(obj: *mut c_void, sel: *mut c_void, ...) -> *mut c_void;
+    fn pasteboard_change_count_safe() -> i64;
+    fn pasteboard_get_info_safe() -> PasteboardInfo;
+    fn free_pasteboard_info(info: *mut PasteboardInfo);
 }
 
 /// Represents a clipboard change detected by the monitor.
@@ -80,110 +90,45 @@ impl Default for ClipboardHashTracker {
 }
 
 /// Get the current NSPasteboard.generalPasteboard changeCount.
-/// Returns None if the Objective-C call fails.
-fn get_pasteboard_change_count() -> Option<i64> {
-    unsafe {
-        let class = objc_getClass(b"NSPasteboard\0".as_ptr());
-        if class.is_null() {
-            return None;
-        }
-        let sel_general = sel_registerName(b"generalPasteboard\0".as_ptr());
-        let pasteboard = objc_msgSend(class, sel_general);
-        if pasteboard.is_null() {
-            return None;
-        }
-        let sel_count = sel_registerName(b"changeCount\0".as_ptr());
-        let count = objc_msgSend(pasteboard, sel_count) as c_long;
-        Some(count as i64)
-    }
+/// Returns None if the Objective-C call fails or an exception was caught.
+pub fn get_pasteboard_change_count() -> Option<i64> {
+    let count = unsafe { pasteboard_change_count_safe() };
+    if count < 0 { None } else { Some(count) }
 }
 
 /// Get the content types (UTIs) currently on the pasteboard.
 fn get_pasteboard_types() -> Vec<String> {
-    unsafe {
-        let class = objc_getClass(b"NSPasteboard\0".as_ptr());
-        if class.is_null() {
-            return vec![];
-        }
-        let sel_general = sel_registerName(b"generalPasteboard\0".as_ptr());
-        let pasteboard = objc_msgSend(class, sel_general);
-        if pasteboard.is_null() {
-            return vec![];
-        }
-        let sel_types = sel_registerName(b"types\0".as_ptr());
-        let types_array = objc_msgSend(pasteboard, sel_types);
-        if types_array.is_null() {
-            return vec![];
-        }
+    let mut info = unsafe { pasteboard_get_info_safe() };
+    if info.success == 0 || info.types.is_null() {
+        unsafe { free_pasteboard_info(&mut info) };
+        return vec![];
+    }
 
-        let sel_count = sel_registerName(b"count\0".as_ptr());
-        let count = objc_msgSend(types_array, sel_count) as usize;
-
-        let sel_object_at = sel_registerName(b"objectAtIndex:\0".as_ptr());
-        let sel_utf8 = sel_registerName(b"UTF8String\0".as_ptr());
-
-        let mut result = Vec::with_capacity(count);
-        for i in 0..count {
-            let obj = objc_msgSend(types_array, sel_object_at, i as c_long);
-            if !obj.is_null() {
-                let cstr = objc_msgSend(obj, sel_utf8) as *const u8;
-                if !cstr.is_null() {
-                    let s = std::ffi::CStr::from_ptr(cstr as *const _);
-                    if let Ok(rust_str) = s.to_str() {
-                        result.push(rust_str.to_string());
-                    }
-                }
+    let mut result = Vec::with_capacity(info.type_count as usize);
+    for i in 0..info.type_count {
+        let cstr_ptr = unsafe { *info.types.add(i as usize) };
+        if !cstr_ptr.is_null() {
+            if let Ok(s) = unsafe { CStr::from_ptr(cstr_ptr) }.to_str() {
+                result.push(s.to_string());
             }
         }
-        result
     }
+
+    unsafe { free_pasteboard_info(&mut info) };
+    result
 }
 
-/// Get the raw data for a specific pasteboard type.
-fn get_pasteboard_data_for_type(type_name: &str) -> Option<Vec<u8>> {
-    unsafe {
-        let class = objc_getClass(b"NSPasteboard\0".as_ptr());
-        if class.is_null() {
-            return None;
-        }
-        let sel_general = sel_registerName(b"generalPasteboard\0".as_ptr());
-        let pasteboard = objc_msgSend(class, sel_general);
-        if pasteboard.is_null() {
-            return None;
-        }
-
-        // Create NSString for the type name.
-        let ns_string_class = objc_getClass(b"NSString\0".as_ptr());
-        if ns_string_class.is_null() {
-            return None;
-        }
-        let type_cstr = std::ffi::CString::new(type_name).ok()?;
-        let sel_string_with = sel_registerName(b"stringWithUTF8String:\0".as_ptr());
-        let ns_type = objc_msgSend(ns_string_class, sel_string_with, type_cstr.as_ptr());
-        if ns_type.is_null() {
-            return None;
-        }
-
-        // Get NSData for this type.
-        let sel_data_for = sel_registerName(b"dataForType:\0".as_ptr());
-        let ns_data = objc_msgSend(pasteboard, sel_data_for, ns_type);
-        if ns_data.is_null() {
-            return None;
-        }
-
-        // Get bytes and length from NSData.
-        let sel_bytes = sel_registerName(b"bytes\0".as_ptr());
-        let sel_length = sel_registerName(b"length\0".as_ptr());
-        let bytes_ptr = objc_msgSend(ns_data, sel_bytes) as *const u8;
-        let length = objc_msgSend(ns_data, sel_length) as usize;
-
-        if bytes_ptr.is_null() || length == 0 {
-            return Some(vec![]);
-        }
-
-        let slice = std::slice::from_raw_parts(bytes_ptr, length);
-        Some(slice.to_vec())
+/// Get the raw data for the first available pasteboard type.
+fn get_pasteboard_data_for_type(_type_name: &str) -> Option<Vec<u8>> {
+    let mut info = unsafe { pasteboard_get_info_safe() };
+    if info.success == 0 || info.data.is_null() || info.data_len == 0 {
+        unsafe { free_pasteboard_info(&mut info) };
+        return None;
     }
+
+    let data = unsafe { std::slice::from_raw_parts(info.data, info.data_len) }.to_vec();
+    unsafe { free_pasteboard_info(&mut info) };
+    Some(data)
 }
 
 /// Capture current clipboard metadata without storing the actual content.
