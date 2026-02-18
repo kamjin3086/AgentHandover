@@ -11,3 +11,5 @@ extension/dist/
 __pycache__/
 *.pyc
 .venv/
+/.docdex/
+/.docdex-state/

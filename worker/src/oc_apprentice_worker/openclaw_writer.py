@@ -14,6 +14,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
+from oc_apprentice_worker.export_adapter import SOPExportAdapter
 from oc_apprentice_worker.exporter import AtomicWriter, IndexGenerator, SOPExporter
 from oc_apprentice_worker.sop_format import SOPFormatter
 from oc_apprentice_worker.sop_versioner import SOPVersioner
@@ -24,7 +25,7 @@ SOPS_DIR = APPRENTICE_DIR / "sops"
 METADATA_DIR = APPRENTICE_DIR / "metadata"
 
 
-class OpenClawWriter:
+class OpenClawWriter(SOPExportAdapter):
     """Write SOPs to the OpenClaw workspace.
 
     Learning-only policy: only writes to ``memory/apprentice/`` subtree.
@@ -115,3 +116,43 @@ class OpenClawWriter:
         content = json.dumps(enriched, indent=2, default=str)
         AtomicWriter.write(filepath, content)
         return filepath
+
+    def get_sops_dir(self) -> Path:
+        """Return the SOPs directory path."""
+        return self.sops_dir
+
+    def list_sops(self) -> list[dict]:
+        """List all SOPs in the workspace with summary info.
+
+        Scans the sops directory for .md files matching the SOP naming
+        convention (sop.*.md) and extracts frontmatter metadata.
+        """
+        sops = []
+        if not self.sops_dir.exists():
+            return sops
+
+        for sop_file in sorted(self.sops_dir.glob("sop.*.md")):
+            # Extract slug from filename: sop.<slug>.md
+            name = sop_file.stem  # "sop.<slug>"
+            parts = name.split(".", 1)
+            slug = parts[1] if len(parts) > 1 else name
+
+            # Read file to extract title from first heading
+            title = slug.replace("-", " ").title()
+            try:
+                content = sop_file.read_text(encoding="utf-8")
+                for line in content.splitlines():
+                    if line.startswith("# "):
+                        title = line[2:].strip()
+                        break
+            except OSError:
+                pass
+
+            sops.append({
+                "slug": slug,
+                "title": title,
+                "path": str(sop_file),
+                "size_bytes": sop_file.stat().st_size if sop_file.exists() else 0,
+            })
+
+        return sops

@@ -59,3 +59,8 @@ workspace_path = "~/.openclaw/workspace"
 sop_output_dir = "memory/apprentice/sops"
 index_path = "memory/apprentice/index.md"
 atomic_writes = true
+
+[export]
+adapter = "openclaw"           # "openclaw" or "generic"
+json_export = false            # also write .json alongside .md
+# generic_output_dir = "~/Library/Application Support/oc-apprentice/sops"

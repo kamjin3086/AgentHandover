@@ -1,0 +1,71 @@
+#!/bin/bash
+# OpenMimic post-install script
+
+USER_HOME=$(eval echo ~"$USER")
+DATA_DIR="${USER_HOME}/Library/Application Support/oc-apprentice"
+LAUNCH_AGENTS="${USER_HOME}/Library/LaunchAgents"
+LIB_DIR="/usr/local/lib/openmimic"
+
+# Create data directories
+mkdir -p "${DATA_DIR}/logs"
+mkdir -p "${DATA_DIR}/artifacts"
+
+# Copy launchd plists to LaunchAgents
+mkdir -p "${LAUNCH_AGENTS}"
+cp "${LIB_DIR}/launchd/com.openmimic.daemon.plist" "${LAUNCH_AGENTS}/"
+cp "${LIB_DIR}/launchd/com.openmimic.worker.plist" "${LAUNCH_AGENTS}/"
+
+# Create default config if none exists
+if [ ! -f "${DATA_DIR}/config.toml" ]; then
+    cat > "${DATA_DIR}/config.toml" << 'TOML'
+# OpenMimic Configuration
+# See https://github.com/sandroandric/OpenMimic for documentation
+
+[observer]
+t_dwell_seconds = 3
+t_scroll_read_seconds = 8
+capture_screenshots = true
+screenshot_max_per_minute = 20
+
+[privacy]
+enable_inline_secret_redaction = true
+secure_field_drop = true
+
+[storage]
+retention_days_raw = 14
+retention_days_episodes = 90
+
+[export]
+adapter = "openclaw"
+json_export = false
+TOML
+fi
+
+# Install Chrome native messaging host manifest
+NM_DIR="${USER_HOME}/Library/Application Support/Google/Chrome/NativeMessagingHosts"
+mkdir -p "${NM_DIR}"
+cat > "${NM_DIR}/com.openclaw.apprentice.json" << JSON
+{
+    "name": "com.openclaw.apprentice",
+    "description": "OpenMimic native messaging host",
+    "path": "/usr/local/bin/oc-apprentice-daemon",
+    "type": "stdio",
+    "allowed_origins": [
+        "chrome-extension://knldjmfmopnpolahpmmgbagdohdnhkik/"
+    ]
+}
+JSON
+
+# Set up Python virtual environment for worker
+if [ ! -d "${LIB_DIR}/venv" ]; then
+    python3 -m venv "${LIB_DIR}/venv"
+    "${LIB_DIR}/venv/bin/pip" install --quiet "${LIB_DIR}/worker/"
+fi
+
+# Set proper permissions
+chmod 755 /usr/local/bin/oc-apprentice-daemon
+chmod 755 /usr/local/bin/openmimic
+
+echo "OpenMimic installed successfully."
+echo "Run 'openmimic doctor' to verify the installation."
+exit 0

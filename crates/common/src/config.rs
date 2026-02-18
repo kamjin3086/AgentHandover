@@ -17,6 +17,8 @@ pub struct AppConfig {
     pub vlm: VlmConfig,
     #[serde(default)]
     pub openclaw: OpenClawConfig,
+    #[serde(default)]
+    pub export: ExportConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -78,6 +80,16 @@ pub struct OpenClawConfig {
     pub atomic_writes: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExportConfig {
+    /// Which adapter to use: "openclaw" or "generic"
+    pub adapter: String,
+    /// Enable JSON export alongside Markdown
+    pub json_export: bool,
+    /// Output directory for the generic adapter
+    pub generic_output_dir: String,
+}
+
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
@@ -88,6 +100,7 @@ impl Default for AppConfig {
             idle_jobs: IdleJobsConfig::default(),
             vlm: VlmConfig::default(),
             openclaw: OpenClawConfig::default(),
+            export: ExportConfig::default(),
         }
     }
 }
@@ -168,6 +181,16 @@ impl Default for OpenClawConfig {
             sop_output_dir: "memory/apprentice/sops".into(),
             index_path: "memory/apprentice/index.md".into(),
             atomic_writes: true,
+        }
+    }
+}
+
+impl Default for ExportConfig {
+    fn default() -> Self {
+        Self {
+            adapter: "openclaw".into(),
+            json_export: false,
+            generic_output_dir: "~/Library/Application Support/oc-apprentice/sops".into(),
         }
     }
 }

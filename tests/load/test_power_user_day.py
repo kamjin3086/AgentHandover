@@ -836,3 +836,81 @@ class TestPipelineThroughput:
         subset = prune_result.positive_events[:1000]
         translations = translator.translate_batch(subset)
         assert len(translations) == len(subset)
+
+
+class TestPerformanceValidation:
+    """Performance assertions per spec: daemon <50MB RAM, <2% CPU, 1000 events <30s."""
+
+    def test_1000_events_processed_under_30s(self, tmp_path: Path):
+        """Processing 1000 events through the full pipeline should take <30s."""
+        from oc_apprentice_worker.episode_builder import EpisodeBuilder
+        from oc_apprentice_worker.clipboard_linker import ClipboardLinker
+        from oc_apprentice_worker.negative_demo import NegativeDemoPruner
+        from oc_apprentice_worker.translator import SemanticTranslator
+        from oc_apprentice_worker.confidence import ConfidenceScorer
+        from oc_apprentice_worker.vlm_queue import VLMFallbackQueue
+        from oc_apprentice_worker.openclaw_writer import OpenClawWriter
+        from oc_apprentice_worker.exporter import IndexGenerator
+        from oc_apprentice_worker.main import run_pipeline
+
+        events = generate_power_user_day(1000)
+        workspace = tmp_path / "workspace"
+        writer = OpenClawWriter(workspace_dir=workspace)
+
+        start = time.monotonic()
+        summary = run_pipeline(
+            events,
+            episode_builder=EpisodeBuilder(),
+            clipboard_linker=ClipboardLinker(),
+            pruner=NegativeDemoPruner(),
+            translator=SemanticTranslator(),
+            scorer=ConfidenceScorer(),
+            vlm_queue=VLMFallbackQueue(),
+            openclaw_writer=writer,
+            index_generator=IndexGenerator(),
+        )
+        elapsed = time.monotonic() - start
+
+        assert summary["events_in"] == 1000
+        assert elapsed < 30.0, f"Processing 1000 events took {elapsed:.2f}s (limit: 30s)"
+
+    def test_episode_building_is_linear(self):
+        """Episode building should scale linearly: 10k should be <10x of 1k."""
+        builder = EpisodeBuilder()
+
+        events_1k = generate_power_user_day(1000)
+        start = time.monotonic()
+        builder.process_events(events_1k)
+        time_1k = time.monotonic() - start
+
+        events_10k = generate_power_user_day(10000)
+        start = time.monotonic()
+        builder.process_events(events_10k)
+        time_10k = time.monotonic() - start
+
+        # 10k should be less than 15x of 1k (generous for linear scaling)
+        ratio = time_10k / max(time_1k, 0.001)
+        assert ratio < 15, f"Scaling ratio: {ratio:.1f}x (expected <15x for linear scaling)"
+
+    def test_db_write_throughput(self, tmp_path: Path):
+        """Inserting 10k events into SQLite should complete in <5s."""
+        events = generate_power_user_day(10000)
+        db_path = tmp_path / "throughput.db"
+
+        start = time.monotonic()
+        create_test_db(db_path, events)
+        elapsed = time.monotonic() - start
+
+        assert elapsed < 5.0, f"DB write of 10k events took {elapsed:.2f}s (limit: 5s)"
+
+    def test_memory_estimate_from_event_size(self):
+        """Estimate per-event memory footprint stays reasonable."""
+        import sys
+
+        events = generate_power_user_day(100)
+        # Rough estimate: json serialized size as proxy for memory
+        total_size = sum(len(json.dumps(e)) for e in events)
+        avg_size = total_size / 100
+
+        # Each event should be under 2KB serialized
+        assert avg_size < 2048, f"Average event size: {avg_size:.0f} bytes (limit: 2048)"

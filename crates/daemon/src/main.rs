@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use tokio::sync::{mpsc, watch};
 use tracing::{info, warn, error};
 use tracing_subscriber::EnvFilter;
+use tracing_appender::rolling;
 use sha2::{Digest, Sha256};
 
 use oc_apprentice_daemon::ipc::native_messaging;
@@ -14,14 +15,36 @@ use oc_apprentice_daemon::observer::health::HealthWatcher;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    let log_dir = {
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+        if cfg!(target_os = "macos") {
+            PathBuf::from(&home).join("Library/Application Support/oc-apprentice/logs")
+        } else {
+            PathBuf::from(&home).join(".local/share/oc-apprentice/logs")
+        }
+    };
+    std::fs::create_dir_all(&log_dir).ok();
+
+    let file_appender = rolling::daily(&log_dir, "daemon.log");
+    let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
+
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::from_default_env()
                 .add_directive("info".parse()?),
         )
+        .with_writer(non_blocking)
+        .with_ansi(false)
         .init();
 
     info!("oc-apprentice-daemon starting");
+
+    // Write PID file
+    let pid_path = oc_apprentice_common::pid::write_pid_file("daemon")
+        .expect("Failed to write daemon PID file");
+    info!(path = %pid_path.display(), "PID file written");
+
+    let start_time = chrono::Utc::now();
 
     // Load AppConfig from standard config file location, fall back to defaults
     let app_config = {
@@ -130,9 +153,10 @@ async fn main() -> Result<()> {
         forwarder_handle.abort();
     });
 
-    // Spawn health watcher (periodic background health checks)
+    // Spawn health watcher (periodic background health checks + status file writing)
     let health_shutdown_rx = shutdown_tx.subscribe();
     let health_db_path = db_path.clone();
+    let health_start_time = start_time;
     let health_handle = tokio::spawn(async move {
         let artifact_dir = health_db_path.parent()
             .map(|p| p.join("artifacts"))
@@ -155,6 +179,29 @@ async fn main() -> Result<()> {
                             memory_mb = status.daemon_memory_mb,
                             "Health check: unhealthy"
                         );
+                    }
+
+                    // Write daemon status file for external consumers (CLI, menu bar app)
+                    let now = chrono::Utc::now();
+                    let daemon_status = oc_apprentice_common::status::DaemonStatus {
+                        pid: std::process::id(),
+                        version: env!("CARGO_PKG_VERSION").to_string(),
+                        started_at: health_start_time,
+                        heartbeat: now,
+                        events_today: 0, // TODO: wire up event counter later
+                        permissions_ok: status.is_healthy(),
+                        accessibility_permitted: status.accessibility_permitted,
+                        screen_recording_permitted: status.screen_recording_permitted,
+                        db_path: health_db_path.display().to_string(),
+                        uptime_seconds: now.signed_duration_since(health_start_time)
+                            .num_seconds()
+                            .unsigned_abs(),
+                    };
+                    if let Err(e) = oc_apprentice_common::status::write_status_file(
+                        "daemon-status.json",
+                        &daemon_status,
+                    ) {
+                        warn!("Failed to write daemon status file: {}", e);
                     }
                 }
                 _ = shutdown_rx.changed() => {
@@ -291,6 +338,9 @@ async fn main() -> Result<()> {
 
     // Wait for storage writer to finish
     storage_handle.await??;
+
+    // Remove PID file on clean shutdown
+    oc_apprentice_common::pid::remove_pid_file("daemon");
 
     info!("oc-apprentice-daemon stopped");
     observer_result

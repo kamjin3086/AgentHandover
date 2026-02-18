@@ -1,0 +1,164 @@
+use anyhow::Result;
+use colored::Colorize;
+
+pub fn run() -> Result<()> {
+    println!("{}", "OpenMimic Doctor".bold());
+    println!("{}", "=".repeat(50));
+    println!();
+
+    let mut all_ok = true;
+
+    // Check 1: Daemon binary exists
+    all_ok &= check("Daemon binary", || {
+        std::path::Path::new("/usr/local/bin/oc-apprentice-daemon").exists()
+            || which("oc-apprentice-daemon")
+    });
+
+    // Check 2: CLI binary (we're running it, so it exists)
+    check("CLI binary", || true);
+
+    // Check 3: Data directory exists
+    let data_dir = oc_apprentice_common::status::status_dir();
+    all_ok &= check("Data directory", || data_dir.exists());
+
+    // Check 4: Config file exists
+    let config_path = data_dir.join("config.toml");
+    check_optional("Config file", || config_path.exists(), "Using defaults");
+
+    // Check 5: Accessibility permission
+    #[cfg(target_os = "macos")]
+    {
+        all_ok &= check("Accessibility permission", accessibility_sys_check);
+    }
+
+    // Check 6: Screen Recording permission
+    #[cfg(target_os = "macos")]
+    {
+        check_optional(
+            "Screen Recording permission",
+            screen_recording_check,
+            "Screenshots disabled",
+        );
+    }
+
+    // Check 7: Database exists and is writable
+    let db_path = data_dir.join("events.db");
+    all_ok &= check("Database", || {
+        db_path.exists()
+            && std::fs::OpenOptions::new()
+                .write(true)
+                .open(&db_path)
+                .is_ok()
+    });
+
+    // Check 8: Native messaging host manifest
+    let nm_manifest = native_messaging_manifest_path();
+    all_ok &= check("Native messaging host", || nm_manifest.exists());
+
+    // Check 9: launchd plists installed
+    let launch_agents = launch_agents_dir();
+    all_ok &= check("Daemon launchd plist", || {
+        launch_agents.join("com.openmimic.daemon.plist").exists()
+    });
+    all_ok &= check("Worker launchd plist", || {
+        launch_agents.join("com.openmimic.worker.plist").exists()
+    });
+
+    // Check 10: Disk space
+    all_ok &= check("Disk space (>1GB free)", || free_disk_gb() > 1);
+
+    println!();
+    if all_ok {
+        println!("{}", "All checks passed!".green().bold());
+    } else {
+        println!(
+            "{}",
+            "Some checks failed. See above for details."
+                .yellow()
+                .bold()
+        );
+    }
+
+    Ok(())
+}
+
+fn check(name: &str, test: impl FnOnce() -> bool) -> bool {
+    let result = test();
+    if result {
+        println!("  {} {}", "pass".green(), name);
+    } else {
+        println!("  {} {}", "FAIL".red(), name);
+    }
+    result
+}
+
+fn check_optional(name: &str, test: impl FnOnce() -> bool, fallback_msg: &str) {
+    let result = test();
+    if result {
+        println!("  {} {}", "pass".green(), name);
+    } else {
+        println!("  {} {} ({})", "skip".yellow(), name, fallback_msg);
+    }
+}
+
+fn which(binary: &str) -> bool {
+    std::process::Command::new("which")
+        .arg(binary)
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+#[cfg(target_os = "macos")]
+fn accessibility_sys_check() -> bool {
+    // Use osascript as a proxy check for accessibility permission
+    let output = std::process::Command::new("osascript")
+        .args([
+            "-e",
+            "tell application \"System Events\" to return name of first process",
+        ])
+        .output();
+    output.map(|o| o.status.success()).unwrap_or(false)
+}
+
+#[cfg(target_os = "macos")]
+fn screen_recording_check() -> bool {
+    // Check if the daemon status file reports screen recording permission
+    oc_apprentice_common::status::read_status_file::<serde_json::Value>("daemon-status.json")
+        .ok()
+        .and_then(|v| v.get("screen_recording_permitted")?.as_bool())
+        .unwrap_or(false)
+}
+
+fn native_messaging_manifest_path() -> std::path::PathBuf {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    // Chrome's NativeMessagingHosts location on macOS
+    std::path::PathBuf::from(home).join(
+        "Library/Application Support/Google/Chrome/NativeMessagingHosts/com.openclaw.apprentice.json",
+    )
+}
+
+fn launch_agents_dir() -> std::path::PathBuf {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    std::path::PathBuf::from(home).join("Library/LaunchAgents")
+}
+
+fn free_disk_gb() -> u64 {
+    #[cfg(unix)]
+    {
+        use std::ffi::CString;
+        let c_path = CString::new("/").unwrap();
+        unsafe {
+            let mut stat: libc::statvfs = std::mem::zeroed();
+            if libc::statvfs(c_path.as_ptr(), &mut stat) == 0 {
+                stat.f_bavail as u64 * stat.f_frsize as u64 / (1024 * 1024 * 1024)
+            } else {
+                0
+            }
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        0
+    }
+}

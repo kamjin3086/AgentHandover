@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import signal
 import sys
 import time
@@ -24,6 +25,7 @@ from oc_apprentice_worker.deep_scan import DeepScanner
 from oc_apprentice_worker.episode_builder import EpisodeBuilder
 from oc_apprentice_worker.exporter import IndexGenerator
 from oc_apprentice_worker.negative_demo import NegativeDemoPruner
+from oc_apprentice_worker.export_adapter import SOPExportAdapter
 from oc_apprentice_worker.openclaw_writer import OpenClawWriter
 from oc_apprentice_worker.scheduler import IdleJobGate, SchedulerConfig
 from oc_apprentice_worker.translator import SemanticTranslator
@@ -84,6 +86,18 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default="INFO",
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
         help="Logging verbosity (default: INFO)",
+    )
+    parser.add_argument(
+        "--adapter",
+        choices=["openclaw", "generic"],
+        default="openclaw",
+        help="SOP export adapter (default: openclaw)",
+    )
+    parser.add_argument(
+        "--json-export",
+        action="store_true",
+        default=False,
+        help="Also export SOPs as JSON (used with generic adapter)",
     )
     return parser.parse_args(argv)
 
@@ -295,11 +309,44 @@ def main(argv: list[str] | None = None) -> None:
     """Worker entry-point: connect to DB, poll for work, run until shutdown."""
     args = _parse_args(argv)
 
+    from logging.handlers import RotatingFileHandler
+
+    if _platform.system() == "Darwin":
+        log_dir = Path.home() / "Library" / "Application Support" / "oc-apprentice" / "logs"
+    else:
+        log_dir = Path.home() / ".local" / "share" / "oc-apprentice" / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    log_format = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+    log_datefmt = "%Y-%m-%dT%H:%M:%S"
+
+    # File handler with rotation (10MB, 5 backups)
+    file_handler = RotatingFileHandler(
+        log_dir / "worker.log",
+        maxBytes=10 * 1024 * 1024,
+        backupCount=5,
+        encoding="utf-8",
+    )
+    file_handler.setFormatter(logging.Formatter(log_format, datefmt=log_datefmt))
+
+    # Also log to stderr for debugging when running manually
+    stderr_handler = logging.StreamHandler()
+    stderr_handler.setFormatter(logging.Formatter(log_format, datefmt=log_datefmt))
+
     logging.basicConfig(
         level=getattr(logging, args.log_level),
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-        datefmt="%Y-%m-%dT%H:%M:%S",
+        handlers=[file_handler, stderr_handler],
     )
+
+    # Write PID file
+    if _platform.system() == "Darwin":
+        pid_dir = Path.home() / "Library" / "Application Support" / "oc-apprentice"
+    else:
+        pid_dir = Path.home() / ".local" / "share" / "oc-apprentice"
+    pid_dir.mkdir(parents=True, exist_ok=True)
+    pid_file = pid_dir / "worker.pid"
+    pid_file.write_text(str(os.getpid()))
+    logger.info("PID file written: %s", pid_file)
 
     logger.info("Starting oc-apprentice-worker")
     logger.info("Database path: %s", args.db_path)
@@ -331,7 +378,12 @@ def main(argv: list[str] | None = None) -> None:
     scorer = ConfidenceScorer()
     vlm_queue = VLMFallbackQueue()
     index_generator = IndexGenerator()
-    openclaw_writer = OpenClawWriter(workspace_dir=args.sops_dir.parent.parent)
+    # Create export adapter based on config
+    if args.adapter == "generic":
+        from oc_apprentice_worker.generic_writer import GenericWriter
+        sop_writer = GenericWriter(output_dir=args.sops_dir, json_export=args.json_export)
+    else:
+        sop_writer = OpenClawWriter(workspace_dir=args.sops_dir.parent.parent)
 
     # Check VLM availability and hint if not installed
     from oc_apprentice_worker.setup_vlm import check_vlm_available
@@ -429,7 +481,7 @@ def main(argv: list[str] | None = None) -> None:
                         translator=translator,
                         scorer=scorer,
                         vlm_queue=vlm_queue,
-                        openclaw_writer=openclaw_writer,
+                        openclaw_writer=sop_writer,
                         index_generator=index_generator,
                         sop_inducer=sop_inducer,
                     )
@@ -483,6 +535,13 @@ def main(argv: list[str] | None = None) -> None:
 
     # Wait for any in-flight deep scan to finish before exit
     deep_scan_pool.shutdown(wait=True)
+
+    # Remove PID file on clean shutdown
+    try:
+        pid_file.unlink(missing_ok=True)
+    except Exception:
+        pass
+
     logger.info("Worker shut down cleanly")
 
 

@@ -1,0 +1,16 @@
+#!/bin/bash
+# OpenMimic pre-install script — stops existing services if upgrading
+
+USER_HOME=$(eval echo ~"$USER")
+LAUNCH_AGENTS="${USER_HOME}/Library/LaunchAgents"
+
+# Stop existing services if they're running
+if [ -f "${LAUNCH_AGENTS}/com.openmimic.daemon.plist" ]; then
+    launchctl unload "${LAUNCH_AGENTS}/com.openmimic.daemon.plist" 2>/dev/null || true
+fi
+if [ -f "${LAUNCH_AGENTS}/com.openmimic.worker.plist" ]; then
+    launchctl unload "${LAUNCH_AGENTS}/com.openmimic.worker.plist" 2>/dev/null || true
+fi
+
+echo "Pre-install complete."
+exit 0

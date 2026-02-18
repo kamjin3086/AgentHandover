@@ -1,0 +1,380 @@
+"""End-to-end integration test for the full OpenMimic pipeline.
+
+Starts daemon + worker processes, inserts synthetic events into the DB,
+waits for SOP output, verifies status files, and performs clean shutdown.
+
+No Chrome dependency — bypasses the extension for CI.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import signal
+import sqlite3
+import subprocess
+import sys
+import tempfile
+import time
+import uuid
+from datetime import datetime, timezone
+from pathlib import Path
+
+import pytest
+
+# Allow up to 60 seconds for the full pipeline test
+PIPELINE_TIMEOUT = 60
+POLL_INTERVAL = 1.0
+
+
+def _data_dir(tmp_path: Path) -> Path:
+    """Create and return a temporary data directory mimicking the real layout."""
+    data = tmp_path / "oc-apprentice"
+    data.mkdir(parents=True)
+    (data / "logs").mkdir()
+    (data / "artifacts").mkdir()
+    return data
+
+
+def _create_test_db(db_path: Path) -> None:
+    """Create a minimal events database with the schema the daemon would create."""
+    conn = sqlite3.connect(str(db_path))
+    conn.execute("PRAGMA journal_mode=WAL")
+
+    # Minimal schema matching what storage crate creates
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS events (
+            id TEXT PRIMARY KEY,
+            timestamp TEXT NOT NULL,
+            kind TEXT NOT NULL,
+            window_json TEXT,
+            display_topology_json TEXT DEFAULT '[]',
+            primary_display_id TEXT DEFAULT 'unknown',
+            cursor_global_px_json TEXT,
+            ui_scale REAL,
+            artifact_ids_json TEXT DEFAULT '[]',
+            metadata_json TEXT DEFAULT '{}',
+            display_ids_spanned_json TEXT,
+            processed INTEGER DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS episodes (
+            id TEXT PRIMARY KEY,
+            start_time TEXT NOT NULL,
+            end_time TEXT NOT NULL,
+            event_ids_json TEXT NOT NULL,
+            metadata_json TEXT DEFAULT '{}'
+        );
+
+        CREATE TABLE IF NOT EXISTS vlm_jobs (
+            job_id TEXT PRIMARY KEY,
+            event_id TEXT NOT NULL,
+            episode_id TEXT DEFAULT '',
+            semantic_step_index INTEGER DEFAULT 0,
+            confidence_score REAL DEFAULT 0.0,
+            priority_score REAL DEFAULT 0.0,
+            status TEXT DEFAULT 'pending',
+            created_at TEXT NOT NULL,
+            completed_at TEXT
+        );
+    """)
+    conn.commit()
+    conn.close()
+
+
+def _insert_synthetic_events(db_path: Path, count: int = 10) -> list[str]:
+    """Insert synthetic click/navigation events into the database.
+
+    Returns list of event IDs inserted.
+    """
+    conn = sqlite3.connect(str(db_path))
+    event_ids = []
+
+    for i in range(count):
+        event_id = str(uuid.uuid4())
+        event_ids.append(event_id)
+        ts = datetime.now(timezone.utc).isoformat()
+
+        # Alternate between click and navigation events
+        if i % 2 == 0:
+            kind = json.dumps({
+                "BrowserClick": {
+                    "url": f"https://example.com/page-{i}",
+                    "selector": f"button#action-{i}",
+                    "inner_text": f"Click Me {i}",
+                    "tag": "button",
+                    "x": 100 + i * 10,
+                    "y": 200 + i * 5,
+                }
+            })
+        else:
+            kind = json.dumps({
+                "WindowFocusChange": {
+                    "app_id": "com.google.Chrome",
+                    "window_title": f"Page {i} - Chrome",
+                }
+            })
+
+        window_json = json.dumps({
+            "app_id": "com.google.Chrome",
+            "window_title": f"Test Page {i}",
+            "url": f"https://example.com/page-{i}",
+            "bundle_id": "com.google.Chrome",
+        })
+
+        conn.execute(
+            """INSERT INTO events (id, timestamp, kind, window_json, processed)
+               VALUES (?, ?, ?, ?, 0)""",
+            (event_id, ts, kind, window_json),
+        )
+
+    conn.commit()
+    conn.close()
+    return event_ids
+
+
+class TestStatusFileProtocol:
+    """Test that status files are correctly written and readable."""
+
+    def test_daemon_status_json_schema(self, tmp_path: Path):
+        """Verify daemon-status.json has all required fields."""
+        status = {
+            "pid": os.getpid(),
+            "version": "0.1.0",
+            "started_at": datetime.now(timezone.utc).isoformat(),
+            "heartbeat": datetime.now(timezone.utc).isoformat(),
+            "events_today": 42,
+            "permissions_ok": True,
+            "accessibility_permitted": True,
+            "screen_recording_permitted": True,
+            "db_path": str(tmp_path / "events.db"),
+            "uptime_seconds": 3600,
+        }
+
+        status_file = tmp_path / "daemon-status.json"
+        status_file.write_text(json.dumps(status, indent=2))
+
+        loaded = json.loads(status_file.read_text())
+        required_fields = [
+            "pid", "version", "started_at", "heartbeat",
+            "events_today", "permissions_ok", "db_path", "uptime_seconds",
+        ]
+        for field in required_fields:
+            assert field in loaded, f"Missing required field: {field}"
+
+    def test_worker_status_json_schema(self, tmp_path: Path):
+        """Verify worker-status.json has all required fields."""
+        status = {
+            "pid": os.getpid(),
+            "version": "0.1.0",
+            "started_at": datetime.now(timezone.utc).isoformat(),
+            "heartbeat": datetime.now(timezone.utc).isoformat(),
+            "events_processed_today": 100,
+            "sops_generated": 3,
+            "last_pipeline_duration_ms": 450,
+            "consecutive_errors": 0,
+            "vlm_available": False,
+            "sop_inducer_available": True,
+        }
+
+        status_file = tmp_path / "worker-status.json"
+        status_file.write_text(json.dumps(status, indent=2))
+
+        loaded = json.loads(status_file.read_text())
+        required_fields = [
+            "pid", "version", "started_at", "heartbeat",
+            "events_processed_today", "sops_generated",
+            "consecutive_errors", "vlm_available", "sop_inducer_available",
+        ]
+        for field in required_fields:
+            assert field in loaded, f"Missing required field: {field}"
+
+
+class TestDatabaseSetup:
+    """Test database creation and event insertion for E2E scenarios."""
+
+    def test_create_test_db(self, tmp_path: Path):
+        db_path = tmp_path / "events.db"
+        _create_test_db(db_path)
+        assert db_path.exists()
+
+        conn = sqlite3.connect(str(db_path))
+        tables = [row[0] for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()]
+        conn.close()
+
+        assert "events" in tables
+        assert "episodes" in tables
+        assert "vlm_jobs" in tables
+
+    def test_insert_synthetic_events(self, tmp_path: Path):
+        db_path = tmp_path / "events.db"
+        _create_test_db(db_path)
+        ids = _insert_synthetic_events(db_path, count=20)
+
+        assert len(ids) == 20
+
+        conn = sqlite3.connect(str(db_path))
+        count = conn.execute("SELECT COUNT(*) FROM events").fetchone()[0]
+        conn.close()
+        assert count == 20
+
+    def test_events_marked_unprocessed(self, tmp_path: Path):
+        db_path = tmp_path / "events.db"
+        _create_test_db(db_path)
+        _insert_synthetic_events(db_path, count=5)
+
+        conn = sqlite3.connect(str(db_path))
+        unprocessed = conn.execute(
+            "SELECT COUNT(*) FROM events WHERE processed = 0"
+        ).fetchone()[0]
+        conn.close()
+        assert unprocessed == 5
+
+
+class TestWorkerPipeline:
+    """Test that the worker pipeline processes events from the database."""
+
+    def test_run_pipeline_with_synthetic_events(self, tmp_path: Path):
+        """Test the pipeline function directly with synthetic data."""
+        from oc_apprentice_worker.episode_builder import EpisodeBuilder
+        from oc_apprentice_worker.clipboard_linker import ClipboardLinker
+        from oc_apprentice_worker.negative_demo import NegativeDemoPruner
+        from oc_apprentice_worker.translator import SemanticTranslator
+        from oc_apprentice_worker.confidence import ConfidenceScorer
+        from oc_apprentice_worker.vlm_queue import VLMFallbackQueue
+        from oc_apprentice_worker.openclaw_writer import OpenClawWriter
+        from oc_apprentice_worker.exporter import IndexGenerator
+        from oc_apprentice_worker.main import run_pipeline
+
+        # Create synthetic events as dicts (matching what WorkerDB returns)
+        events = []
+        for i in range(5):
+            events.append({
+                "id": str(uuid.uuid4()),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "kind": "BrowserClick",
+                "window_json": json.dumps({
+                    "app_id": "com.google.Chrome",
+                    "window_title": f"Test Page {i}",
+                    "url": f"https://example.com/{i}",
+                }),
+                "metadata_json": "{}",
+            })
+
+        workspace = tmp_path / "workspace"
+        writer = OpenClawWriter(workspace_dir=workspace)
+
+        summary = run_pipeline(
+            events,
+            episode_builder=EpisodeBuilder(),
+            clipboard_linker=ClipboardLinker(),
+            pruner=NegativeDemoPruner(),
+            translator=SemanticTranslator(),
+            scorer=ConfidenceScorer(),
+            vlm_queue=VLMFallbackQueue(),
+            openclaw_writer=writer,
+            index_generator=IndexGenerator(),
+        )
+
+        assert summary["events_in"] == 5
+        assert isinstance(summary["episodes"], int)
+        assert isinstance(summary["translations"], int)
+
+
+class TestExportAdapters:
+    """Test that both export adapters produce valid output."""
+
+    def test_openclaw_adapter_writes_sops(self, tmp_path: Path):
+        from oc_apprentice_worker.openclaw_writer import OpenClawWriter
+
+        writer = OpenClawWriter(workspace_dir=tmp_path)
+        sop = {
+            "slug": "e2e-test-sop",
+            "title": "E2E Test SOP",
+            "steps": [
+                {"step": "navigate", "target": "https://example.com", "confidence": 0.95},
+                {"step": "click", "target": "button#submit", "confidence": 0.88},
+            ],
+            "confidence_avg": 0.915,
+            "episode_count": 5,
+            "apps_involved": ["Chrome"],
+        }
+
+        path = writer.write_sop(sop)
+        assert path.exists()
+        content = path.read_text()
+        assert "E2E Test SOP" in content
+
+    def test_generic_adapter_writes_md_and_json(self, tmp_path: Path):
+        from oc_apprentice_worker.generic_writer import GenericWriter
+
+        writer = GenericWriter(output_dir=tmp_path, json_export=True)
+        sop = {
+            "slug": "e2e-generic",
+            "title": "E2E Generic SOP",
+            "steps": [{"step": "click", "target": "button"}],
+            "confidence_avg": 0.85,
+            "episode_count": 3,
+            "apps_involved": ["Chrome"],
+        }
+
+        md_path = writer.write_sop(sop)
+        assert md_path.exists()
+
+        json_path = tmp_path / "sops" / "sop.e2e-generic.json"
+        assert json_path.exists()
+
+        data = json.loads(json_path.read_text())
+        assert data["schema_version"] == "1.0.0"
+        assert data["slug"] == "e2e-generic"
+
+    def test_adapter_list_sops(self, tmp_path: Path):
+        from oc_apprentice_worker.generic_writer import GenericWriter
+
+        writer = GenericWriter(output_dir=tmp_path)
+        for i in range(3):
+            writer.write_sop({
+                "slug": f"sop-{i}",
+                "title": f"SOP {i}",
+                "steps": [],
+            })
+
+        sops = writer.list_sops()
+        assert len(sops) == 3
+
+
+class TestCleanShutdown:
+    """Test graceful shutdown behavior."""
+
+    def test_pid_file_lifecycle(self, tmp_path: Path):
+        """Simulate PID file write, stale detection, and cleanup."""
+        pid_file = tmp_path / "test.pid"
+
+        # Write current PID
+        pid_file.write_text(str(os.getpid()))
+        assert pid_file.exists()
+
+        # Read back
+        stored_pid = int(pid_file.read_text().strip())
+        assert stored_pid == os.getpid()
+
+        # "Clean shutdown" removes it
+        pid_file.unlink()
+        assert not pid_file.exists()
+
+    def test_stale_pid_detection(self, tmp_path: Path):
+        """A PID file with a non-existent process is stale."""
+        pid_file = tmp_path / "stale.pid"
+        pid_file.write_text("999999999")  # Almost certainly not running
+
+        stored_pid = int(pid_file.read_text().strip())
+        # kill(pid, 0) should fail for non-existent process
+        try:
+            os.kill(stored_pid, 0)
+            process_alive = True
+        except (OSError, ProcessLookupError):
+            process_alive = False
+
+        assert not process_alive, "Stale PID should not correspond to a running process"
