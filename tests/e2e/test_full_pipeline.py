@@ -327,7 +327,7 @@ class TestExportAdapters:
         assert json_path.exists()
 
         data = json.loads(json_path.read_text())
-        assert data["schema_version"] == "1.0.0"
+        assert data["schema_version"] == "1.1.0"
         assert data["slug"] == "e2e-generic"
 
     def test_adapter_list_sops(self, tmp_path: Path):

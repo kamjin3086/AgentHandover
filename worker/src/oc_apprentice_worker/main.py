@@ -624,7 +624,7 @@ def _process_vlm_jobs(
                 if vlm_queue is not None:
                     try:
                         compute_min = response.inference_time_seconds / 60.0
-                        vlm_queue.mark_completed(job_id, compute_min, result_dict)
+                        vlm_queue.record_completion(job_id, compute_min, result_dict)
                     except KeyError:
                         pass  # job may not exist in memory (DB-only)
                 logger.info(
