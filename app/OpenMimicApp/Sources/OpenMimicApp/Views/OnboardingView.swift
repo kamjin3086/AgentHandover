@@ -519,16 +519,6 @@ struct OnboardingView: View {
         // Read existing config or start fresh
         var content = (try? String(contentsOf: configPath, encoding: .utf8)) ?? ""
 
-        // Append or update [vlm] section with remote mode fields
-        let remoteBlock = """
-
-        # Remote VLM config (set by onboarding)
-        # mode = "remote"
-        # provider = "\(provider)"
-        # model = "\(model)"
-        # api_key_env = "\(apiKeyEnv)"
-        """
-
         // Strip any existing remote-mode keys from [vlm] section to avoid
         // duplicates on repeated saves.  Then insert the new values.
         let remoteKeys = ["mode", "provider", "model", "api_key_env"]

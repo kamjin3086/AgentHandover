@@ -11,6 +11,8 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from unittest.mock import MagicMock
+
 import pytest
 
 from oc_apprentice_worker.clipboard_linker import ClipboardLinker
@@ -386,3 +388,191 @@ class TestProcessVLMJobsReconciliation:
         _process_vlm_jobs(db, pending_jobs, vlm_worker)
 
         db.mark_vlm_job_completed.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Export trigger + SOP template cache
+# ---------------------------------------------------------------------------
+
+
+class TestSOPCache:
+    """Tests for _save_sop_cache / _load_sop_cache."""
+
+    def test_save_and_load_roundtrip(self, tmp_path: Path, monkeypatch):
+        from oc_apprentice_worker import main as main_mod
+        monkeypatch.setattr(main_mod, "_status_dir", lambda: tmp_path)
+
+        templates = [
+            {"slug": "test-sop", "title": "Test SOP", "steps": [{"step": "click"}]},
+            {"slug": "another", "title": "Another", "steps": []},
+        ]
+        main_mod._save_sop_cache(templates)
+
+        loaded = main_mod._load_sop_cache()
+        assert len(loaded) == 2
+        assert loaded[0]["slug"] == "test-sop"
+        assert loaded[1]["slug"] == "another"
+
+    def test_load_empty_when_no_file(self, tmp_path: Path, monkeypatch):
+        from oc_apprentice_worker import main as main_mod
+        monkeypatch.setattr(main_mod, "_status_dir", lambda: tmp_path)
+
+        assert main_mod._load_sop_cache() == []
+
+    def test_load_corrupted_returns_empty(self, tmp_path: Path, monkeypatch):
+        from oc_apprentice_worker import main as main_mod
+        monkeypatch.setattr(main_mod, "_status_dir", lambda: tmp_path)
+
+        (tmp_path / "sop-templates-cache.json").write_text("not json{{{")
+        assert main_mod._load_sop_cache() == []
+
+    def test_save_empty_is_noop(self, tmp_path: Path, monkeypatch):
+        from oc_apprentice_worker import main as main_mod
+        monkeypatch.setattr(main_mod, "_status_dir", lambda: tmp_path)
+
+        main_mod._save_sop_cache([])
+        assert not (tmp_path / "sop-templates-cache.json").exists()
+
+
+class TestCheckExportTrigger:
+    """Tests for _check_export_trigger."""
+
+    def _write_trigger(self, state_dir: Path, fmt: str, **kwargs) -> None:
+        trigger = {"format": fmt, "requested_at": "2026-02-23T10:00:00Z"}
+        trigger.update(kwargs)
+        (state_dir / "export-trigger.json").write_text(json.dumps(trigger))
+
+    def _write_cache(self, state_dir: Path, templates: list[dict]) -> None:
+        (state_dir / "sop-templates-cache.json").write_text(json.dumps(templates))
+
+    def test_no_trigger_is_noop(self, tmp_path: Path, monkeypatch):
+        from oc_apprentice_worker import main as main_mod
+        monkeypatch.setattr(main_mod, "_status_dir", lambda: tmp_path)
+
+        writer = MagicMock()
+        main_mod._check_export_trigger(openclaw_writer=writer, sops_dir=tmp_path / "sops")
+        writer.write_all_sops.assert_not_called()
+
+    def test_skill_md_export(self, tmp_path: Path, monkeypatch):
+        from oc_apprentice_worker import main as main_mod
+        monkeypatch.setattr(main_mod, "_status_dir", lambda: tmp_path)
+
+        templates = [{"slug": "test", "title": "Test", "steps": []}]
+        self._write_cache(tmp_path, templates)
+        self._write_trigger(tmp_path, "skill-md")
+
+        sops_dir = tmp_path / "workspace" / "openclaw" / "sops"
+        sops_dir.mkdir(parents=True)
+        writer = MagicMock()
+        main_mod._check_export_trigger(openclaw_writer=writer, sops_dir=sops_dir)
+
+        # Trigger should be consumed
+        assert not (tmp_path / "export-trigger.json").exists()
+        # OpenClaw writer should NOT have been called (format is skill-md only)
+        writer.write_all_sops.assert_not_called()
+        # SKILL.md files should exist
+        skills_dir = sops_dir.parent.parent / "skills"
+        assert skills_dir.exists()
+
+    def test_openclaw_export(self, tmp_path: Path, monkeypatch):
+        from oc_apprentice_worker import main as main_mod
+        monkeypatch.setattr(main_mod, "_status_dir", lambda: tmp_path)
+
+        templates = [{"slug": "test", "title": "Test", "steps": []}]
+        self._write_cache(tmp_path, templates)
+        self._write_trigger(tmp_path, "openclaw")
+
+        writer = MagicMock()
+        main_mod._check_export_trigger(openclaw_writer=writer, sops_dir=tmp_path / "sops")
+
+        writer.write_all_sops.assert_called_once()
+        assert not (tmp_path / "export-trigger.json").exists()
+
+    def test_generic_export(self, tmp_path: Path, monkeypatch):
+        from oc_apprentice_worker import main as main_mod
+        monkeypatch.setattr(main_mod, "_status_dir", lambda: tmp_path)
+
+        templates = [{"slug": "test", "title": "Test", "steps": [], "variables": []}]
+        self._write_cache(tmp_path, templates)
+        self._write_trigger(tmp_path, "generic")
+
+        writer = MagicMock()
+        sops_dir = tmp_path / "sops"
+        sops_dir.mkdir(parents=True)
+        main_mod._check_export_trigger(openclaw_writer=writer, sops_dir=sops_dir)
+
+        # OpenClaw writer NOT called
+        writer.write_all_sops.assert_not_called()
+        # Trigger consumed
+        assert not (tmp_path / "export-trigger.json").exists()
+        # GenericWriter writes to output_dir/sops/sop.<slug>.md
+        assert (sops_dir / "sops" / "sop.test.md").exists()
+
+    def test_output_dir_override(self, tmp_path: Path, monkeypatch):
+        from oc_apprentice_worker import main as main_mod
+        monkeypatch.setattr(main_mod, "_status_dir", lambda: tmp_path)
+
+        custom_output = tmp_path / "custom_output"
+        templates = [{"slug": "test", "title": "Test", "steps": []}]
+        self._write_cache(tmp_path, templates)
+        self._write_trigger(tmp_path, "skill-md", output_dir=str(custom_output))
+
+        writer = MagicMock()
+        main_mod._check_export_trigger(openclaw_writer=writer, sops_dir=tmp_path / "sops")
+
+        # Skills should be written to custom_output/skills/
+        assert (custom_output / "skills").exists()
+        assert not (tmp_path / "export-trigger.json").exists()
+
+    def test_slug_filter(self, tmp_path: Path, monkeypatch):
+        from oc_apprentice_worker import main as main_mod
+        monkeypatch.setattr(main_mod, "_status_dir", lambda: tmp_path)
+
+        templates = [
+            {"slug": "wanted", "title": "Wanted", "steps": []},
+            {"slug": "unwanted", "title": "Unwanted", "steps": []},
+        ]
+        self._write_cache(tmp_path, templates)
+        self._write_trigger(tmp_path, "openclaw", sop_slug="wanted")
+
+        writer = MagicMock()
+        main_mod._check_export_trigger(openclaw_writer=writer, sops_dir=tmp_path / "sops")
+
+        args = writer.write_all_sops.call_args[0][0]
+        assert len(args) == 1
+        assert args[0]["slug"] == "wanted"
+
+    def test_empty_cache_warns_and_removes_trigger(self, tmp_path: Path, monkeypatch):
+        from oc_apprentice_worker import main as main_mod
+        monkeypatch.setattr(main_mod, "_status_dir", lambda: tmp_path)
+
+        self._write_trigger(tmp_path, "skill-md")
+
+        writer = MagicMock()
+        main_mod._check_export_trigger(openclaw_writer=writer, sops_dir=tmp_path / "sops")
+
+        writer.write_all_sops.assert_not_called()
+        # Trigger should still be removed to avoid infinite loop
+        assert not (tmp_path / "export-trigger.json").exists()
+
+    def test_all_format_exports_all_three(self, tmp_path: Path, monkeypatch):
+        from oc_apprentice_worker import main as main_mod
+        monkeypatch.setattr(main_mod, "_status_dir", lambda: tmp_path)
+
+        templates = [{"slug": "test", "title": "Test", "steps": [], "variables": []}]
+        self._write_cache(tmp_path, templates)
+        self._write_trigger(tmp_path, "all")
+
+        sops_dir = tmp_path / "workspace" / "openclaw" / "sops"
+        sops_dir.mkdir(parents=True)
+        writer = MagicMock()
+        main_mod._check_export_trigger(openclaw_writer=writer, sops_dir=sops_dir)
+
+        # OpenClaw writer called
+        writer.write_all_sops.assert_called_once()
+        # SKILL.md created
+        assert (sops_dir.parent.parent / "skills").exists()
+        # Generic created (GenericWriter nests under sops/ subdirectory)
+        assert (sops_dir / "sops" / "sop.test.md").exists()
+        # Trigger consumed
+        assert not (tmp_path / "export-trigger.json").exists()

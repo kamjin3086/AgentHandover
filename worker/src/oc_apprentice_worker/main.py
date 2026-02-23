@@ -507,6 +507,9 @@ def run_pipeline(
         except Exception:
             logger.exception("SOP export failed")
 
+        # Cache SOP templates for CLI export trigger re-export
+        _save_sop_cache(sop_templates)
+
         # Step F3: Also export as SKILL.md if skill_md_writer is configured
         if skill_md_writer is not None:
             try:
@@ -678,6 +681,9 @@ def _process_focus_sessions(
             except Exception:
                 logger.exception("Focus session SKILL.md export failed")
 
+        # Cache focus session SOPs for CLI export trigger
+        _save_sop_cache(sop_templates)
+
     # Clear the signal file so it's not reprocessed
     _clear_focus_signal(signal_path)
 
@@ -692,17 +698,47 @@ def _clear_focus_signal(signal_path: Path) -> None:
         logger.debug("Failed to remove focus-session.json", exc_info=True)
 
 
+_SOP_CACHE_FILE = "sop-templates-cache.json"
+
+
+def _save_sop_cache(sop_templates: list[dict]) -> None:
+    """Persist SOP templates so the export trigger can re-read them later."""
+    if not sop_templates:
+        return
+    cache_path = _status_dir() / _SOP_CACHE_FILE
+    try:
+        from oc_apprentice_worker.exporter import AtomicWriter
+        AtomicWriter.write(cache_path, json.dumps(sop_templates, indent=2, default=str))
+    except Exception:
+        logger.debug("Failed to write SOP template cache", exc_info=True)
+
+
+def _load_sop_cache() -> list[dict]:
+    """Read cached SOP templates written by the pipeline."""
+    cache_path = _status_dir() / _SOP_CACHE_FILE
+    if not cache_path.is_file():
+        return []
+    try:
+        with open(cache_path) as f:
+            data = json.load(f)
+        if isinstance(data, list):
+            return data
+    except (json.JSONDecodeError, OSError):
+        logger.debug("Could not read SOP template cache", exc_info=True)
+    return []
+
+
 def _check_export_trigger(
     *,
     openclaw_writer: "SOPExportAdapter",
-    skill_md_writer: "SOPExportAdapter | None",
-    sop_inducer: object | None,
+    sops_dir: Path,
 ) -> None:
     """Check for and process an export-trigger.json file written by the CLI.
 
     The CLI ``openmimic export`` writes a trigger file requesting re-export of
     existing SOPs in a specific format (skill-md, generic, openclaw).  The
-    worker picks it up here, runs the re-export, and removes the trigger.
+    worker picks it up here, creates the appropriate writer, runs the re-export,
+    and removes the trigger.
     """
     state_dir = _status_dir()
     trigger_path = state_dir / "export-trigger.json"
@@ -719,49 +755,74 @@ def _check_export_trigger(
 
     fmt = trigger.get("format", "")
     sop_slug = trigger.get("sop_slug")
-    logger.info("Processing export trigger: format=%s slug=%s", fmt, sop_slug)
+    output_dir = trigger.get("output_dir")
+    logger.info(
+        "Processing export trigger: format=%s slug=%s output=%s",
+        fmt, sop_slug, output_dir,
+    )
 
-    # Get existing SOP templates from the inducer cache if available
-    sop_templates: list[dict] = []
-    if sop_inducer is not None and hasattr(sop_inducer, "get_cached_sops"):
-        sop_templates = sop_inducer.get_cached_sops()
+    # Load cached SOP templates from the last pipeline run
+    sop_templates = _load_sop_cache()
 
-    # If we have no cached SOPs, try reading from the OpenClaw writer's directory
     if not sop_templates:
-        sops_dir = openclaw_writer.get_sops_dir()
-        if sops_dir.exists():
-            existing = openclaw_writer.list_sops()
-            if sop_slug:
-                existing = [s for s in existing if s.get("slug") == sop_slug]
-            # We only have inventory info, not full templates — log a note
-            if existing:
-                logger.info(
-                    "Found %d existing SOP(s) but cannot re-export without "
-                    "full templates.  Run the pipeline first to populate the cache.",
-                    len(existing),
-                )
+        logger.warning(
+            "Export trigger: no cached SOP templates found.  "
+            "Run the pipeline first so SOPs are induced and cached."
+        )
+        # Still remove the trigger so it doesn't loop
+        _remove_trigger(trigger_path)
+        return
 
-    if sop_templates:
-        if sop_slug:
-            sop_templates = [
-                t for t in sop_templates if t.get("slug") == sop_slug
-            ]
+    if sop_slug:
+        sop_templates = [
+            t for t in sop_templates if t.get("slug") == sop_slug
+        ]
+        if not sop_templates:
+            logger.warning("Export trigger: no SOP with slug '%s' found", sop_slug)
+            _remove_trigger(trigger_path)
+            return
 
-        if fmt in ("skill-md", "all") and skill_md_writer is not None:
-            try:
-                skill_md_writer.write_all_sops(sop_templates)
-                logger.info("Export trigger: wrote %d SKILL.md file(s)", len(sop_templates))
-            except Exception:
-                logger.exception("Export trigger: SKILL.md write failed")
+    # Resolve output directory: trigger output_dir overrides default
+    workspace_dir = Path(output_dir) if output_dir else sops_dir.parent.parent
+    exported = 0
 
-        if fmt in ("openclaw", "all"):
-            try:
-                openclaw_writer.write_all_sops(sop_templates)
-                logger.info("Export trigger: wrote %d OpenClaw file(s)", len(sop_templates))
-            except Exception:
-                logger.exception("Export trigger: OpenClaw write failed")
+    if fmt in ("skill-md", "all"):
+        try:
+            from oc_apprentice_worker.skill_md_writer import SkillMdWriter
+            writer = SkillMdWriter(workspace_dir=workspace_dir)
+            writer.write_all_sops(sop_templates)
+            exported += len(sop_templates)
+            logger.info("Export trigger: wrote %d SKILL.md file(s)", len(sop_templates))
+        except Exception:
+            logger.exception("Export trigger: SKILL.md write failed")
 
-    # Remove the trigger whether we succeeded or not
+    if fmt in ("openclaw", "all"):
+        try:
+            openclaw_writer.write_all_sops(sop_templates)
+            exported += len(sop_templates)
+            logger.info("Export trigger: wrote %d OpenClaw file(s)", len(sop_templates))
+        except Exception:
+            logger.exception("Export trigger: OpenClaw write failed")
+
+    if fmt in ("generic", "all"):
+        try:
+            from oc_apprentice_worker.generic_writer import GenericWriter
+            out = Path(output_dir) if output_dir else sops_dir
+            writer = GenericWriter(output_dir=out, json_export=True)
+            writer.write_all_sops(sop_templates)
+            exported += len(sop_templates)
+            logger.info("Export trigger: wrote %d generic file(s)", len(sop_templates))
+        except Exception:
+            logger.exception("Export trigger: generic write failed")
+
+    if exported == 0 and fmt not in ("skill-md", "openclaw", "generic", "all"):
+        logger.warning("Export trigger: unsupported format '%s'", fmt)
+
+    _remove_trigger(trigger_path)
+
+
+def _remove_trigger(trigger_path: Path) -> None:
+    """Remove the export trigger file."""
     try:
         trigger_path.unlink(missing_ok=True)
     except Exception:
@@ -1276,8 +1337,7 @@ def main(argv: list[str] | None = None) -> None:
                 # Check for CLI-requested export triggers
                 _check_export_trigger(
                     openclaw_writer=sop_writer,
-                    skill_md_writer=skill_md_writer,
-                    sop_inducer=sop_inducer,
+                    sops_dir=args.sops_dir,
                 )
 
                 unprocessed = db.get_unprocessed_events(limit=100)
