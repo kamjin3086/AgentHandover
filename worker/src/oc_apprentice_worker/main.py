@@ -432,7 +432,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--adapter",
-        choices=["openclaw", "generic", "skill-md", "all"],
+        choices=["openclaw", "generic", "skill-md", "claude-skill", "all"],
         default="openclaw",
         help="SOP export adapter (default: openclaw)",
     )
@@ -555,6 +555,7 @@ def run_pipeline(
     sop_inducer: object | None = None,
     sop_enhancer: object | None = None,
     skill_md_writer: "SOPExportAdapter | None" = None,
+    claude_skill_writer: "SOPExportAdapter | None" = None,
     db: "WorkerDB | None" = None,
 ) -> dict:
     """Run the full D->E->F pipeline on a batch of events.
@@ -777,6 +778,10 @@ def run_pipeline(
 
     # Step F2: Format, version, and export SOPs
     if sop_templates:
+        # Deduplicate against known SOPs before writing
+        from oc_apprentice_worker.sop_dedup import deduplicate_templates
+        sop_templates = deduplicate_templates(sop_templates, _status_dir())
+
         try:
             paths = openclaw_writer.write_all_sops(sop_templates)
             summary["sops_exported"] = len(paths)
@@ -801,6 +806,15 @@ def run_pipeline(
             except Exception:
                 logger.exception("SKILL.md export failed")
 
+        # Step F4: Also export as Claude Code skills if configured
+        if claude_skill_writer is not None:
+            try:
+                cs_paths = claude_skill_writer.write_all_sops(sop_templates)
+                summary["claude_skills_exported"] = len(cs_paths)
+                logger.info("Exported %d Claude Code skill(s)", len(cs_paths))
+            except Exception:
+                logger.exception("Claude Code skill export failed")
+
     return summary
 
 
@@ -816,6 +830,7 @@ def _process_focus_sessions(
     sop_enhancer: object | None,
     openclaw_writer: "SOPExportAdapter",
     skill_md_writer: "SOPExportAdapter | None" = None,
+    claude_skill_writer: "SOPExportAdapter | None" = None,
     index_generator: "IndexGenerator",
 ) -> int:
     """Process completed focus recording sessions.
@@ -945,6 +960,10 @@ def _process_focus_sessions(
     # Export
     exported = 0
     if sop_templates:
+        # Deduplicate against known SOPs
+        from oc_apprentice_worker.sop_dedup import deduplicate_templates
+        sop_templates = deduplicate_templates(sop_templates, _status_dir())
+
         try:
             paths = openclaw_writer.write_all_sops(sop_templates)
             exported = len(paths)
@@ -967,6 +986,16 @@ def _process_focus_sessions(
             except Exception:
                 logger.exception("Focus session SKILL.md export failed")
 
+        # Also export as Claude Code skills if writer is configured
+        if claude_skill_writer is not None:
+            try:
+                claude_skill_writer.write_all_sops(sop_templates)
+                logger.info(
+                    "Focus session '%s': Claude skill export complete", title
+                )
+            except Exception:
+                logger.exception("Focus session Claude skill export failed")
+
         # Cache focus session SOPs for CLI export trigger
         _save_sop_cache(sop_templates)
 
@@ -982,6 +1011,7 @@ def _process_focus_sessions_v2(
     focus_processor: "FocusProcessor",
     openclaw_writer: "SOPExportAdapter",
     skill_md_writer: "SOPExportAdapter | None" = None,
+    claude_skill_writer: "SOPExportAdapter | None" = None,
     index_generator: "IndexGenerator",
     screenshots_dir: str | Path = "",
 ) -> int:
@@ -1039,6 +1069,10 @@ def _process_focus_sessions_v2(
     if result.success and result.sop:
         sop_templates = [result.sop]
 
+        # Deduplicate against known SOPs
+        from oc_apprentice_worker.sop_dedup import deduplicate_templates
+        sop_templates = deduplicate_templates(sop_templates, _status_dir())
+
         # Export via primary writer
         try:
             paths = openclaw_writer.write_all_sops(sop_templates)
@@ -1061,6 +1095,14 @@ def _process_focus_sessions_v2(
             except Exception:
                 logger.exception("Focus v2 SKILL.md export failed")
 
+        # Also export as Claude Code skills
+        if claude_skill_writer is not None:
+            try:
+                claude_skill_writer.write_all_sops(sop_templates)
+                logger.info("Focus v2 session '%s': Claude skill export complete", title)
+            except Exception:
+                logger.exception("Focus v2 Claude skill export failed")
+
         # Cache for CLI export trigger
         _save_sop_cache(sop_templates)
     else:
@@ -1081,6 +1123,7 @@ def _process_passive_discovery(
     sop_generator: "SOPGenerator",
     openclaw_writer: "SOPExportAdapter",
     skill_md_writer: "SOPExportAdapter | None" = None,
+    claude_skill_writer: "SOPExportAdapter | None" = None,
     index_generator: "IndexGenerator",
 ) -> int:
     """Run passive discovery: segment annotations → generate SOPs.
@@ -1170,6 +1213,10 @@ def _process_passive_discovery(
 
         sop_templates = [result.sop]
 
+        # Deduplicate against known SOPs
+        from oc_apprentice_worker.sop_dedup import deduplicate_templates
+        sop_templates = deduplicate_templates(sop_templates, _status_dir())
+
         # Export
         try:
             paths = openclaw_writer.write_all_sops(sop_templates)
@@ -1189,6 +1236,12 @@ def _process_passive_discovery(
                 skill_md_writer.write_all_sops(sop_templates)
             except Exception:
                 logger.exception("Passive SKILL.md export failed")
+
+        if claude_skill_writer is not None:
+            try:
+                claude_skill_writer.write_all_sops(sop_templates)
+            except Exception:
+                logger.exception("Passive Claude skill export failed")
 
         _save_sop_cache(sop_templates)
 
@@ -1338,7 +1391,18 @@ def _check_export_trigger(
         except Exception:
             logger.exception("Export trigger: generic write failed")
 
-    if exported == 0 and fmt not in ("skill-md", "openclaw", "generic", "all"):
+    if fmt in ("claude-skill", "all"):
+        try:
+            from oc_apprentice_worker.claude_skill_writer import ClaudeSkillWriter
+            skills_dir = Path(output_dir) / "skills" if output_dir else None
+            writer = ClaudeSkillWriter(skills_dir=skills_dir)
+            writer.write_all_sops(sop_templates)
+            exported += len(sop_templates)
+            logger.info("Export trigger: wrote %d Claude Code skill(s)", len(sop_templates))
+        except Exception:
+            logger.exception("Export trigger: Claude Code skill write failed")
+
+    if exported == 0 and fmt not in ("skill-md", "openclaw", "generic", "claude-skill", "all"):
         logger.warning("Export trigger: unsupported format '%s'", fmt)
 
     _remove_trigger(trigger_path)
@@ -1633,16 +1697,22 @@ def main(argv: list[str] | None = None) -> None:
     index_generator = IndexGenerator()
     # Create export adapter based on config
     skill_md_writer = None
+    claude_skill_writer = None
     if args.adapter == "generic":
         from oc_apprentice_worker.generic_writer import GenericWriter
         sop_writer = GenericWriter(output_dir=args.sops_dir, json_export=args.json_export)
     elif args.adapter == "skill-md":
         from oc_apprentice_worker.skill_md_writer import SkillMdWriter
         sop_writer = SkillMdWriter(workspace_dir=args.sops_dir.parent.parent)
+    elif args.adapter == "claude-skill":
+        from oc_apprentice_worker.claude_skill_writer import ClaudeSkillWriter
+        sop_writer = ClaudeSkillWriter()
     elif args.adapter == "all":
         sop_writer = OpenClawWriter(workspace_dir=args.sops_dir.parent.parent)
         from oc_apprentice_worker.skill_md_writer import SkillMdWriter
         skill_md_writer = SkillMdWriter(workspace_dir=args.sops_dir.parent.parent)
+        from oc_apprentice_worker.claude_skill_writer import ClaudeSkillWriter
+        claude_skill_writer = ClaudeSkillWriter()
     else:
         sop_writer = OpenClawWriter(workspace_dir=args.sops_dir.parent.parent)
 
@@ -1936,6 +2006,22 @@ def main(argv: list[str] | None = None) -> None:
     with WorkerDB(args.db_path) as db:
         logger.info("Connected to database, entering main loop")
 
+        # Check v2 schema ONCE before the main loop so focus session
+        # dispatch can use the v2 path on the very first iteration.
+        # Without this, v2_schema_ok starts False, focus dispatch falls
+        # to v1 path, clears the signal, and v2 never processes it.
+        if scene_annotator is not None:
+            v2_schema_ok = _check_v2_schema(db)
+            if v2_schema_ok:
+                logger.info(
+                    "v2 schema detected — scene annotation pipeline active"
+                )
+            else:
+                logger.info(
+                    "v2 schema not found — scene annotation disabled "
+                    "(run daemon to apply migration)"
+                )
+
         current_interval = args.poll_interval
         max_interval = max(60.0, args.poll_interval * 16)
         consecutive_errors = 0
@@ -1952,6 +2038,7 @@ def main(argv: list[str] | None = None) -> None:
                         focus_processor=focus_processor,
                         openclaw_writer=sop_writer,
                         skill_md_writer=skill_md_writer,
+                        claude_skill_writer=claude_skill_writer,
                         index_generator=index_generator,
                         screenshots_dir=screenshots_dir,
                     )
@@ -1967,6 +2054,7 @@ def main(argv: list[str] | None = None) -> None:
                         sop_enhancer=sop_enhancer,
                         openclaw_writer=sop_writer,
                         skill_md_writer=skill_md_writer,
+                        claude_skill_writer=claude_skill_writer,
                         index_generator=index_generator,
                     )
                 if focus_sops > 0:
@@ -2027,6 +2115,7 @@ def main(argv: list[str] | None = None) -> None:
                         sop_inducer=sop_inducer,
                         sop_enhancer=sop_enhancer,
                         skill_md_writer=skill_md_writer,
+                        claude_skill_writer=claude_skill_writer,
                         db=db,
                     )
                     pipeline_elapsed_ms = int((time.monotonic() - pipeline_start) * 1000)
@@ -2109,17 +2198,13 @@ def main(argv: list[str] | None = None) -> None:
 
                 # --- v2 Scene Annotation Pipeline ---
                 # Process unannotated screenshots and compute frame diffs.
-                # Schema check happens once on first iteration.
+                # Schema is checked once before the main loop; this fallback
+                # re-checks if the daemon applies migration after worker start.
                 if scene_annotator is not None and not v2_schema_ok:
                     v2_schema_ok = _check_v2_schema(db)
                     if v2_schema_ok:
                         logger.info(
-                            "v2 schema detected — scene annotation pipeline active"
-                        )
-                    else:
-                        logger.info(
-                            "v2 schema not found — scene annotation disabled "
-                            "(run daemon to apply migration)"
+                            "v2 schema now available — scene annotation pipeline activated"
                         )
 
                 if scene_annotator is not None and v2_schema_ok:
@@ -2179,6 +2264,7 @@ def main(argv: list[str] | None = None) -> None:
                                 sop_generator=sop_generator,
                                 openclaw_writer=sop_writer,
                                 skill_md_writer=skill_md_writer,
+                                claude_skill_writer=claude_skill_writer,
                                 index_generator=index_generator,
                             )
                             if pd_sops > 0:

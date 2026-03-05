@@ -17,7 +17,7 @@ const EXPORT_TRIGGER_FILE: &str = "export-trigger.json";
 /// Writes a trigger file that the worker picks up on its next poll cycle
 /// to re-export SOPs in the specified format.
 pub fn run(format: &str, sop_slug: Option<&str>, output_dir: Option<&str>) -> Result<()> {
-    let supported_formats = ["skill-md", "generic", "openclaw"];
+    let supported_formats = ["skill-md", "generic", "openclaw", "claude-skill"];
     if !supported_formats.contains(&format) {
         anyhow::bail!(
             "Unsupported format: '{}'. Supported: {}",

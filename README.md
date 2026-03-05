@@ -164,6 +164,16 @@ openmimic sops dir           # Print SOPs directory path
 
 SOPs are saved as `SKILL.<slug>.md` files in `~/.openclaw/workspace/memory/apprentice/sops/`.
 
+### Exporting as Claude Code Skills
+
+Export observed workflows directly as Claude Code personal skills:
+
+```bash
+openmimic export --format claude-skill
+```
+
+Skills are written to `~/.claude/skills/<slug>/SKILL.md` with YAML frontmatter (name, description, argument-hint, allowed-tools) and numbered natural language instructions. Use `/skill-name` in Claude Code to invoke them.
+
 ### Live Dashboard
 
 ```bash
@@ -183,6 +193,10 @@ Generated SOPs are semantic workflow descriptions, not DOM automation scripts. T
 - **DOM Hints** — CSS selectors for browser automation (collapsible appendix)
 - **Confidence Score** — Multi-signal quality assessment (demo count, step consistency, annotation quality, variable detection)
 
+### Deduplication
+
+Recording the same workflow multiple times doesn't create duplicate SOPs. OpenMimic computes a structural fingerprint (apps + URL domains + action verbs) for each SOP and uses weighted Jaccard similarity to detect matches. When a match is found (≥70% similarity), the existing SOP is updated: episode count accumulates, steps are refined, new variables are discovered, and confidence increases. Different tasks (e.g., "Search Amazon" vs "Search eBay") are correctly kept separate due to domain divergence.
+
 ## CLI Reference
 
 | Command | Description |
@@ -199,6 +213,7 @@ Generated SOPs are semantic workflow descriptions, not DOM automation scripts. T
 | `openmimic watch` | Live-updating status dashboard |
 | `openmimic doctor` | Run pre-flight checks |
 | `openmimic setup --vlm` | Configure VLM models |
+| `openmimic export --format <fmt>` | Re-export SOPs (`skill-md`, `generic`, `openclaw`, `claude-skill`) |
 | `openmimic uninstall [--purge-data]` | Remove OpenMimic |
 
 ## Configuration
@@ -245,7 +260,7 @@ The config file lives at `~/Library/Application Support/oc-apprentice/config.tom
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `adapter` | openclaw | Export adapter: `openclaw` or `generic` |
+| `adapter` | openclaw | Export adapter: `openclaw`, `generic`, `skill-md`, `claude-skill`, or `all` |
 | `json_export` | false | Also write JSON alongside Markdown |
 
 ## Architecture
@@ -304,10 +319,14 @@ Screenshot ─→ dHash Dedup (70% reduction)
            SOP Generator (qwen3.5:4b thinking, ~72s)
            Single-demo (focus) or multi-demo (passive)
            Variable detection across demonstrations
-           Progressive refinement on new demos
                   │
                   ▼
-             SKILL.md + OpenClaw Export
+           SOP Deduplication (structural fingerprint)
+           Matches by app + domain + action verb similarity
+           Merges repeated recordings into one SOP
+                  │
+                  ▼
+             Export: SKILL.md + OpenClaw + Claude Code Skills
 ```
 
 ### Processing Budget (Per Work Hour)
