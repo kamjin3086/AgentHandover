@@ -33,6 +33,7 @@ from oc_apprentice_worker.export_adapter import SOPExportAdapter
 from oc_apprentice_worker.openclaw_writer import OpenClawWriter
 from oc_apprentice_worker.scene_annotator import AnnotationConfig, SceneAnnotator
 from oc_apprentice_worker.sop_generator import SOPGenerator, SOPGeneratorConfig
+from oc_apprentice_worker.sop_linter import lint_sop
 from oc_apprentice_worker.task_segmenter import TaskSegmenter, SegmenterConfig
 from oc_apprentice_worker.scheduler import IdleJobGate, SchedulerConfig
 from oc_apprentice_worker.translator import SemanticTranslator
@@ -59,6 +60,31 @@ _WORKER_VERSION = "0.1.0"
 _DB_RETRY_MAX_SECONDS = 120
 _DB_RETRY_POLL_SECONDS = 5
 _IDLE_LOG_INTERVAL_SECONDS = 300  # 5 minutes
+
+
+def _lint_and_log(sop_template: dict, label: str) -> bool:
+    """Lint an SOP template, log any issues, return True if valid.
+
+    Errors are logged at ERROR level, warnings at WARNING level.
+    """
+    result = lint_sop(sop_template)
+    for issue in result.issues:
+        if issue.severity == "error":
+            logger.error(
+                "SOP lint error [%s] %s [%s]: %s",
+                label, issue.field, sop_template.get("slug", "?"), issue.message,
+            )
+        else:
+            logger.warning(
+                "SOP lint warning [%s] %s [%s]: %s",
+                label, issue.field, sop_template.get("slug", "?"), issue.message,
+            )
+    if not result.valid:
+        logger.error(
+            "SOP '%s' failed validation (%d errors), skipping export",
+            sop_template.get("title", "?"), len(result.errors),
+        )
+    return result.valid
 
 
 def _read_vlm_config_field(field: str, default: str = "") -> str:
@@ -574,6 +600,73 @@ def _remove_worker_status() -> None:
         pass
 
 
+# ------------------------------------------------------------------
+# SOP index file — consumed by the SwiftUI menu bar app
+# ------------------------------------------------------------------
+
+_last_sops_index_write: float = 0.0
+
+
+def _write_sops_index(db: WorkerDB, *, force: bool = False) -> None:
+    """Atomically write sops-index.json for the SwiftUI app to read.
+
+    Throttled to at most once every 5 seconds unless *force* is True.
+    """
+    global _last_sops_index_write
+    now = time.time()
+    if not force and (now - _last_sops_index_write) < 5.0:
+        return
+
+    try:
+        all_sops = db.get_generated_sops()
+        failed = db.get_failed_generations()
+
+        draft_count = sum(1 for s in all_sops if s.get("status") == "draft")
+        approved_count = sum(1 for s in all_sops if s.get("status") == "approved")
+
+        sop_entries = []
+        for s in all_sops:
+            sop_entries.append({
+                "sop_id": s.get("sop_id", ""),
+                "slug": s.get("slug", ""),
+                "title": s.get("title", "Untitled"),
+                "source": s.get("source", ""),
+                "status": s.get("status", "draft"),
+                "confidence": s.get("confidence", 0.0) or 0.0,
+                "created_at": s.get("created_at", ""),
+                "reviewed_at": s.get("reviewed_at"),
+            })
+
+        index = {
+            "updated_at": datetime.now(timezone.utc).strftime(
+                "%Y-%m-%dT%H:%M:%SZ"
+            ),
+            "sops": sop_entries,
+            "failed_count": len(failed),
+            "draft_count": draft_count,
+            "approved_count": approved_count,
+        }
+
+        sdir = _status_dir()
+        sdir.mkdir(parents=True, exist_ok=True)
+        target = sdir / "sops-index.json"
+        fd, tmp_path = tempfile.mkstemp(
+            dir=str(sdir), prefix=".sops-index.", suffix=".tmp"
+        )
+        with os.fdopen(fd, "w") as f:
+            json.dump(index, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.rename(tmp_path, str(target))
+        _last_sops_index_write = now
+    except Exception:
+        logger.debug("Failed to write sops-index.json", exc_info=True)
+        try:
+            os.unlink(tmp_path)  # type: ignore[possibly-undefined]
+        except Exception:
+            pass
+
+
 def run_pipeline(
     events: list[dict],
     *,
@@ -991,6 +1084,30 @@ def _process_focus_sessions(
                     exc_info=True,
                 )
 
+    # Lint / validate SOPs before export
+    if sop_templates:
+        valid_templates: list[dict] = []
+        for template in sop_templates:
+            if _lint_and_log(template, "focus"):
+                valid_templates.append(template)
+            else:
+                # Save invalid SOPs as drafts for debugging, but skip export
+                try:
+                    db.save_generated_sop(
+                        slug=template.get("slug", ""),
+                        title=title,
+                        source="focus",
+                        sop_template=template,
+                        confidence=0.0,
+                        source_id=session_id,
+                        auto_approve=False,
+                    )
+                except Exception:
+                    logger.debug(
+                        "Failed to save invalid SOP draft to DB", exc_info=True,
+                    )
+        sop_templates = valid_templates
+
     # Save generated SOPs to DB for review tracking
     exported = 0
     if sop_templates:
@@ -1144,6 +1261,26 @@ def _process_focus_sessions_v2(
     if result.success and result.sop:
         sop_templates = [result.sop]
         slug = result.sop.get("slug", "")
+
+        # Lint / validate before save+export
+        if not _lint_and_log(result.sop, "focus_v2"):
+            # Save invalid SOP as draft for debugging, skip export
+            try:
+                db.save_generated_sop(
+                    slug=slug,
+                    title=title,
+                    source="focus",
+                    sop_template=result.sop,
+                    confidence=0.0,
+                    source_id=session_id,
+                    auto_approve=False,
+                )
+            except Exception:
+                logger.debug(
+                    "Failed to save invalid SOP draft to DB", exc_info=True,
+                )
+            _clear_focus_signal(signal_path)
+            return 0
 
         # Save generated SOP to DB for review tracking
         try:
@@ -1394,6 +1531,25 @@ def _process_passive_discovery(
         sop_templates = [result.sop]
         slug = result.sop.get("slug", "")
 
+        # Lint / validate before save+export
+        if not _lint_and_log(result.sop, "passive"):
+            # Save invalid SOP as draft for debugging, skip export
+            try:
+                db.save_generated_sop(
+                    slug=slug,
+                    title=task_label,
+                    source="passive",
+                    sop_template=result.sop,
+                    confidence=0.0,
+                    source_id=str(cluster_id),
+                    auto_approve=False,
+                )
+            except Exception:
+                logger.debug(
+                    "Failed to save invalid SOP draft to DB", exc_info=True,
+                )
+            continue
+
         # Save generated SOP to DB for review tracking
         try:
             db.save_generated_sop(
@@ -1525,32 +1681,44 @@ def _process_retry_triggers(
                 )
                 if result.success and result.sop:
                     slug = result.sop.get("slug", "")
-                    try:
-                        db.save_generated_sop(
-                            slug=slug,
-                            title=title,
-                            source="focus",
-                            sop_template=result.sop,
-                            confidence=result.sop.get("confidence", 0.0),
-                            source_id=source_id,
-                            auto_approve=sop_auto_approve,
-                        )
-                    except Exception:
-                        logger.warning(
-                            "Retry: failed to save SOP to DB", exc_info=True,
-                        )
 
-                    if sop_auto_approve:
-                        _export_sop_templates(
-                            [result.sop],
-                            openclaw_writer=openclaw_writer,
-                            skill_md_writer=skill_md_writer,
-                            claude_skill_writer=claude_skill_writer,
-                            index_generator=index_generator,
+                    # Lint before save+export
+                    if not _lint_and_log(result.sop, "retry_focus"):
+                        try:
+                            db.save_generated_sop(
+                                slug=slug, title=title, source="focus",
+                                sop_template=result.sop, confidence=0.0,
+                                source_id=source_id, auto_approve=False,
+                            )
+                        except Exception:
+                            logger.debug("Failed to save invalid retry SOP draft", exc_info=True)
+                    else:
+                        try:
+                            db.save_generated_sop(
+                                slug=slug,
+                                title=title,
+                                source="focus",
+                                sop_template=result.sop,
+                                confidence=result.sop.get("confidence", 0.0),
+                                source_id=source_id,
+                                auto_approve=sop_auto_approve,
+                            )
+                        except Exception:
+                            logger.warning(
+                                "Retry: failed to save SOP to DB", exc_info=True,
+                            )
+
+                        if sop_auto_approve:
+                            _export_sop_templates(
+                                [result.sop],
+                                openclaw_writer=openclaw_writer,
+                                skill_md_writer=skill_md_writer,
+                                claude_skill_writer=claude_skill_writer,
+                                index_generator=index_generator,
+                            )
+                        logger.info(
+                            "Retry succeeded for focus session '%s'", title,
                         )
-                    logger.info(
-                        "Retry succeeded for focus session '%s'", title,
-                    )
                 else:
                     logger.warning(
                         "Retry failed again for focus session '%s': %s",
@@ -1608,33 +1776,45 @@ def _process_retry_triggers(
                     )
                     if result.success and result.sop:
                         slug = result.sop.get("slug", "")
-                        try:
-                            db.save_generated_sop(
-                                slug=slug,
-                                title=title,
-                                source="passive",
-                                sop_template=result.sop,
-                                confidence=result.sop.get("confidence", 0.0),
-                                source_id=source_id,
-                                auto_approve=sop_auto_approve,
-                            )
-                        except Exception:
-                            logger.warning(
-                                "Retry: failed to save SOP to DB",
-                                exc_info=True,
-                            )
 
-                        if sop_auto_approve:
-                            _export_sop_templates(
-                                [result.sop],
-                                openclaw_writer=openclaw_writer,
-                                skill_md_writer=skill_md_writer,
-                                claude_skill_writer=claude_skill_writer,
-                                index_generator=index_generator,
+                        # Lint before save+export
+                        if not _lint_and_log(result.sop, "retry_passive"):
+                            try:
+                                db.save_generated_sop(
+                                    slug=slug, title=title, source="passive",
+                                    sop_template=result.sop, confidence=0.0,
+                                    source_id=source_id, auto_approve=False,
+                                )
+                            except Exception:
+                                logger.debug("Failed to save invalid retry SOP draft", exc_info=True)
+                        else:
+                            try:
+                                db.save_generated_sop(
+                                    slug=slug,
+                                    title=title,
+                                    source="passive",
+                                    sop_template=result.sop,
+                                    confidence=result.sop.get("confidence", 0.0),
+                                    source_id=source_id,
+                                    auto_approve=sop_auto_approve,
+                                )
+                            except Exception:
+                                logger.warning(
+                                    "Retry: failed to save SOP to DB",
+                                    exc_info=True,
+                                )
+
+                            if sop_auto_approve:
+                                _export_sop_templates(
+                                    [result.sop],
+                                    openclaw_writer=openclaw_writer,
+                                    skill_md_writer=skill_md_writer,
+                                    claude_skill_writer=claude_skill_writer,
+                                    index_generator=index_generator,
+                                )
+                            logger.info(
+                                "Retry succeeded for passive cluster '%s'", title,
                             )
-                        logger.info(
-                            "Retry succeeded for passive cluster '%s'", title,
-                        )
                     else:
                         logger.warning(
                             "Retry failed again for passive cluster '%s': %s",
@@ -1706,14 +1886,20 @@ def _process_approval_triggers(
                 sop_record = db.get_generated_sop(sop_id)
                 if sop_record and sop_record.get("sop_json"):
                     sop_template = sop_record["sop_json"]
-                    _export_sop_templates(
-                        [sop_template],
-                        openclaw_writer=openclaw_writer,
-                        skill_md_writer=skill_md_writer,
-                        claude_skill_writer=claude_skill_writer,
-                        index_generator=index_generator,
-                    )
-                    logger.info("Approved and exported SOP %s", sop_id)
+                    if not _lint_and_log(sop_template, "approval"):
+                        logger.error(
+                            "Approved SOP %s failed lint validation, export skipped",
+                            sop_id,
+                        )
+                    else:
+                        _export_sop_templates(
+                            [sop_template],
+                            openclaw_writer=openclaw_writer,
+                            skill_md_writer=skill_md_writer,
+                            claude_skill_writer=claude_skill_writer,
+                            index_generator=index_generator,
+                        )
+                        logger.info("Approved and exported SOP %s", sop_id)
                 else:
                     logger.warning(
                         "Approved SOP %s but could not load template for export",
@@ -2644,6 +2830,7 @@ def main(argv: list[str] | None = None) -> None:
                     logger.info(
                         "Focus recording: generated %d SOP(s)!", focus_sops
                     )
+                    _write_sops_index(db)
 
                 # Check for CLI-requested export triggers
                 _check_export_trigger(
@@ -2714,6 +2901,7 @@ def main(argv: list[str] | None = None) -> None:
                             "Generated %d new SOP(s)!",
                             summary["sops_exported"],
                         )
+                        _write_sops_index(db)
                     else:
                         logger.info(
                             "Processed %d events into %d episodes. "
@@ -2857,6 +3045,7 @@ def main(argv: list[str] | None = None) -> None:
                                     "Passive discovery: generated %d SOP(s)!",
                                     pd_sops,
                                 )
+                                _write_sops_index(db)
                         except Exception:
                             logger.warning(
                                 "Passive discovery failed",
@@ -2890,6 +3079,9 @@ def main(argv: list[str] | None = None) -> None:
                     v2_annotations_today=total_v2_annotations,
                     v2_diffs_today=total_v2_diffs,
                 )
+
+                # Refresh sops-index.json (throttled to every 5s)
+                _write_sops_index(db)
 
                 # Episode store cleanup — once per day (86400s)
                 _now_mono = time.monotonic()

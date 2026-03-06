@@ -841,3 +841,159 @@ class TestPassiveRetryOnMalformedJson:
         assert result.success
         assert len(prompts_seen) == 2
         assert "Your previous response was not valid JSON" in prompts_seen[1]
+
+
+# ---------------------------------------------------------------------------
+# Item 24: Outcome, prerequisites, per-step verify
+# ---------------------------------------------------------------------------
+
+
+class TestOutcomeAndPrerequisitesParsing:
+    """Verify outcome and prerequisites fields survive parsing and template conversion."""
+
+    def test_sop_with_outcome_and_prerequisites(self):
+        """outcome and prerequisites survive JSON parse and template conversion."""
+        vlm_sop = _make_vlm_sop_json()
+        vlm_sop["outcome"] = "Expense report is submitted and queued for approval."
+        vlm_sop["prerequisites"] = [
+            "Expensify account access",
+            "Receipt photo",
+        ]
+
+        raw_json = json.dumps(vlm_sop)
+        parsed = _parse_sop_response(raw_json)
+        assert parsed is not None
+        assert parsed["outcome"] == "Expense report is submitted and queued for approval."
+        assert parsed["prerequisites"] == ["Expensify account access", "Receipt photo"]
+
+        # Convert to template and verify outcome is preserved
+        template = _vlm_sop_to_template(parsed, mode="focus")
+        assert template["outcome"] == "Expense report is submitted and queued for approval."
+        assert "Expensify account access" in template["preconditions"]
+        assert "Receipt photo" in template["preconditions"]
+
+    def test_sop_without_outcome_defaults_to_empty(self):
+        """SOPs without outcome get empty string — no crash."""
+        vlm_sop = _make_vlm_sop_json()
+        vlm_sop.pop("outcome", None)
+        template = _vlm_sop_to_template(vlm_sop, mode="focus")
+        assert template["outcome"] == ""
+
+    def test_per_step_verify_survives_template(self):
+        """Each step's verify field is preserved in parameters."""
+        vlm_sop = _make_vlm_sop_json()
+        template = _vlm_sop_to_template(vlm_sop, mode="focus")
+        for step in template["steps"]:
+            assert "verify" in step["parameters"]
+            assert step["parameters"]["verify"]  # non-empty
+
+
+# ---------------------------------------------------------------------------
+# Item 25: Typed variables
+# ---------------------------------------------------------------------------
+
+
+class TestTypedVariables:
+    """Tests for typed variable support in SOP generation."""
+
+    def test_typed_variable_in_sop_json(self):
+        """Typed variable structure with all fields survives SOP parsing
+        and template conversion."""
+        vlm_sop = _make_vlm_sop_json()
+        vlm_sop["variables"] = [
+            {
+                "name": "email_address",
+                "type": "email",
+                "example": "user@example.com",
+                "description": "The email address to search for",
+                "required": True,
+                "sensitive": False,
+                "validation": "Must be a valid email format",
+            },
+            {
+                "name": "api_key",
+                "type": "password",
+                "example": "sk-...",
+                "description": "API authentication key",
+                "required": True,
+                "sensitive": True,
+                "validation": "Starts with sk-",
+            },
+        ]
+        # Parse round-trip through JSON
+        raw = json.dumps(vlm_sop)
+        parsed = _parse_sop_response(raw)
+        assert parsed is not None
+
+        template = _vlm_sop_to_template(parsed, mode="focus")
+        variables = template["variables"]
+        assert len(variables) == 2
+
+        email_var = variables[0]
+        assert email_var["name"] == "email_address"
+        assert email_var["type"] == "email"
+        assert email_var["example"] == "user@example.com"
+        assert email_var["required"] is True
+        assert email_var["sensitive"] is False
+        assert email_var["validation"] == "Must be a valid email format"
+
+        api_var = variables[1]
+        assert api_var["name"] == "api_key"
+        assert api_var["type"] == "password"
+        assert api_var["sensitive"] is True
+
+    def test_variable_type_defaults_to_text(self):
+        """Missing type field defaults to 'text'."""
+        vlm_sop = _make_vlm_sop_json()
+        vlm_sop["variables"] = [
+            {"name": "query", "description": "Search query", "example": "test"},
+        ]
+        template = _vlm_sop_to_template(vlm_sop)
+        assert template["variables"][0]["type"] == "text"
+
+    def test_legacy_string_type_normalised_to_text(self):
+        """Old SOPs with type='string' should be normalised to 'text'."""
+        vlm_sop = _make_vlm_sop_json()
+        vlm_sop["variables"] = [
+            {"name": "query", "type": "string", "example": "test"},
+        ]
+        template = _vlm_sop_to_template(vlm_sop)
+        assert template["variables"][0]["type"] == "text"
+
+    def test_plain_string_variable_gets_defaults(self):
+        """VLM returning a bare string variable gets full typed structure."""
+        vlm_sop = _make_vlm_sop_json()
+        vlm_sop["variables"] = ["search_query"]
+        template = _vlm_sop_to_template(vlm_sop)
+        var = template["variables"][0]
+        assert var["name"] == "search_query"
+        assert var["type"] == "text"
+        assert var["required"] is True
+        assert var["sensitive"] is False
+        assert var["validation"] == ""
+
+    def test_password_type_forces_sensitive_true(self):
+        """password type forces sensitive=True even if VLM says False."""
+        vlm_sop = _make_vlm_sop_json()
+        vlm_sop["variables"] = [
+            {"name": "token", "type": "password", "sensitive": False},
+        ]
+        template = _vlm_sop_to_template(vlm_sop)
+        assert template["variables"][0]["sensitive"] is True
+
+    def test_focus_prompt_contains_typed_variable_schema(self):
+        """Focus prompt includes typed variable fields."""
+        timeline = _make_timeline(2)
+        prompt = _build_focus_prompt("Task", timeline)
+        assert '"type":' in prompt
+        assert '"sensitive":' in prompt
+        assert '"validation":' in prompt
+        assert "password" in prompt.lower()
+
+    def test_passive_prompt_contains_typed_variable_schema(self):
+        """Passive prompt includes typed variable fields."""
+        demos = [_make_timeline(2), _make_timeline(3)]
+        prompt = _build_passive_prompt(demos)
+        assert '"type":' in prompt
+        assert '"sensitive":' in prompt
+        assert '"validation":' in prompt

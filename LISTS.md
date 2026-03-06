@@ -42,18 +42,18 @@ Compiled 2026-03-06 from external AI audit, verified against codebase.
 
 | # | Issue | Location | Status |
 |---|-------|----------|--------|
-| 21 | App needs workflow inbox/gallery — show drafts, high-confidence, stale, recently improved SOPs | Product | TODO |
+| 21 | App needs workflow inbox/gallery — show drafts, high-confidence, stale, recently improved SOPs | Product | DONE |
 | 22 | Surface ROI: repeat count, estimated time saved, confidence trend, agent-ready score | Product | TODO |
 | 23 | Install channels should be explicit: pkg=end-user, Homebrew=technical, source=developer | Product | TODO |
-| 24 | SOPs should add Outcome block, Before You Start block, per-step verification | SOP format | TODO |
-| 25 | Variables should be typed with names, examples, validation hints, sensitivity flags | SOP format | TODO |
+| 24 | SOPs should add Outcome block, Before You Start block, per-step verification | SOP format | DONE |
+| 25 | Variables should be typed with names, examples, validation hints, sensitivity flags | SOP format | DONE |
 | 26 | SOPs should model decision points/branches (if logged in, skip; if no results, check filters) | SOP format | TODO |
 | 27 | SOPs should mark risky steps (submit, delete, send) for approval gates | SOP format | TODO |
 | 28 | SOPs should include stop conditions, recovery paths, example runs | SOP format | TODO |
 | 29 | SOPs should carry change history and freshness metadata (demo count, last confirmed, drift notes) | SOP format | TODO |
 | 30 | Agent SOPs should be structured execution contracts (SOP.json) with SKILL.md as human-readable layer | Agent design | TODO |
 | 31 | Agent SOPs need typed inputs, machine-checkable preconditions, step-level postconditions, retry/on_fail, risk flags | Agent design | TODO |
-| 32 | Generator should lint/compile SOPs before export — validation gate for invalid workflows | Agent design | TODO |
+| 32 | Generator should lint/compile SOPs before export — validation gate for invalid workflows | Agent design | DONE |
 | 33 | Better terminal/editor/IDE semantics for developer workflows | User segment | TODO |
 | 34 | Stronger spreadsheet/table/form semantics for analyst/ops users | User segment | TODO |
 | 35 | Privacy controls: per-app capture modes, pause/delete/audit history, clear data explanation | User trust | TODO |

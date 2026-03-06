@@ -265,6 +265,29 @@ struct MenuBarView: View {
 
     private var actionsSection: some View {
         VStack(spacing: 4) {
+            // Workflow inbox
+            Button(action: {
+                openWindow(id: "workflows")
+            }) {
+                HStack {
+                    Label("Workflows", systemImage: "tray.full")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    if appState.sopDraftCount > 0 {
+                        Text("\(appState.sopDraftCount)")
+                            .font(.caption2)
+                            .fontWeight(.semibold)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.orange.opacity(0.2))
+                            .foregroundColor(.orange)
+                            .cornerRadius(4)
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 6)
+
             // Open config
             Button(action: openConfig) {
                 Label("Edit Configuration", systemImage: "gearshape")

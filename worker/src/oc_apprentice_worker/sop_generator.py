@@ -83,8 +83,9 @@ Generate a JSON SOP with this exact structure:
 {{
   "title": "<human-readable task name>",
   "description": "<1-2 sentence description of what this task accomplishes>",
+  "outcome": "<single sentence: what the user achieves when this workflow completes successfully>",
   "when_to_use": "<when should someone perform this task>",
-  "prerequisites": ["<what must be true before starting>"],
+  "prerequisites": ["<what the user needs before starting: accounts, tools, files, permissions, etc.>"],
   "steps": [
     {{
       "step_number": 1,
@@ -92,15 +93,19 @@ Generate a JSON SOP with this exact structure:
       "app": "<application name>",
       "location": "<URL, file path, or screen location>",
       "input": "<text to type or value to enter, if any>",
-      "verify": "<how to confirm this step succeeded>"
+      "verify": "<concrete check to confirm this step succeeded — what should the user see or be able to confirm?>"
     }}
   ],
   "success_criteria": ["<how to confirm the entire task succeeded>"],
   "variables": [
     {{
       "name": "<variable_name>",
+      "type": "<one of: text, email, url, number, date, filepath, password, selection>",
+      "example": "<example value from the demonstration>",
       "description": "<what this variable represents>",
-      "example": "<example value from the demonstration>"
+      "required": true,
+      "sensitive": false,
+      "validation": "<optional hint for valid values, e.g. 'Must be a valid email format'>"
     }}
   ],
   "common_errors": ["<potential failure modes and how to recover>"],
@@ -112,8 +117,16 @@ Rules:
 - Skip redundant frames (reading, scrolling without action)
 - Extract variables: values that would change each time (dates, amounts, \
 names) should be marked as {{{{variable_name}}}}
-- Include verify steps so an agent can confirm success
+- The "outcome" is a single sentence describing the end result of the whole workflow
+- The "prerequisites" list things the user needs before starting (accounts, \
+permissions, files, tools — not steps)
+- Each step's "verify" must be a concrete, observable check (what appears on \
+screen, what changes, what confirms success)
 - The "input" field should contain the EXACT text typed or selected
+- Variable types: text (default, free-form), email, url, number, date, \
+filepath, password (always sensitive=true), selection (one of a set)
+- Mark sensitive=true for passwords, API keys, tokens, SSNs, credit cards
+- Use type "password" for credentials (these are always sensitive)
 
 Respond with ONLY the JSON object."""
 
@@ -128,8 +141,9 @@ Generate a JSON SOP with this exact structure:
 {{
   "title": "<human-readable task name>",
   "description": "<1-2 sentence description>",
+  "outcome": "<single sentence: what the user achieves when this workflow completes successfully>",
   "when_to_use": "<when to perform this task>",
-  "prerequisites": ["<preconditions>"],
+  "prerequisites": ["<what the user needs before starting: accounts, tools, files, permissions, etc.>"],
   "steps": [
     {{
       "step_number": 1,
@@ -137,15 +151,19 @@ Generate a JSON SOP with this exact structure:
       "app": "<application>",
       "location": "<URL or location>",
       "input": "<text/value to enter, use {{{{variable}}}} for parts that differ>",
-      "verify": "<confirmation check>"
+      "verify": "<concrete check to confirm this step succeeded — what should the user see or confirm?>"
     }}
   ],
   "success_criteria": ["<overall success checks>"],
   "variables": [
     {{
       "name": "<variable_name>",
+      "type": "<one of: text, email, url, number, date, filepath, password, selection>",
+      "example": "<example from demonstration 1>",
       "description": "<what varies>",
-      "example": "<example from demonstration 1>"
+      "required": true,
+      "sensitive": false,
+      "validation": "<optional hint for valid values>"
     }}
   ],
   "common_errors": ["<failure modes>"],
@@ -158,6 +176,10 @@ Rules:
 - Values that are CONSTANT across demonstrations are hardcoded
 - Order steps by the most common sequence
 - Skip noise frames (reading, idle, unrelated browsing)
+- Variable types: text (default, free-form), email, url, number, date, \
+filepath, password (always sensitive=true), selection (one of a set)
+- Mark sensitive=true for passwords, API keys, tokens, SSNs, credit cards
+- Use type "password" for credentials (these are always sensitive)
 
 Respond with ONLY the JSON object."""
 
@@ -436,18 +458,32 @@ def _vlm_sop_to_template(
             # VLM returned a plain string like "query" instead of a dict
             variables.append({
                 "name": raw_var,
-                "type": "string",
+                "type": "text",
                 "example": "",
                 "default": "",
                 "description": "",
+                "required": True,
+                "sensitive": False,
+                "validation": "",
             })
         elif isinstance(raw_var, dict):
+            var_type = raw_var.get("type", "text")
+            # Normalise legacy "string" type to "text"
+            if var_type == "string":
+                var_type = "text"
+            sensitive = raw_var.get("sensitive", False)
+            # password type is always sensitive
+            if var_type == "password":
+                sensitive = True
             variables.append({
                 "name": raw_var.get("name", "unknown"),
-                "type": "string",
+                "type": var_type,
                 "example": raw_var.get("example", ""),
-                "default": "",
+                "default": raw_var.get("default", ""),
                 "description": raw_var.get("description", ""),
+                "required": raw_var.get("required", True),
+                "sensitive": sensitive,
+                "validation": raw_var.get("validation", ""),
             })
         # Skip any other types silently
 
@@ -467,6 +503,9 @@ def _vlm_sop_to_template(
     for prereq in vlm_sop.get("prerequisites", []):
         if isinstance(prereq, str):
             preconditions.append(prereq)
+
+    # Build outcome from VLM output
+    outcome = vlm_sop.get("outcome", "")
 
     # Build task_description from VLM output
     task_description = vlm_sop.get("description", "")
@@ -500,6 +539,7 @@ def _vlm_sop_to_template(
         "abs_support": 1 if mode == "focus" else 2,
         "apps_involved": apps_involved,
         "preconditions": preconditions,
+        "outcome": outcome,
         "task_description": task_description,
         "execution_overview": execution_overview,
         "source": "v2_focus_recording" if mode == "focus" else "v2_passive_discovery",

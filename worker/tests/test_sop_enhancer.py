@@ -312,7 +312,7 @@ class TestParseResponse:
     """Validate and extract fields from LLM response."""
 
     def test_valid_response(self):
-        task_desc, overview = SOPEnhancer._parse_response(_sample_response())
+        task_desc, overview, outcome = SOPEnhancer._parse_response(_sample_response())
         assert "contact form" in task_desc
         assert overview["goal"] == "Submit the contact form successfully"
 
@@ -343,13 +343,13 @@ class TestParseResponse:
     def test_non_string_overview_values_coerced(self):
         response = _sample_response()
         response["execution_overview"]["goal"] = 42
-        task_desc, overview = SOPEnhancer._parse_response(response)
+        task_desc, overview, outcome = SOPEnhancer._parse_response(response)
         assert overview["goal"] == "42"
 
     def test_task_description_stripped(self):
         response = _sample_response()
         response["task_description"] = "  padded text  "
-        task_desc, _ = SOPEnhancer._parse_response(response)
+        task_desc, _, __ = SOPEnhancer._parse_response(response)
         assert task_desc == "padded text"
 
 

@@ -40,6 +40,12 @@ struct OpenMimicApp: App {
                 .frame(width: 520, height: 520)
         }
         .windowResizability(.contentSize)
+
+        // Workflow inbox window
+        Window("Workflows", id: "workflows") {
+            WorkflowInboxView()
+        }
+        .windowResizability(.contentSize)
     }
 }
 

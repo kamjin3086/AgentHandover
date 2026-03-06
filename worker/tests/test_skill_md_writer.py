@@ -375,11 +375,11 @@ class TestSkillMdWriterV2:
         assert "## When to Use" in content
         assert "New feature branch is ready" in content
 
-    def test_v2_has_prerequisites(self):
+    def test_v2_has_before_you_start(self):
         template = _make_v2_sop_template()
         path = self.writer.write_sop(template)
         content = path.read_text()
-        assert "## Prerequisites" in content
+        assert "## Before You Start" in content
         assert "Repository access" in content
         assert "CI/CD pipeline" in content
 
@@ -394,7 +394,7 @@ class TestSkillMdWriterV2:
         # Semantic fields
         assert "- **Action**:" in content
         assert "- **App**: VS Code" in content
-        assert "- **Verify**:" in content
+        assert "_Verify:" in content
 
     def test_v2_step_input_rendered(self):
         template = _make_v2_sop_template()
@@ -481,7 +481,7 @@ class TestSkillMdWriterV2:
         template = _make_v2_sop_template(preconditions=[])
         path = self.writer.write_sop(template)
         content = path.read_text()
-        assert "## Prerequisites" not in content
+        assert "## Before You Start" not in content
 
     def test_v2_no_variables_no_section(self):
         template = _make_v2_sop_template()
@@ -644,3 +644,231 @@ class TestDomHintsWithTimeline:
         # header + 20 elements = 21 (with possible empty line)
         page_elem_count = sum(1 for h in hints if h.startswith("`"))
         assert page_elem_count <= 20
+
+
+# ------------------------------------------------------------------
+# Item 24: Outcome, Before You Start, per-step verify
+# ------------------------------------------------------------------
+
+
+class TestOutcomeAndBeforeYouStart:
+    """Tests for the Outcome, Before You Start, and per-step verify rendering."""
+
+    def setup_method(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.writer = SkillMdWriter(workspace_dir=self.tmpdir)
+
+    def test_skill_md_renders_outcome_block(self):
+        """SKILL.md output includes '## Outcome' when outcome is present."""
+        template = _make_v2_sop_template(
+            outcome="The feature is deployed to staging and health checks pass.",
+        )
+        path = self.writer.write_sop(template)
+        content = path.read_text()
+        assert "## Outcome" in content
+        assert "deployed to staging" in content
+        # Outcome should appear before Description
+        outcome_pos = content.index("## Outcome")
+        if "## Description" in content:
+            desc_pos = content.index("## Description")
+            assert outcome_pos < desc_pos
+
+    def test_skill_md_renders_prerequisites_block(self):
+        """SKILL.md output includes '## Before You Start' section."""
+        template = _make_v2_sop_template(
+            preconditions=["Git installed", "SSH key configured"],
+        )
+        path = self.writer.write_sop(template)
+        content = path.read_text()
+        assert "## Before You Start" in content
+        assert "- Git installed" in content
+        assert "- SSH key configured" in content
+
+    def test_skill_md_renders_step_verify(self):
+        """Each step's verify is rendered as italicized line."""
+        template = _make_v2_sop_template()
+        path = self.writer.write_sop(template)
+        content = path.read_text()
+        # Verify lines should be italicized (_Verify: ..._)
+        assert "_Verify: git status shows expected files changed_" in content
+        assert "_Verify: Output shows all tests passed_" in content
+        assert "_Verify: Push completes without errors_" in content
+
+    def test_skill_md_graceful_without_outcome(self):
+        """Older SOPs without outcome still render fine — no crash, no empty section."""
+        template = _make_v2_sop_template()
+        # Ensure no outcome key
+        template.pop("outcome", None)
+        path = self.writer.write_sop(template)
+        content = path.read_text()
+        assert "## Outcome" not in content
+        # Everything else still works
+        assert "## Steps" in content
+        assert "## Metadata" in content
+
+    def test_skill_md_empty_outcome_not_rendered(self):
+        """An empty outcome string should not produce a section."""
+        template = _make_v2_sop_template(outcome="")
+        path = self.writer.write_sop(template)
+        content = path.read_text()
+        assert "## Outcome" not in content
+
+    def test_skill_md_no_before_you_start_when_empty(self):
+        """No 'Before You Start' section when preconditions is empty."""
+        template = _make_v2_sop_template(preconditions=[])
+        path = self.writer.write_sop(template)
+        content = path.read_text()
+        assert "## Before You Start" not in content
+
+
+# ------------------------------------------------------------------
+# Item 25: Typed variable rendering
+# ------------------------------------------------------------------
+
+
+class TestTypedVariableRendering:
+    """Tests for typed variable table in SKILL.md rendering."""
+
+    def setup_method(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.writer = SkillMdWriter(workspace_dir=self.tmpdir)
+
+    def test_skill_md_renders_variable_table(self):
+        """v2 SKILL.md should render a rich variable table with Type and Required columns."""
+        template = _make_v2_sop_template()
+        template["variables"] = [
+            {
+                "name": "email_address",
+                "type": "email",
+                "example": "user@example.com",
+                "description": "The email to search for",
+                "required": True,
+                "sensitive": False,
+            },
+            {
+                "name": "search_query",
+                "type": "text",
+                "example": "blue widgets",
+                "description": "What to search for",
+                "required": True,
+                "sensitive": False,
+            },
+        ]
+        path = self.writer.write_sop(template)
+        content = path.read_text()
+
+        # Table header
+        assert "| Variable | Type | Required | Description | Example |" in content
+        # Rows
+        assert "| `email_address` | email | Yes |" in content
+        assert "| `search_query` | text | Yes |" in content
+        assert "user@example.com" in content
+
+    def test_skill_md_sensitive_variable_warning(self):
+        """Sensitive variables produce a warning note."""
+        template = _make_v2_sop_template()
+        template["variables"] = [
+            {
+                "name": "api_key",
+                "type": "password",
+                "example": "sk-...",
+                "description": "API authentication key",
+                "required": True,
+                "sensitive": True,
+            },
+            {
+                "name": "query",
+                "type": "text",
+                "example": "test",
+                "description": "Search query",
+                "required": False,
+                "sensitive": False,
+            },
+        ]
+        path = self.writer.write_sop(template)
+        content = path.read_text()
+
+        # Sensitive warning for api_key
+        assert "**api_key**: Sensitive" in content
+        assert "do not log or display" in content
+        # No warning for query
+        assert "**query**: Sensitive" not in content
+
+    def test_skill_md_legacy_variables_fallback(self):
+        """Old-format variables (plain strings) still render gracefully."""
+        template = _make_v2_sop_template()
+        template["variables"] = ["search_query", "date_range"]
+        path = self.writer.write_sop(template)
+        content = path.read_text()
+
+        assert "## Variables" in content
+        assert "| `search_query` | text | Yes |" in content
+        assert "| `date_range` | text | Yes |" in content
+
+    def test_skill_md_legacy_dict_without_type(self):
+        """Old dicts with only name/description/example still render."""
+        template = _make_v2_sop_template()
+        template["variables"] = [
+            {"name": "amount", "description": "Dollar amount", "example": "$42.50"},
+        ]
+        path = self.writer.write_sop(template)
+        content = path.read_text()
+
+        # Should default type to text
+        assert "| `amount` | text | Yes | Dollar amount | $42.50 |" in content
+
+    def test_skill_md_optional_variable(self):
+        """Variable with required=False renders 'No'."""
+        template = _make_v2_sop_template()
+        template["variables"] = [
+            {
+                "name": "notes",
+                "type": "text",
+                "example": "optional notes",
+                "description": "Additional notes",
+                "required": False,
+                "sensitive": False,
+            },
+        ]
+        path = self.writer.write_sop(template)
+        content = path.read_text()
+        assert "| `notes` | text | No |" in content
+
+    def test_v1_sop_legacy_string_variables(self):
+        """v1 SOPs with plain string variables render correctly."""
+        template = _make_sop_template()
+        template["variables"] = ["query", "date"]
+        path = self.writer.write_sop(template)
+        content = path.read_text()
+        assert "## Input Variables" in content
+        assert "`{{query}}`: text" in content
+        assert "`{{date}}`: text" in content
+
+    def test_v1_sop_sensitive_variable(self):
+        """v1 SOPs with sensitive variables show warning inline."""
+        template = _make_sop_template()
+        template["variables"] = [
+            {
+                "name": "token",
+                "type": "password",
+                "example": "sk-...",
+                "sensitive": True,
+            },
+        ]
+        path = self.writer.write_sop(template)
+        content = path.read_text()
+        assert "Sensitive" in content
+        assert "do not log or display" in content
+
+    def test_string_type_normalised_to_text_in_v2(self):
+        """Legacy 'string' type is displayed as 'text' in v2 rendering."""
+        template = _make_v2_sop_template()
+        template["variables"] = [
+            {"name": "foo", "type": "string", "description": "A var", "example": "bar"},
+        ]
+        path = self.writer.write_sop(template)
+        content = path.read_text()
+        assert "| `foo` | text |" in content
+        # Verify 'string' does not appear in the Variables section
+        var_section = content.split("## Variables")[1].split("##")[0]
+        assert "string" not in var_section

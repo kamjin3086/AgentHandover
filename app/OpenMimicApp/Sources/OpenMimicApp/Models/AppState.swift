@@ -99,6 +99,11 @@ final class AppState: ObservableObject {
     @Published var vlmMode: String = "local"
     @Published var vlmProvider: String?
 
+    // SOP Index
+    @Published var sopDraftCount: Int = 0
+    @Published var sopApprovedCount: Int = 0
+    @Published var sopTotalCount: Int = 0
+
     // Focus Recording
     @Published var focusSessionActive = false
     @Published var focusSessionTitle: String = ""
@@ -176,6 +181,7 @@ final class AppState: ObservableObject {
         readWorkerStatus()
         readExtensionHeartbeat()
         readFocusSession()
+        readSOPIndex()
         updateHealth()
         checkPermissions()
         updateVLMStatus()
@@ -240,6 +246,22 @@ final class AppState: ObservableObject {
         focusSessionTitle = signal.title
         focusSessionId = signal.session_id
         focusSessionStartedAt = signal.started_at
+    }
+
+    private func readSOPIndex() {
+        let path = statusDir.appendingPathComponent("sops-index.json")
+        guard let data = try? Data(contentsOf: path),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            sopDraftCount = 0
+            sopApprovedCount = 0
+            sopTotalCount = 0
+            return
+        }
+        sopDraftCount = json["draft_count"] as? Int ?? 0
+        sopApprovedCount = json["approved_count"] as? Int ?? 0
+        if let sops = json["sops"] as? [[String: Any]] {
+            sopTotalCount = sops.count
+        }
     }
 
     private func updateVLMStatus() {

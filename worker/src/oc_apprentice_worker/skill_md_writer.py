@@ -227,8 +227,15 @@ class SkillMdWriter(SOPExportAdapter):
         if variables:
             lines.append("## Input Variables")
             for var in variables:
+                if isinstance(var, str):
+                    # Legacy format: plain string variable name
+                    lines.append(f"- `{{{{{var}}}}}`: text")
+                    continue
                 var_name = var.get("name", "unknown")
-                var_type = var.get("type", "string")
+                var_type = var.get("type", "text")
+                # Normalise legacy "string" type for display
+                if var_type == "string":
+                    var_type = "text"
                 example = var.get("example", "")
                 default = var.get("default", "")
 
@@ -237,6 +244,8 @@ class SkillMdWriter(SOPExportAdapter):
                     line += f" (example: {example})"
                 if default:
                     line += f" (default: {default})"
+                if var.get("sensitive", False):
+                    line += " — Sensitive — do not log or display"
                 lines.append(line)
             lines.append("")
 
@@ -282,6 +291,7 @@ class SkillMdWriter(SOPExportAdapter):
         episode_count = sop.get("episode_count", 0)
         apps_involved = sop.get("apps_involved", [])
         preconditions = sop.get("preconditions", [])
+        outcome = sop.get("outcome", "")
         task_description = sop.get("task_description", "")
         execution_overview = sop.get("execution_overview", {})
         source = sop.get("source", "")
@@ -290,10 +300,23 @@ class SkillMdWriter(SOPExportAdapter):
         lines.append(f"# {title}")
         lines.append("")
 
+        # Outcome
+        if outcome:
+            lines.append("## Outcome")
+            lines.append(outcome)
+            lines.append("")
+
         # Description
         if task_description:
             lines.append("## Description")
             lines.append(task_description)
+            lines.append("")
+
+        # Before You Start (prerequisites)
+        if preconditions:
+            lines.append("## Before You Start")
+            for pre in preconditions:
+                lines.append(f"- {pre}")
             lines.append("")
 
         # When to Use
@@ -309,13 +332,6 @@ class SkillMdWriter(SOPExportAdapter):
         if not when_to_use and not apps_involved:
             lines.append("- General workflow")
         lines.append("")
-
-        # Prerequisites
-        if preconditions:
-            lines.append("## Prerequisites")
-            for pre in preconditions:
-                lines.append(f"- {pre}")
-            lines.append("")
 
         # Steps — rich v2 format
         lines.append("## Steps")
@@ -351,10 +367,10 @@ class SkillMdWriter(SOPExportAdapter):
             if input_val:
                 lines.append(f"- **Input**: `{input_val}`")
 
-            # Verify
+            # Verify — italicized on its own line for easy scanning
             verify = params.get("verify", "")
             if verify:
-                lines.append(f"- **Verify**: {verify}")
+                lines.append(f"  _Verify: {verify}_")
 
             lines.append("")
 
@@ -371,19 +387,41 @@ class SkillMdWriter(SOPExportAdapter):
                     lines.append(f"- {criterion}")
             lines.append("")
 
-        # Variables — markdown table
+        # Variables — rich markdown table with type, required, sensitivity
         if variables:
             lines.append("## Variables")
-            lines.append("| Variable | Description | Example |")
-            lines.append("|----------|-------------|---------|")
-            for var in variables:
-                var_name = var.get("name", "unknown")
-                var_desc = var.get("description", var.get("type", "string"))
-                var_example = var.get("example", "")
-                lines.append(
-                    f"| `{{{{{{{var_name}}}}}}}` | {var_desc} | {var_example} |"
-                )
             lines.append("")
+            lines.append("| Variable | Type | Required | Description | Example |")
+            lines.append("|----------|------|----------|-------------|---------|")
+            sensitive_vars: list[str] = []
+            for var in variables:
+                if isinstance(var, str):
+                    # Legacy format: plain string variable name
+                    lines.append(
+                        f"| `{var}` | text | Yes | — | — |"
+                    )
+                    continue
+                var_name = var.get("name", "unknown")
+                var_type = var.get("type", "text")
+                # Normalise legacy "string" type for display
+                if var_type == "string":
+                    var_type = "text"
+                var_required = "Yes" if var.get("required", True) else "No"
+                var_desc = var.get("description", "") or "—"
+                var_example = var.get("example", "") or "—"
+                lines.append(
+                    f"| `{var_name}` | {var_type} | {var_required} | {var_desc} | {var_example} |"
+                )
+                if var.get("sensitive", False):
+                    sensitive_vars.append(var_name)
+            lines.append("")
+            # Sensitivity warnings
+            for svar in sensitive_vars:
+                lines.append(
+                    f"> **{svar}**: Sensitive — do not log or display"
+                )
+            if sensitive_vars:
+                lines.append("")
 
         # Common Errors
         common_errors = ""

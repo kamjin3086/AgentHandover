@@ -91,7 +91,7 @@ class SOPEnhancer:
                     system_prompt=system_prompt,
                 )
 
-                task_desc, overview = self._parse_response(raw)
+                task_desc, overview, outcome = self._parse_response(raw)
 
                 # Update cache and budget
                 slug = sop_template.get("slug", "unknown")
@@ -102,6 +102,8 @@ class SOPEnhancer:
 
                 sop_template["task_description"] = task_desc
                 sop_template["execution_overview"] = overview
+                if outcome:
+                    sop_template["outcome"] = outcome
                 logger.info(
                     "Enhanced SOP '%s' with task description (%d chars)",
                     slug,
@@ -172,6 +174,8 @@ class SOPEnhancer:
             '{\n'
             '  "task_description": "3-5 sentence paragraph describing what this '
             'workflow accomplishes, why a user performs it, and the expected outcome.",\n'
+            '  "outcome": "single sentence describing what the user achieves when '
+            'this workflow completes successfully",\n'
             '  "execution_overview": {\n'
             '    "goal": "one-sentence goal",\n'
             '    "prerequisites": "what must be true before starting",\n'
@@ -221,10 +225,11 @@ class SOPEnhancer:
         return system_prompt, user_prompt
 
     @staticmethod
-    def _parse_response(raw: dict) -> tuple[str, dict]:
-        """Validate and extract task_description and execution_overview.
+    def _parse_response(raw: dict) -> tuple[str, dict, str]:
+        """Validate and extract task_description, execution_overview, and outcome.
 
         Raises ValueError if the response doesn't contain valid fields.
+        Returns (task_description, execution_overview, outcome).
         """
         task_desc = raw.get("task_description")
         if not isinstance(task_desc, str) or not task_desc.strip():
@@ -244,7 +249,12 @@ class SOPEnhancer:
             if val is not None and not isinstance(val, str):
                 overview[key] = str(val)
 
-        return task_desc.strip(), overview
+        # Outcome is optional — return empty string if missing
+        outcome = raw.get("outcome", "")
+        if not isinstance(outcome, str):
+            outcome = str(outcome) if outcome else ""
+
+        return task_desc.strip(), overview, outcome.strip()
 
     def get_stats(self) -> dict[str, Any]:
         """Return enhancement statistics."""
