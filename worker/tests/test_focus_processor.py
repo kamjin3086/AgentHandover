@@ -458,6 +458,92 @@ class TestFocusProcessorDiffs:
         # a previous event — in an empty DB, first frame gets first_frame marker.
 
 
+class TestFocusProcessorFirstFrameNoDiff:
+    """The first frame in a focus session must have diff=None."""
+
+    def test_first_frame_diff_is_none_in_timeline(self, tmp_path):
+        """First focus frame's diff is None, subsequent frames keep theirs."""
+        db_path = _create_test_db(tmp_path)
+        session_id = "focus-sess-first-diff"
+        _insert_focus_events(db_path, session_id, count=3, annotated=True)
+
+        with WorkerDB(db_path) as db:
+            sop_gen = _make_mock_sop_generator()
+            processor = FocusProcessor(
+                _make_mock_annotator(),
+                _make_mock_differ(),
+                sop_gen,
+            )
+            processor.process_session(
+                db, session_id, "First Frame Test",
+                db.get_focus_session_events(session_id),
+                screenshots_dir=str(tmp_path),
+            )
+
+        assert sop_gen.generate_from_focus.call_count == 1
+        timeline = sop_gen.generate_from_focus.call_args[0][0]
+        assert len(timeline) == 3
+
+        # Frame 0: diff MUST be None (clean start)
+        assert timeline[0]["diff"] is None, (
+            "First focus frame must have diff=None to avoid pre-session pollution"
+        )
+
+        # Frames 1+: diff should be present (within-session diffs)
+        for i, frame in enumerate(timeline[1:], start=1):
+            assert frame["diff"] is not None, (
+                f"Frame {i} should have a diff (within-session)"
+            )
+
+    def test_first_frame_diff_none_even_with_presession_data(self, tmp_path):
+        """Even if DB contains a pre-session annotation, first frame diff is None."""
+        db_path = _create_test_db(tmp_path)
+        session_id = "focus-sess-presession"
+
+        # Insert a pre-session event (different session / no session)
+        conn = sqlite3.connect(str(db_path))
+        pre_ann = json.dumps({
+            "app": "Mail",
+            "location": "inbox",
+            "visible_content": {"headings": ["Inbox"], "labels": [], "values": []},
+            "ui_state": {"active_element": "", "modals_or_popups": "none", "scroll_position": "top"},
+            "task_context": {"what_doing": "Reading email", "likely_next": "", "is_workflow": False},
+        })
+        conn.execute(
+            "INSERT INTO events (id, timestamp, kind_json, metadata_json, "
+            "annotation_status, scene_annotation_json) VALUES (?, ?, ?, ?, ?, ?)",
+            ("evt-presession", "2026-03-03T09:59:50Z", '{}', '{}',
+             "completed", pre_ann),
+        )
+        conn.commit()
+        conn.close()
+
+        # Now insert focus session events
+        _insert_focus_events(db_path, session_id, count=2, annotated=True)
+
+        with WorkerDB(db_path) as db:
+            sop_gen = _make_mock_sop_generator()
+            processor = FocusProcessor(
+                _make_mock_annotator(),
+                _make_mock_differ(),
+                sop_gen,
+            )
+            processor.process_session(
+                db, session_id, "Pre-session Test",
+                db.get_focus_session_events(session_id),
+                screenshots_dir=str(tmp_path),
+            )
+
+        assert sop_gen.generate_from_focus.call_count == 1
+        timeline = sop_gen.generate_from_focus.call_args[0][0]
+        assert len(timeline) == 2
+
+        # First frame must NOT carry a diff from the pre-session Mail event
+        assert timeline[0]["diff"] is None, (
+            "First focus frame must not carry a diff from pre-session activity"
+        )
+
+
 class TestFocusProcessorTimeline:
     def test_timeline_includes_annotations_and_diffs(self, tmp_path):
         """Collected timeline has both annotation and diff data."""

@@ -10,6 +10,7 @@ from oc_apprentice_worker.sop_generator import (
     SOPGenerator,
     SOPGeneratorConfig,
     GeneratedSOP,
+    MAX_FRAMES_PER_DEMO,
     _format_timeline_entry,
     _build_focus_prompt,
     _build_passive_prompt,
@@ -698,3 +699,145 @@ class TestExtractSelectorForStep:
         )
         assert result is not None
         assert "Next page" in result
+
+
+# ---------------------------------------------------------------------------
+# Bug #13: Passive prompt frame sampling
+# ---------------------------------------------------------------------------
+
+class TestPassivePromptSampling:
+    def test_passive_prompt_samples_long_demos(self):
+        """A demo with 50 frames should be sampled down to MAX_FRAMES_PER_DEMO."""
+        # Build a 50-frame demo where all frames have action diffs (meaningful)
+        timeline = []
+        for i in range(50):
+            timeline.append({
+                "annotation": _make_annotation(
+                    what_doing=f"Step {i + 1}",
+                    values=[f"val_{i}"],
+                ),
+                "diff": _make_diff(
+                    step_description=f"Action {i + 1}",
+                ) if i > 0 else None,
+                "timestamp": f"2026-03-03T10:{i // 60:02d}:{i % 60:02d}Z",
+            })
+
+        demos = [timeline, _make_timeline(3)]
+        prompt = _build_passive_prompt(demos)
+
+        # Count how many "Frame N" markers appear for Demonstration 1.
+        # The sampled demo should have at most MAX_FRAMES_PER_DEMO frames.
+        import re
+        demo1_section = prompt.split("--- Demonstration 2")[0]
+        frame_markers = re.findall(r"Frame \d+", demo1_section)
+        assert len(frame_markers) <= MAX_FRAMES_PER_DEMO
+        # Must include at least 2 frames (first and last)
+        assert len(frame_markers) >= 2
+
+    def test_no_change_frames_skipped(self):
+        """Frames with no_change diffs are filtered out before sampling.
+
+        First and last frames are always kept regardless of diff type.
+        Middle frames with no_change diffs should be excluded.
+        """
+        # Build 11 frames: indices 1,3,5,7 are no_change (middle), 9 is last
+        # so middle no_change frames (1,3,5,7) get dropped, first(0) and last(10) kept
+        timeline = []
+        for i in range(11):
+            diff = _make_diff(diff_type="no_change") if i % 2 == 1 else _make_diff()
+            if i == 0:
+                diff = None  # first frame has no diff
+            timeline.append({
+                "annotation": _make_annotation(what_doing=f"Step {i}"),
+                "diff": diff,
+                "timestamp": f"2026-03-03T10:00:{i:02d}Z",
+            })
+
+        demos = [timeline, _make_timeline(3)]
+        prompt = _build_passive_prompt(demos)
+        demo1_section = prompt.split("--- Demonstration 2")[0]
+        import re
+        frame_markers = re.findall(r"Frame \d+", demo1_section)
+        # 11 frames total; indices 1,3,5,7,9 are no_change.
+        # First (0) and last (10) always kept. Middle no_change (1,3,5,7,9) dropped.
+        # Action frames: 0,2,4,6,8,10 = 6 meaningful frames kept.
+        assert len(frame_markers) == 6
+
+    def test_short_demo_not_sampled(self):
+        """A demo with fewer frames than the cap should not be sampled."""
+        timeline = _make_timeline(5)
+        demos = [timeline, _make_timeline(3)]
+        prompt = _build_passive_prompt(demos)
+        demo1_section = prompt.split("--- Demonstration 2")[0]
+        import re
+        frame_markers = re.findall(r"Frame \d+", demo1_section)
+        # 5 frames, first has no diff (None) so it's kept as first frame,
+        # rest have action diffs so all are meaningful
+        assert len(frame_markers) == 5
+
+
+# ---------------------------------------------------------------------------
+# Bug #14: Passive SOP retry on JSON parse failure
+# ---------------------------------------------------------------------------
+
+class TestPassiveRetryOnMalformedJson:
+    def test_parse_retry_on_malformed_json(self):
+        """First VLM call returns invalid JSON, retry returns valid JSON."""
+        vlm_sop = _make_vlm_sop_json()
+        call_count = {"n": 0}
+
+        def mock_call(**kwargs):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                return ("This is not valid JSON at all", 15.0)
+            return (json.dumps(vlm_sop), 25.0)
+
+        generator = SOPGenerator()
+        demos = [_make_timeline(3), _make_timeline(4)]
+        with patch(
+            "oc_apprentice_worker.sop_generator._call_ollama",
+            side_effect=mock_call,
+        ):
+            result = generator.generate_from_passive(demos, "Retry Passive Task")
+
+        assert result.success
+        assert result.sop["title"] == "Retry Passive Task"
+        assert result.inference_time_seconds == 40.0  # 15 + 25
+        assert call_count["n"] == 2
+
+    def test_passive_both_attempts_fail(self):
+        """Both VLM calls return garbage — should fail gracefully."""
+        generator = SOPGenerator()
+        demos = [_make_timeline(3), _make_timeline(3)]
+        with patch(
+            "oc_apprentice_worker.sop_generator._call_ollama",
+            return_value=("not json", 5.0),
+        ):
+            result = generator.generate_from_passive(demos, "Bad Task")
+
+        assert not result.success
+        assert "Failed to parse" in result.error
+        assert result.inference_time_seconds == 10.0  # 5 + 5
+
+    def test_passive_retry_prompt_contains_repair_instruction(self):
+        """Verify the retry call includes the repair instruction prefix."""
+        vlm_sop = _make_vlm_sop_json()
+        prompts_seen = []
+
+        def mock_call(**kwargs):
+            prompts_seen.append(kwargs.get("prompt", ""))
+            if len(prompts_seen) == 1:
+                return ("not json", 5.0)
+            return (json.dumps(vlm_sop), 10.0)
+
+        generator = SOPGenerator()
+        demos = [_make_timeline(3), _make_timeline(3)]
+        with patch(
+            "oc_apprentice_worker.sop_generator._call_ollama",
+            side_effect=mock_call,
+        ):
+            result = generator.generate_from_passive(demos, "Task")
+
+        assert result.success
+        assert len(prompts_seen) == 2
+        assert "Your previous response was not valid JSON" in prompts_seen[1]

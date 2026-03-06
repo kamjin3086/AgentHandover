@@ -110,16 +110,28 @@ struct OnboardingView: View {
                             }
                         }
                         .buttonStyle(.borderedProminent)
-                        .disabled(!appState.extensionConnected)
+                        .disabled(!appState.accessibilityGranted)
 
                         if serviceStartFailed {
                             Text("Services may not have started. Check openmimic status in Terminal.")
                                 .font(.caption2)
                                 .foregroundColor(.red)
-                        } else if !appState.extensionConnected {
-                            Text("Connect the Chrome extension first to enable observation")
+                        } else if !appState.accessibilityGranted {
+                            Text("Accessibility permission is required to start observing")
                                 .font(.caption2)
                                 .foregroundColor(.orange)
+                        } else if appState.extensionConnected {
+                            HStack(spacing: 4) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundColor(.green)
+                                Text("Extension Connected — browser events enabled")
+                                    .foregroundColor(.green)
+                            }
+                            .font(.caption2)
+                        } else {
+                            Text("Chrome extension not connected — native capture will work, browser events require the extension")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
                         }
                     }
                 }

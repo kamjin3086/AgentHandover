@@ -42,6 +42,19 @@ let reconnectAttempts = 0;
 const MAX_RECONNECT_DELAY = 300_000; // 5 minutes
 const MAX_RECONNECT_ATTEMPTS = 100;
 
+// ---------------------------------------------------------------------------
+// Disconnect queue — buffers messages while the daemon is unreachable
+// ---------------------------------------------------------------------------
+
+interface QueuedMessage {
+  message: ContentScriptMessage;
+  tabId: number;
+  url: string;
+}
+
+const MAX_DISCONNECT_QUEUE = 100;
+const disconnectQueue: QueuedMessage[] = [];
+
 // Unsubscribe handles for native messaging listeners — prevents listener
 // accumulation across reconnect cycles (each initNativeConnection call
 // registers new callbacks; old ones must be cleaned up first).
@@ -88,9 +101,10 @@ function initNativeConnection(): void {
       );
       setTimeout(() => {
         initNativeConnection();
-        // Resend buffered messages after reconnecting
+        // Resend buffered messages after reconnecting, then drain disconnect queue
         if (isConnected()) {
           resendBufferedMessages();
+          drainDisconnectQueue();
         }
       }, delay + jitter);
     });
@@ -190,13 +204,34 @@ function handleContentReady(tabId: number, url: string): void {
   }
 }
 
+/**
+ * Drain the disconnect queue by re-forwarding each queued message.
+ * Called after a successful reconnect + resend of the native sent buffer.
+ */
+function drainDisconnectQueue(): void {
+  if (disconnectQueue.length === 0) return;
+
+  console.log('[OpenMimic:bg] Draining disconnect queue:', disconnectQueue.length, 'messages');
+  // Splice the queue so forwardToDaemon sees an empty queue (avoids re-queuing
+  // if the connection drops again mid-drain — those would be freshly queued).
+  const pending = disconnectQueue.splice(0);
+  for (const item of pending) {
+    forwardToDaemon(item.message, item.tabId, item.url);
+  }
+}
+
 function forwardToDaemon(
   message: ContentScriptMessage,
   tabId: number,
   url: string,
 ): void {
   if (!isConnected()) {
-    console.warn('[OpenMimic:bg] Daemon not connected — dropping', message.type);
+    if (disconnectQueue.length >= MAX_DISCONNECT_QUEUE) {
+      console.warn('[OpenMimic:bg] Disconnect queue full — dropping oldest to enqueue', message.type);
+      disconnectQueue.shift();
+    }
+    console.log('[OpenMimic:bg] Daemon not connected — queuing', message.type, `(${disconnectQueue.length + 1}/${MAX_DISCONNECT_QUEUE})`);
+    disconnectQueue.push({ message, tabId, url });
     return;
   }
 

@@ -16,8 +16,13 @@ npx webpack --mode production
 
 ### 2. Install Native Messaging Host
 
+The easiest way is to run `openmimic doctor`, which automatically verifies and
+installs the native messaging host configuration.
+
+Alternatively, run the install script **from the repo root**:
+
 ```bash
-# Use the stable extension ID (from manifest.json key field)
+# From the repository root directory
 bash scripts/install-native-host.sh --extension-id knldjmfmopnpolahpmmgbagdohdnhkik
 ```
 
@@ -25,8 +30,6 @@ bash scripts/install-native-host.sh --extension-id knldjmfmopnpolahpmmgbagdohdnh
 > After loading the extension in Chrome, find the ID on `chrome://extensions`.
 > The default ID `knldjmfmopnpolahpmmgbagdohdnhkik` comes from the `key` field
 > in `manifest.json` and is stable for unpacked loads from the same key.
-
-Or use the installer: `openmimic doctor` will verify this is configured.
 
 ### 3. Load in Chrome
 

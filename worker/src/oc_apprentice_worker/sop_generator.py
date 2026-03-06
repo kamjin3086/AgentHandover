@@ -257,14 +257,69 @@ def _build_focus_prompt(
     )
 
 
+MAX_FRAMES_PER_DEMO = 25
+
+
+def _sample_demo_frames(timeline: list[dict], demo_idx: int) -> list[dict]:
+    """Sample frames from a demonstration to stay within prompt budget.
+
+    Strategy:
+    - Skip frames where the diff is None or indicates "no_change" (noise).
+    - If the remaining meaningful frames exceed MAX_FRAMES_PER_DEMO, sample
+      evenly while always keeping the first and last frames.
+    """
+    # Filter out noise frames (no diff or no_change), but always keep first/last
+    meaningful: list[tuple[int, dict]] = []
+    for i, frame in enumerate(timeline):
+        diff = frame.get("diff")
+        is_first = i == 0
+        is_last = i == len(timeline) - 1
+        is_noise = (
+            diff is None
+            or (isinstance(diff, dict) and diff.get("diff_type") == "no_change")
+        )
+        if is_first or is_last or not is_noise:
+            meaningful.append((i, frame))
+
+    total = len(meaningful)
+    cap = MAX_FRAMES_PER_DEMO
+
+    if total <= cap:
+        return [f for _, f in meaningful]
+
+    # Evenly sample while keeping first and last
+    logger.info(
+        "Sampled %d of %d frames for demo %d",
+        cap, len(timeline), demo_idx + 1,
+    )
+    if cap <= 2:
+        return [meaningful[0][1], meaningful[-1][1]]
+
+    indices = [0]
+    step = (total - 1) / (cap - 1)
+    for i in range(1, cap - 1):
+        indices.append(round(i * step))
+    indices.append(total - 1)
+
+    # Deduplicate while preserving order
+    seen: set[int] = set()
+    sampled: list[dict] = []
+    for idx in indices:
+        if idx not in seen:
+            seen.add(idx)
+            sampled.append(meaningful[idx][1])
+    return sampled
+
+
 def _build_passive_prompt(
     demonstrations: list[list[dict]],
 ) -> str:
     """Build the SOP generation prompt for passive discovery (multi-demo)."""
     demo_texts = []
     for demo_idx, timeline in enumerate(demonstrations):
+        sampled = _sample_demo_frames(timeline, demo_idx)
         entries = []
-        for i, frame in enumerate(timeline):
+        for i, frame in enumerate(sampled):
             annotation = frame.get("annotation", {})
             diff = frame.get("diff")
             timestamp = frame.get("timestamp", "")
@@ -861,12 +916,35 @@ class SOPGenerator:
         # Parse response
         vlm_sop = _parse_sop_response(raw_response)
         if vlm_sop is None:
-            return GeneratedSOP(
-                sop={},
-                inference_time_seconds=elapsed,
-                success=False,
-                error="Failed to parse VLM response as valid SOP JSON",
-            )
+            # Retry with repair instruction
+            logger.warning("SOP JSON parse failed, retrying with repair prompt")
+            try:
+                repair_prefix = (
+                    "Your previous response was not valid JSON. "
+                    "Please respond with ONLY a valid JSON object, "
+                    "no markdown fences, no explanatory text.\n\n"
+                )
+                raw_response2, elapsed2 = _call_ollama(
+                    model=self.config.model,
+                    prompt=repair_prefix + prompt,
+                    host=self.config.ollama_host,
+                    num_predict=self.config.num_predict,
+                    system=SOP_SYSTEM_PROMPT,
+                    timeout=self.config.timeout,
+                    think=True,
+                )
+                elapsed += elapsed2
+                vlm_sop = _parse_sop_response(raw_response2)
+            except Exception:
+                pass
+
+            if vlm_sop is None:
+                return GeneratedSOP(
+                    sop={},
+                    inference_time_seconds=elapsed,
+                    success=False,
+                    error="Failed to parse VLM response as valid SOP JSON",
+                )
 
         # Override title with cluster label if provided
         title = task_label or vlm_sop.get("title", "Untitled Workflow")

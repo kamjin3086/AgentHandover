@@ -207,8 +207,10 @@ class FocusProcessor:
 
             # Get previous annotated event
             if i == 0:
-                # First frame — use DB predecessor (may be outside focus session)
-                prev = db.get_annotation_before(timestamp)  # type: ignore[union-attr]
+                # First frame in focus session — always use first_frame marker.
+                # Do NOT look up a DB predecessor: it may come from unrelated
+                # pre-session activity and would pollute the first step's diff.
+                prev = None
             else:
                 prev = annotated_events[i - 1]
 
@@ -297,5 +299,12 @@ class FocusProcessor:
                 "app": annotation.get("app", ""),
                 "event_id": event_id,
             })
+
+        # Safety net: the first frame in a focus session must never carry a
+        # diff — it is the clean starting point of the SOP.  Any diff stored
+        # for it (e.g. a "first_frame" marker or a stale pre-session diff)
+        # would pollute the first step with irrelevant context.
+        if timeline:
+            timeline[0]["diff"] = None
 
         return timeline

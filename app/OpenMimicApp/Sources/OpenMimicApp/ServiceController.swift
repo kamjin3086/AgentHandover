@@ -29,12 +29,15 @@ final class ServiceController {
         return isJobRunning(label: workerLabel)
     }
 
-    /// Start all services and return true only if both are verified running.
+    /// Start all services and return true only if both are verified healthy
+    /// (running with a fresh heartbeat).
     @discardableResult
     static func startAll() -> Bool {
         let d = startDaemon()
         let w = startWorker()
-        return d && w
+        guard d && w else { return false }
+        return isServiceHealthy(label: daemonLabel)
+            && isServiceHealthy(label: workerLabel)
     }
 
     // MARK: - Stop
@@ -100,6 +103,59 @@ final class ServiceController {
     static func isJobRunning(label: String) -> Bool {
         let result = launchctl(["list", label])
         return result.exitCode == 0
+    }
+
+    /// Check whether a service is healthy: running AND heartbeat is fresh.
+    ///
+    /// Returns `true` if:
+    /// - The launchd job is running, AND
+    /// - The heartbeat timestamp in the service's status file is within the last 30 seconds.
+    ///
+    /// Falls back to `isJobRunning` if the status file doesn't exist (first run)
+    /// or can't be parsed.
+    static func isServiceHealthy(label: String) -> Bool {
+        guard isJobRunning(label: label) else {
+            return false
+        }
+
+        let statusFileName: String
+        switch label {
+        case daemonLabel:
+            statusFileName = "daemon-status.json"
+        case workerLabel:
+            statusFileName = "worker-status.json"
+        default:
+            // Unknown service — fall back to job-running check only
+            return true
+        }
+
+        let statusDir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/oc-apprentice")
+        let statusFile = statusDir.appendingPathComponent(statusFileName)
+
+        guard let data = try? Data(contentsOf: statusFile),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let heartbeatString = json["heartbeat"] as? String else {
+            // Status file missing or unreadable — service may not have written it yet.
+            // Fall back to launchd check (already passed above).
+            return true
+        }
+
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        var heartbeatDate = formatter.date(from: heartbeatString)
+        if heartbeatDate == nil {
+            // Retry without fractional seconds
+            formatter.formatOptions = [.withInternetDateTime]
+            heartbeatDate = formatter.date(from: heartbeatString)
+        }
+
+        guard let date = heartbeatDate else {
+            // Can't parse timestamp — fall back to launchd check
+            return true
+        }
+
+        return Date().timeIntervalSince(date) <= 30
     }
 
     private static func plistPath(_ label: String) -> String {

@@ -21,6 +21,7 @@ class Openmimic < Formula
   depends_on "rust" => :build
   depends_on "python@3.12"
   depends_on "node" => :build
+  depends_on xcode: ["14.0", :build]
 
   def install
     # Build Rust binaries
@@ -44,6 +45,20 @@ class Openmimic < Formula
     end
     (libexec/"extension").install Dir["extension/dist/*"]
     (libexec/"extension").install "extension/manifest.json"
+
+    # Build SwiftUI menu bar app (requires Xcode CLT)
+    cd "app/OpenMimicApp" do
+      system "swift", "build", "-c", "release"
+      # Wrap the binary in a minimal .app bundle for ~/Applications
+      app_binary = ".build/release/OpenMimicApp"
+      if File.exist?(app_binary)
+        (libexec/"OpenMimic.app/Contents/MacOS").mkpath
+        cp app_binary, libexec/"OpenMimic.app/Contents/MacOS/OpenMimic"
+        if File.exist?("Sources/OpenMimicApp/Info.plist")
+          cp "Sources/OpenMimicApp/Info.plist", libexec/"OpenMimic.app/Contents/Info.plist"
+        end
+      end
+    end
 
     # Install launchd plists
     (libexec/"launchd").install Dir["resources/launchd/*.plist"]
@@ -138,6 +153,15 @@ class Openmimic < Formula
       </plist>
     XML
 
+    # Symlink menu bar app into ~/Applications if it was built
+    app_src = libexec/"OpenMimic.app"
+    if app_src.exist?
+      apps_dir = Pathname.new(Dir.home)/"Applications"
+      apps_dir.mkpath
+      # Symlink rather than copy so updates propagate
+      ln_sf app_src, apps_dir/"OpenMimic.app"
+    end
+
     # Install native messaging host manifest
     nm_dir = Pathname.new(Dir.home)/"Library/Application Support/Google/Chrome/NativeMessagingHosts"
     nm_dir.mkpath
@@ -174,6 +198,10 @@ class Openmimic < Formula
         1. Open chrome://extensions
         2. Enable Developer Mode
         3. Click "Load unpacked" and select: #{libexec}/extension/
+
+      The OpenMimic menu bar app is installed at:
+        #{libexec}/OpenMimic.app
+      A symlink is created in ~/Applications.
 
       The Chrome extension is pre-built during installation.
       To rebuild from source, clone the repo and run:

@@ -23,14 +23,14 @@ Compiled 2026-03-06 from external AI audit, verified against codebase.
 
 | # | Issue | Location | Status |
 |---|-------|----------|--------|
-| 9 | Messages dropped during disconnect window never enter resend buffer — permanently lost | background.ts:186 | TODO |
-| 10 | Onboarding blocks "Start Observing" on extension connection — native-only capture (screenshots, accessibility, clipboard) is unusable without Chrome | OnboardingView.swift:113 | TODO |
-| 11 | Health checks use launchd job presence, not heartbeat/PID liveness — services can appear healthy while actually hung | ServiceController.swift:100, doctor.rs:74, setup.rs:232 | TODO |
-| 12 | Focus recording first frame may diff against pre-session activity — polluted context from prior work | focus_processor.py | TODO |
-| 13 | Passive SOP prompt dumps all raw frames from all demos — no sampling or summarization, scales poorly with long sessions | sop_generator.py:260 | TODO |
-| 14 | Passive SOP JSON parse failure has no retry — single malformed VLM response wastes entire inference budget | sop_generator.py:861 | TODO |
-| 15 | Homebrew/source installs don't ship menu bar app — best UX only exists in .pkg path | openmimic.rb:25, build-pkg.sh:69 | TODO |
-| 16 | Extension README native-host install command path is wrong after `cd extension` | extension/README.md:21 | TODO |
+| 9 | Messages dropped during disconnect window never enter resend buffer — permanently lost | background.ts:186 | DONE |
+| 10 | Onboarding blocks "Start Observing" on extension connection — native-only capture (screenshots, accessibility, clipboard) is unusable without Chrome | OnboardingView.swift:113 | DONE |
+| 11 | Health checks use launchd job presence, not heartbeat/PID liveness — services can appear healthy while actually hung | ServiceController.swift:100, doctor.rs:74, setup.rs:232 | DONE |
+| 12 | Focus recording first frame may diff against pre-session activity — polluted context from prior work | focus_processor.py | DONE |
+| 13 | Passive SOP prompt dumps all raw frames from all demos — no sampling or summarization, scales poorly with long sessions | sop_generator.py:260 | DONE |
+| 14 | Passive SOP JSON parse failure has no retry — single malformed VLM response wastes entire inference budget | sop_generator.py:861 | DONE |
+| 15 | Homebrew/source installs don't ship menu bar app — best UX only exists in .pkg path | openmimic.rb:25, build-pkg.sh:69 | DONE |
+| 16 | Extension README native-host install command path is wrong after `cd extension` | extension/README.md:21 | DONE |
 | 17 | Passive discovery should produce draft SOPs for approve/edit/reject, not auto-trusted outputs | Product gap | TODO |
 | 18 | User corrections to SOPs should feed back into future generation | Product gap | TODO |
 | 19 | Failed focus/passive generations need retry/resume UX, not silent log failures | Product gap | TODO |

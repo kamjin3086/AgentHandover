@@ -1,4 +1,5 @@
 use anyhow::Result;
+use chrono::Utc;
 use colored::Colorize;
 
 use crate::paths;
@@ -83,10 +84,14 @@ pub fn run() -> Result<()> {
         launch_agents.join("com.openmimic.worker.plist").exists()
     });
 
-    // Check 10: Disk space
+    // Check 10: Heartbeat freshness (advisory — does not block overall result)
+    check_heartbeat_freshness("Daemon", "daemon-status.json");
+    check_heartbeat_freshness("Worker", "worker-status.json");
+
+    // Check 11: Disk space
     all_ok &= check("Disk space (>1GB free)", || free_disk_gb() > 1);
 
-    // Check 11: Python virtual environment
+    // Check 12: Python virtual environment
     // Check pkg path, Homebrew libexec (resolved from binary), and known opt paths.
     check_optional(
         "Python virtual environment",
@@ -94,7 +99,7 @@ pub fn run() -> Result<()> {
         "Run installer or: brew install --HEAD openmimic",
     );
 
-    // Check 12: Chrome extension
+    // Check 13: Chrome extension
     // Homebrew installs dist contents flat into libexec/extension/ (no dist subdir).
     // Pkg installer uses /usr/local/lib/openmimic/extension/dist/.
     check_optional(
@@ -103,7 +108,7 @@ pub fn run() -> Result<()> {
         "Build with: cd extension && npm run build",
     );
 
-    // Check 13: Worker process alive
+    // Check 14: Worker process alive
     check_optional(
         "Worker process",
         || oc_apprentice_common::pid::check_pid_file("worker").is_some(),
@@ -141,6 +146,75 @@ fn check_optional(name: &str, test: impl FnOnce() -> bool, fallback_msg: &str) {
         println!("  {} {}", "pass".green(), name);
     } else {
         println!("  {} {} ({})", "skip".yellow(), name, fallback_msg);
+    }
+}
+
+/// Advisory heartbeat freshness check for a service status file.
+///
+/// Reads `~/Library/Application Support/oc-apprentice/<filename>`, parses the
+/// `heartbeat` ISO-8601 timestamp, and prints a WARNING if it is older than 60
+/// seconds.  If the file doesn't exist (first install, service never started),
+/// prints an INFO note.  This check never affects the overall doctor result.
+fn check_heartbeat_freshness(service_name: &str, status_filename: &str) {
+    let label = format!("{} heartbeat", service_name);
+
+    let status_dir = oc_apprentice_common::status::status_dir();
+    let path = status_dir.join(status_filename);
+
+    if !path.exists() {
+        check_optional(
+            &label,
+            || false,
+            "No status file yet (service may not have started)",
+        );
+        return;
+    }
+
+    let content = match std::fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(_) => {
+            check_optional(&label, || false, "Cannot read status file");
+            return;
+        }
+    };
+
+    let parsed: serde_json::Value = match serde_json::from_str(&content) {
+        Ok(v) => v,
+        Err(_) => {
+            check_optional(&label, || false, "Invalid JSON in status file");
+            return;
+        }
+    };
+
+    let heartbeat_str = match parsed.get("heartbeat").and_then(|v| v.as_str()) {
+        Some(s) => s.to_string(),
+        None => {
+            check_optional(&label, || false, "No heartbeat field in status file");
+            return;
+        }
+    };
+
+    let heartbeat = match chrono::DateTime::parse_from_rfc3339(&heartbeat_str) {
+        Ok(dt) => dt.with_timezone(&Utc),
+        Err(_) => {
+            check_optional(&label, || false, "Cannot parse heartbeat timestamp");
+            return;
+        }
+    };
+
+    let age_secs = Utc::now()
+        .signed_duration_since(heartbeat)
+        .num_seconds();
+
+    if age_secs <= 60 {
+        println!("  {} {} ({}s ago)", "pass".green(), label, age_secs);
+    } else {
+        println!(
+            "  {} {} (last heartbeat {}s ago — service may be hung)",
+            "WARN".yellow(),
+            label,
+            age_secs
+        );
     }
 }
 
