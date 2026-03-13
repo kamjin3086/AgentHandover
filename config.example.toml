@@ -83,6 +83,12 @@ sop_output_dir = "memory/apprentice/sops"
 index_path = "memory/apprentice/index.md"
 atomic_writes = true
 
+[sop]
+# When false (default), generated SOPs are saved as drafts for human review
+# in the app before being exported. Set to true to auto-approve and export
+# immediately — use only if you trust the pipeline's output quality.
+auto_approve = false
+
 [export]
 adapter = "openclaw"           # "openclaw" or "generic"
 json_export = false            # also write .json alongside .md

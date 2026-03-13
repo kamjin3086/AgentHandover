@@ -8,10 +8,17 @@ struct SOPDetailView: View {
 
     @State private var skillContent: String?
     @State private var fileExists = false
+    @State private var resolvedPath: URL?
 
-    private var skillFilePath: URL {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".claude/skills/\(sop.slug)/SKILL.md")
+    /// Returns candidate export paths in priority order.
+    /// The first existing file wins in `loadSkillFile()`.
+    private func candidatePaths() -> [URL] {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        return [
+            home.appendingPathComponent(".openmimic/sops/\(sop.slug).json"),
+            home.appendingPathComponent(".openclaw/workspace/memory/apprentice/sops/\(sop.slug).json"),
+            home.appendingPathComponent(".claude/skills/\(sop.slug)/SKILL.md"),
+        ]
     }
 
     var body: some View {
@@ -21,7 +28,11 @@ struct SOPDetailView: View {
                 Divider().padding(.vertical, 16)
 
                 if fileExists, let content = skillContent {
-                    parsedContent(content)
+                    if resolvedPath?.pathExtension == "json" {
+                        jsonContent(content)
+                    } else {
+                        parsedContent(content)
+                    }
                 } else {
                     notExportedView
                 }
@@ -139,6 +150,126 @@ struct SOPDetailView: View {
     }
 
     // MARK: - Parsed Content
+
+    /// Renders a JSON SOP by extracting key fields and displaying them.
+    private func jsonContent(_ raw: String) -> some View {
+        let parsed: [String: Any]? = {
+            guard let data = raw.data(using: .utf8),
+                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            else { return nil }
+            return obj
+        }()
+
+        return VStack(alignment: .leading, spacing: 16) {
+            if let json = parsed {
+                // Description / goal
+                if let desc = json["description"] as? String ?? json["goal"] as? String, !desc.isEmpty {
+                    Text(desc)
+                        .font(.system(size: 13))
+                        .foregroundColor(.primary.opacity(0.8))
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .lineSpacing(3)
+                }
+
+                // Steps
+                if let steps = json["steps"] as? [[String: Any]], !steps.isEmpty {
+                    VStack(alignment: .leading, spacing: 10) {
+                        sectionHeader("Steps", icon: "list.number")
+                        ForEach(Array(steps.enumerated()), id: \.offset) { index, step in
+                            HStack(alignment: .top, spacing: 10) {
+                                Text("\(index + 1)")
+                                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                                    .foregroundColor(.secondary)
+                                    .frame(width: 22, height: 22)
+                                    .background(Color.primary.opacity(0.06))
+                                    .cornerRadius(11)
+
+                                VStack(alignment: .leading, spacing: 4) {
+                                    if let app = step["app"] as? String {
+                                        Text(app)
+                                            .font(.system(size: 10, weight: .medium))
+                                            .foregroundColor(.secondary)
+                                            .padding(.horizontal, 6)
+                                            .padding(.vertical, 2)
+                                            .background(Color.primary.opacity(0.04))
+                                            .cornerRadius(4)
+                                    }
+                                    Text(step["action"] as? String ?? step["description"] as? String ?? "")
+                                        .font(.system(size: 12))
+                                        .foregroundColor(.primary.opacity(0.85))
+                                        .textSelection(.enabled)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                        .lineSpacing(2)
+                                }
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 10)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color.primary.opacity(0.02))
+                            .cornerRadius(8)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(Color.primary.opacity(0.05), lineWidth: 1)
+                            )
+                        }
+                    }
+                }
+
+                // Preconditions / prerequisites
+                if let preconds = json["preconditions"] as? [String] ?? json["prerequisites"] as? [String], !preconds.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        sectionHeader("Prerequisites", icon: "checkmark.circle")
+                        VStack(alignment: .leading, spacing: 5) {
+                            ForEach(preconds, id: \.self) { item in
+                                HStack(alignment: .top, spacing: 8) {
+                                    Circle()
+                                        .fill(Color.primary.opacity(0.2))
+                                        .frame(width: 5, height: 5)
+                                        .padding(.top, 5)
+                                    Text(item)
+                                        .font(.system(size: 12))
+                                        .foregroundColor(.primary.opacity(0.8))
+                                        .textSelection(.enabled)
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                        .background(Color.primary.opacity(0.025))
+                        .cornerRadius(8)
+                    }
+                }
+
+                // Metadata fields
+                let metaKeys = ["trigger", "frequency", "confidence", "version"]
+                let metaItems = metaKeys.compactMap { key -> (String, String)? in
+                    if let val = json[key] {
+                        return (key.capitalized, "\(val)")
+                    }
+                    return nil
+                }
+                if !metaItems.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        sectionHeader("Metadata", icon: "info.circle")
+                        ForEach(metaItems, id: \.0) { label, value in
+                            metadataRow(label: label, value: value)
+                        }
+                    }
+                    .padding(12)
+                    .background(Color.primary.opacity(0.025))
+                    .cornerRadius(8)
+                }
+            } else {
+                // JSON parse failed — show raw content
+                Text(raw)
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundColor(.primary.opacity(0.7))
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
 
     private func parsedContent(_ content: String) -> some View {
         let sections = parseSections(content)
@@ -367,7 +498,7 @@ struct SOPDetailView: View {
                     .foregroundColor(.secondary)
             }
 
-            Text("The SKILL.md file for this workflow has not been generated yet.")
+            Text("This SOP has not been exported yet. Approve it to trigger export.")
                 .font(.system(size: 12))
                 .foregroundColor(.secondary.opacity(0.6))
 
@@ -420,18 +551,23 @@ struct SOPDetailView: View {
     // MARK: - File loading
 
     private func loadSkillFile() {
-        let path = skillFilePath
-        if FileManager.default.fileExists(atPath: path.path) {
-            fileExists = true
-            skillContent = try? String(contentsOf: path, encoding: .utf8)
-        } else {
-            fileExists = false
-            skillContent = nil
+        let fm = FileManager.default
+        for candidate in candidatePaths() {
+            if fm.fileExists(atPath: candidate.path) {
+                fileExists = true
+                resolvedPath = candidate
+                skillContent = try? String(contentsOf: candidate, encoding: .utf8)
+                return
+            }
         }
+        fileExists = false
+        resolvedPath = nil
+        skillContent = nil
     }
 
     private func openInEditor() {
-        NSWorkspace.shared.open(skillFilePath)
+        guard let path = resolvedPath else { return }
+        NSWorkspace.shared.open(path)
     }
 
     // MARK: - Text cleaning helpers

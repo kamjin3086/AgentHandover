@@ -283,7 +283,7 @@ def _read_sop_config() -> dict:
         config_path = Path.home() / ".config" / "oc-apprentice" / "config.toml"
 
     defaults = {
-        "auto_approve": True,
+        "auto_approve": False,
     }
 
     if not config_path.is_file():
@@ -2395,6 +2395,201 @@ def _process_recall_trigger(
     _remove_trigger(trigger_path)
 
 
+# ------------------------------------------------------------------
+# Trigger handlers: trust & staleness (MicroReviewView triggers)
+# ------------------------------------------------------------------
+
+
+def _process_trust_accept_trigger(
+    trust_advisor: "TrustAdvisor",
+    constraint_manager: "ConstraintManager",
+) -> None:
+    """Check for and process a trust-accept-trigger.json file.
+
+    The MicroReviewView writes this file when the user accepts a trust
+    promotion suggestion.  We delegate to ``trust_advisor.accept_suggestion``
+    which promotes the procedure's trust level in the knowledge base.
+    """
+    state_dir = _status_dir()
+    trigger_path = state_dir / "trust-accept-trigger.json"
+
+    if not trigger_path.is_file():
+        return
+
+    try:
+        with open(trigger_path) as f:
+            trigger = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        logger.debug("Could not read trust-accept-trigger.json", exc_info=True)
+        _remove_trigger(trigger_path)
+        return
+
+    procedure_slug = trigger.get("procedure_slug", "")
+    if not procedure_slug:
+        logger.warning("trust-accept-trigger.json missing procedure_slug")
+        _remove_trigger(trigger_path)
+        return
+
+    logger.info("Processing trust accept trigger: slug=%s", procedure_slug)
+
+    try:
+        accepted = trust_advisor.accept_suggestion(procedure_slug)
+        if accepted:
+            logger.info(
+                "Trust promotion accepted for '%s'", procedure_slug
+            )
+        else:
+            logger.warning(
+                "No pending trust suggestion found for '%s'", procedure_slug
+            )
+    except Exception:
+        logger.warning(
+            "Trust accept trigger processing failed for '%s'",
+            procedure_slug,
+            exc_info=True,
+        )
+
+    _remove_trigger(trigger_path)
+
+
+def _process_trust_dismiss_trigger(
+    trust_advisor: "TrustAdvisor",
+) -> None:
+    """Check for and process a trust-dismiss-trigger.json file.
+
+    The MicroReviewView writes this file when the user dismisses a trust
+    promotion suggestion.  No state change is needed beyond marking the
+    suggestion as dismissed — this simply acknowledges the user's choice.
+    """
+    state_dir = _status_dir()
+    trigger_path = state_dir / "trust-dismiss-trigger.json"
+
+    if not trigger_path.is_file():
+        return
+
+    try:
+        with open(trigger_path) as f:
+            trigger = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        logger.debug("Could not read trust-dismiss-trigger.json", exc_info=True)
+        _remove_trigger(trigger_path)
+        return
+
+    procedure_slug = trigger.get("procedure_slug", "")
+    if not procedure_slug:
+        logger.warning("trust-dismiss-trigger.json missing procedure_slug")
+        _remove_trigger(trigger_path)
+        return
+
+    logger.info("Processing trust dismiss trigger: slug=%s", procedure_slug)
+
+    try:
+        dismissed = trust_advisor.dismiss_suggestion(procedure_slug)
+        if dismissed:
+            logger.info(
+                "Trust suggestion dismissed for '%s'", procedure_slug
+            )
+        else:
+            logger.info(
+                "No pending trust suggestion to dismiss for '%s'",
+                procedure_slug,
+            )
+    except Exception:
+        logger.warning(
+            "Trust dismiss trigger processing failed for '%s'",
+            procedure_slug,
+            exc_info=True,
+        )
+
+    _remove_trigger(trigger_path)
+
+
+def _process_staleness_reviewed_trigger(
+    staleness_detector: "StalenessDetector",
+    knowledge_base: "KnowledgeBase",
+) -> None:
+    """Check for and process a staleness-reviewed-trigger.json file.
+
+    The MicroReviewView writes this file when the user acts on a staleness
+    alert.  Two actions are supported:
+
+    * ``"reviewed"`` — mark the procedure as freshly confirmed by updating
+      ``staleness.last_confirmed`` to now.
+    * ``"archive"`` — delete the procedure from the knowledge base.
+    """
+    state_dir = _status_dir()
+    trigger_path = state_dir / "staleness-reviewed-trigger.json"
+
+    if not trigger_path.is_file():
+        return
+
+    try:
+        with open(trigger_path) as f:
+            trigger = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        logger.debug(
+            "Could not read staleness-reviewed-trigger.json", exc_info=True
+        )
+        _remove_trigger(trigger_path)
+        return
+
+    procedure_slug = trigger.get("procedure_slug", "")
+    action = trigger.get("action", "")
+
+    if not procedure_slug or action not in ("reviewed", "archive"):
+        logger.warning(
+            "staleness-reviewed-trigger.json invalid: slug=%s action=%s",
+            procedure_slug,
+            action,
+        )
+        _remove_trigger(trigger_path)
+        return
+
+    logger.info(
+        "Processing staleness reviewed trigger: slug=%s action=%s",
+        procedure_slug,
+        action,
+    )
+
+    try:
+        if action == "reviewed":
+            proc = knowledge_base.get_procedure(procedure_slug)
+            if proc is not None:
+                proc.setdefault("staleness", {})[
+                    "last_confirmed"
+                ] = datetime.now(timezone.utc).isoformat()
+                knowledge_base.save_procedure(proc)
+                logger.info(
+                    "Staleness last_confirmed updated for '%s'",
+                    procedure_slug,
+                )
+            else:
+                logger.warning(
+                    "Procedure '%s' not found for staleness review",
+                    procedure_slug,
+                )
+        elif action == "archive":
+            deleted = knowledge_base.delete_procedure(procedure_slug)
+            if deleted:
+                logger.info(
+                    "Procedure '%s' archived (deleted) per user request",
+                    procedure_slug,
+                )
+            else:
+                logger.warning(
+                    "Could not delete procedure '%s' (not found?)",
+                    procedure_slug,
+                )
+    except Exception:
+        logger.warning(
+            "Staleness reviewed trigger processing failed for '%s'",
+            procedure_slug,
+            exc_info=True,
+        )
+
+    _remove_trigger(trigger_path)
+
+
 def _export_sop_templates(
     sop_templates: list[dict],
     *,
@@ -2897,6 +3092,7 @@ def main(argv: list[str] | None = None) -> None:
     from oc_apprentice_worker.profile_builder import ProfileBuilder
     from oc_apprentice_worker.pattern_detector import PatternDetector
     from oc_apprentice_worker.constraint_manager import ConstraintManager
+    from oc_apprentice_worker.decision_extractor import DecisionExtractor
     from oc_apprentice_worker.execution_monitor import ExecutionMonitor
     from oc_apprentice_worker.correction_detector import CorrectionDetector
     from oc_apprentice_worker.trust_advisor import TrustAdvisor
@@ -2914,6 +3110,7 @@ def main(argv: list[str] | None = None) -> None:
     profile_builder = ProfileBuilder(knowledge_base)
     pattern_detector = PatternDetector(knowledge_base)
     constraint_manager = ConstraintManager(knowledge_base)
+    decision_extractor = DecisionExtractor(knowledge_base)
 
     # Phase 4: Execution monitoring, correction detection, trust advisor
     execution_monitor = ExecutionMonitor(knowledge_base)
@@ -3351,6 +3548,11 @@ def main(argv: list[str] | None = None) -> None:
                 _process_failed_query_trigger(db)
                 _process_search_trigger(activity_searcher)
                 _process_recall_trigger(activity_searcher)
+                _process_trust_accept_trigger(trust_advisor, constraint_manager)
+                _process_trust_dismiss_trigger(trust_advisor)
+                _process_staleness_reviewed_trigger(
+                    staleness_detector, knowledge_base
+                )
 
                 # Process any completed focus recording sessions first.
                 # Use v2 VLM pipeline when available (semantic SOPs from
@@ -3707,6 +3909,61 @@ def main(argv: list[str] | None = None) -> None:
                                 chains = pattern_detector.detect_chains()
                                 if chains:
                                     pattern_detector.update_chains(chains)
+                                # Decision extraction for procedures with 2+ observations
+                                try:
+                                    all_procs = knowledge_base.list_procedures()
+                                    total_decisions = 0
+                                    for proc in all_procs:
+                                        slug = proc.get("id", proc.get("slug", ""))
+                                        if not slug:
+                                            continue
+                                        ev = proc.get("evidence", {})
+                                        obs_count = ev.get("total_observations", 0)
+                                        if obs_count < 2:
+                                            continue
+                                        # Build observation dicts from evidence + steps
+                                        obs_records = ev.get("observations", [])
+                                        proc_steps = proc.get("steps", [])
+                                        if not proc_steps:
+                                            continue
+                                        observations = [
+                                            {"steps": proc_steps, "context": rec}
+                                            for rec in obs_records
+                                        ]
+                                        dsets = decision_extractor.extract_decisions(
+                                            slug, observations
+                                        )
+                                        if dsets:
+                                            decision_extractor.save_decisions(dsets)
+                                            total_decisions += len(dsets)
+                                    if total_decisions:
+                                        logger.info(
+                                            "Decision extraction: %d decision set(s) saved",
+                                            total_decisions,
+                                        )
+                                except Exception:
+                                    logger.debug(
+                                        "Decision extraction failed", exc_info=True
+                                    )
+                                # Seed default constraints if constraints file is empty
+                                try:
+                                    existing_constraints = knowledge_base.get_constraints()
+                                    if not existing_constraints.get("global"):
+                                        knowledge_base.update_constraints({
+                                            "global": {
+                                                "default_trust_level": "observe",
+                                                "require_approval_for_destructive": True,
+                                                "max_autonomous_actions_per_hour": 10,
+                                            },
+                                            "per_procedure": existing_constraints.get(
+                                                "per_procedure", {}
+                                            ),
+                                        })
+                                        logger.info("Default global constraints seeded")
+                                except Exception:
+                                    logger.debug(
+                                        "Constraint seeding failed", exc_info=True
+                                    )
                                 # Phase 4: Session linking + trust evaluation + digest
                                 try:
                                     session_linker.analyze_daily_summaries()

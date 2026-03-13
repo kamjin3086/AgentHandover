@@ -327,11 +327,11 @@ pub struct SopConfig {
     pub auto_approve: bool,
 }
 
-fn default_auto_approve() -> bool { true }
+fn default_auto_approve() -> bool { false }
 
 impl Default for SopConfig {
     fn default() -> Self {
-        Self { auto_approve: true }
+        Self { auto_approve: false }
     }
 }
 

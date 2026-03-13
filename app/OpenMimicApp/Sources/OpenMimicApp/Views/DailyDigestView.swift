@@ -293,31 +293,38 @@ final class DigestViewModel: ObservableObject {
     }
 
     private nonisolated static func loadDigestFromDisk() -> DigestData? {
-        let today = {
-            let fmt = DateFormatter()
-            fmt.dateFormat = "yyyy-MM-dd"
-            return fmt.string(from: Date())
-        }()
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyy-MM-dd"
+        let today = fmt.string(from: Date())
+        let yesterday = fmt.string(from: Calendar.current.date(byAdding: .day, value: -1, to: Date()) ?? Date())
+
+        // The worker generates digests at end-of-day, so the most recent
+        // digest is typically yesterday's. Try yesterday first, then today.
+        let datesToTry = [yesterday, today]
 
         let knowledgeDir = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".openmimic/knowledge")
 
-        // Try digest file first
-        let digestPath = knowledgeDir
-            .appendingPathComponent("observations/digests/\(today).json")
+        // Try digest files
+        for dateStr in datesToTry {
+            let digestPath = knowledgeDir
+                .appendingPathComponent("observations/digests/\(dateStr).json")
 
-        if let data = try? Data(contentsOf: digestPath),
-           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            return parseDigest(json)
+            if let data = try? Data(contentsOf: digestPath),
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                return parseDigest(json)
+            }
         }
 
         // Fallback: build minimal digest from daily summary
-        let summaryPath = knowledgeDir
-            .appendingPathComponent("observations/daily/\(today).json")
+        for dateStr in datesToTry {
+            let summaryPath = knowledgeDir
+                .appendingPathComponent("observations/daily/\(dateStr).json")
 
-        if let data = try? Data(contentsOf: summaryPath),
-           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            return buildMinimalDigest(from: json, date: today)
+            if let data = try? Data(contentsOf: summaryPath),
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                return buildMinimalDigest(from: json, date: dateStr)
+            }
         }
 
         return nil
@@ -334,9 +341,25 @@ final class DigestViewModel: ObservableObject {
         }
 
         let sections = (json["sections"] as? [[String: Any]] ?? []).map { s in
-            DigestSectionData(
+            // Worker emits mixed-type values (ints, arrays, strings) so cast
+            // as [[String: Any]] and stringify every value for display.
+            let rawItems = s["items"] as? [[String: Any]] ?? []
+            let stringItems: [[String: String]] = rawItems.map { dict in
+                var out: [String: String] = [:]
+                for (key, val) in dict {
+                    if let str = val as? String {
+                        out[key] = str
+                    } else if let arr = val as? [Any] {
+                        out[key] = arr.map { "\($0)" }.joined(separator: ", ")
+                    } else {
+                        out[key] = "\(val)"
+                    }
+                }
+                return out
+            }
+            return DigestSectionData(
                 title: s["title"] as? String ?? "",
-                items: (s["items"] as? [[String: String]]) ?? []
+                items: stringItems
             )
         }
 

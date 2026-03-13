@@ -16,8 +16,8 @@ npx webpack --mode production
 
 ### 2. Install Native Messaging Host
 
-The easiest way is to run `openmimic doctor`, which automatically verifies and
-installs the native messaging host configuration.
+First, run `openmimic doctor` to check whether the native messaging host is
+already installed. If it reports missing, install it with the script below.
 
 Alternatively, run the install script **from the repo root**:
 
