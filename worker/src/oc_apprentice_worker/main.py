@@ -942,6 +942,66 @@ def _write_sops_index(
             pass
 
 
+_last_curation_queue_write: float = 0.0
+
+
+def _write_curation_queue(
+    procedure_curator: "ProcedureCurator | None" = None,
+    *,
+    force: bool = False,
+) -> None:
+    """Write curation-queue.json for the SwiftUI app to read.
+
+    Contains merge candidates and other curation items that the app
+    cannot derive from procedure JSON alone.
+    Throttled to at most once every 60 seconds unless *force* is True.
+    """
+    global _last_curation_queue_write
+    now = time.time()
+    if not force and (now - _last_curation_queue_write) < 60.0:
+        return
+    if procedure_curator is None:
+        return
+
+    try:
+        from dataclasses import asdict
+
+        merges = procedure_curator.detect_merge_candidates()
+        merge_list = []
+        for m in merges:
+            merge_list.append({
+                "slug_a": m.slug_a,
+                "slug_b": m.slug_b,
+                "similarity": round(m.similarity, 4),
+                "explanation": m.explanation,
+                "shared_apps": m.shared_apps,
+            })
+
+        queue_data = {
+            "updated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "merge_candidates": merge_list,
+        }
+
+        sdir = _status_dir()
+        sdir.mkdir(parents=True, exist_ok=True)
+        target = sdir / "curation-queue.json"
+        fd, tmp_path = tempfile.mkstemp(
+            dir=str(sdir), prefix=".curation-queue.", suffix=".tmp"
+        )
+        with os.fdopen(fd, "w") as f:
+            json.dump(queue_data, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.rename(tmp_path, str(target))
+        _last_curation_queue_write = now
+    except Exception:
+        logger.debug("Failed to write curation-queue.json", exc_info=True)
+        try:
+            os.unlink(tmp_path)  # type: ignore[possibly-undefined]
+        except Exception:
+            pass
+
+
 def run_pipeline(
     events: list[dict],
     *,
@@ -4725,6 +4785,9 @@ def main(argv: list[str] | None = None) -> None:
                             )
                     except Exception:
                         logger.debug("Curation batch failed", exc_info=True)
+
+                    # Write curation-queue.json for SwiftUI app
+                    _write_curation_queue(procedure_curator, force=True)
 
                     _last_staleness_check = _now_mono
 

@@ -704,35 +704,14 @@ final class MicroReviewViewModel: ObservableObject {
                     ))
                 }
 
-                // Merge candidates
-                if let mergeInfo = proc["merge_candidate"] as? [String: Any],
-                   let mergeTarget = mergeInfo["target_slug"] as? String,
-                   !(mergeInfo["dismissed"] as? Bool ?? false) {
-                    let similarity = mergeInfo["similarity"] as? Double ?? 0.0
+                // Drift alerts — from staleness.drift_signals in procedure JSON (real data)
+                let staleness = proc["staleness"] as? [String: Any] ?? [:]
+                let driftSignals = staleness["drift_signals"] as? [[String: Any]] ?? []
+                for signal in driftSignals {
+                    let driftType = signal["type"] as? String ?? "behavioral"
+                    let detail = signal["detail"] as? String ?? "Procedure behavior has changed"
                     cards.append(ReviewCardData(
-                        id: "merge-\(slug)",
-                        type: .mergeCandidate,
-                        title: "Merge: \(procTitle)",
-                        recurrence: "—",
-                        duration: "—",
-                        observations: episodes,
-                        confidence: similarity,
-                        variables: [],
-                        outcome: nil,
-                        evidenceText: "May be duplicate of \(mergeTarget) (\(Int(similarity * 100))% similar)",
-                        stepsPreview: [],
-                        slug: slug,
-                        metadata: ["mergeTarget": mergeTarget]
-                    ))
-                }
-
-                // Drift alerts
-                if let driftInfo = proc["drift_alert"] as? [String: Any],
-                   !(driftInfo["acknowledged"] as? Bool ?? false) {
-                    let driftType = driftInfo["type"] as? String ?? "behavioral"
-                    let detail = driftInfo["detail"] as? String ?? "Procedure behavior has changed"
-                    cards.append(ReviewCardData(
-                        id: "drift-\(slug)",
+                        id: "drift-\(slug)-\(driftType)",
                         type: .driftAlert,
                         title: "Drift: \(procTitle)",
                         recurrence: "—",
@@ -741,12 +720,44 @@ final class MicroReviewViewModel: ObservableObject {
                         confidence: confidenceAvg,
                         variables: [],
                         outcome: nil,
-                        evidenceText: "\(driftType.capitalized): \(detail)",
+                        evidenceText: "\(driftType.replacingOccurrences(of: "_", with: " ").capitalized): \(detail)",
                         stepsPreview: [],
                         slug: slug,
                         metadata: ["driftType": driftType]
                     ))
                 }
+            }
+        }
+
+        // Load merge candidates from curation-queue.json (written by worker)
+        let curationQueuePath = home.appendingPathComponent(
+            "Library/Application Support/oc-apprentice/curation-queue.json"
+        )
+        if let cqData = try? Data(contentsOf: curationQueuePath),
+           let cqJSON = try? JSONSerialization.jsonObject(with: cqData) as? [String: Any],
+           let mergeCandidates = cqJSON["merge_candidates"] as? [[String: Any]] {
+            for candidate in mergeCandidates {
+                let slugA = candidate["slug_a"] as? String ?? ""
+                let slugB = candidate["slug_b"] as? String ?? ""
+                let similarity = candidate["similarity"] as? Double ?? 0.0
+                let explanation = candidate["explanation"] as? String ?? "These procedures may be duplicates"
+                guard !slugA.isEmpty && !slugB.isEmpty else { continue }
+
+                cards.append(ReviewCardData(
+                    id: "merge-\(slugA)-\(slugB)",
+                    type: .mergeCandidate,
+                    title: "Merge: \(slugA)",
+                    recurrence: "—",
+                    duration: "—",
+                    observations: 0,
+                    confidence: similarity,
+                    variables: [],
+                    outcome: nil,
+                    evidenceText: explanation,
+                    stepsPreview: [],
+                    slug: slugA,
+                    metadata: ["slug_a": slugA, "slug_b": slugB, "mergeTarget": slugB]
+                ))
             }
         }
 

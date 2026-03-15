@@ -41,14 +41,18 @@ build-cli:
         -output target/universal-release/openmimic
     echo "Universal CLI binary: target/universal-release/openmimic"
 
-# Build worker (Python wheel)
+# Build worker (Python venv + install)
 build-worker:
     #!/usr/bin/env bash
     set -euo pipefail
     cd worker
-    pip install build 2>/dev/null || true
-    python -m build --wheel
-    echo "Worker wheel: worker/dist/"
+    if [ ! -d .venv ]; then
+        python3 -m venv .venv
+        echo "Created worker venv at worker/.venv"
+    fi
+    source .venv/bin/activate
+    pip install -e ".[dev]" --quiet
+    echo "Worker installed in worker/.venv"
 
 # Build Chrome extension
 build-extension:
