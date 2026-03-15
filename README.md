@@ -38,7 +38,7 @@ You review and approve in the menu bar app
 Agent-ready procedure files exported to OpenClaw / Claude Code
 ```
 
-**No macros. No DOM scripting. No manual documentation.** OpenMimic captures *intent* — what you're doing and why — not pixel coordinates or CSS selectors. The output is a human-readable procedure that any AI agent can follow.
+**No macros. No brittle automation scripts. No manual documentation.** OpenMimic captures *intent* — what you're doing and why — augmented with real DOM context (CSS selectors, ARIA labels, form field IDs) from the Chrome extension. The output is a human-readable procedure enriched with machine-usable selectors that agents can follow reliably.
 
 ## Why Not Just Screen Recording?
 
@@ -46,12 +46,12 @@ Screen recording gives you pixels. OpenMimic gives you *understanding*.
 
 | | Screen recording | OpenMimic |
 |---|---|---|
-| **What it captures** | Raw video frames | Structured intent: "User is filing an expense report in Chrome on Expensify" |
-| **What it knows** | Nothing — just pixels | App context, task purpose, step sequence, form fields, verification criteria |
+| **What it captures** | Raw video frames | Structured intent + DOM context: "User is filing an expense report in Chrome on Expensify, clicking `#submit-btn` in a form with ARIA label 'Expense Form'" |
+| **What it knows** | Nothing — just pixels | App context, task purpose, step sequence, CSS selectors, form field IDs, ARIA labels, verification criteria |
 | **How it handles noise** | Records everything equally | Classifies activity into 8 types (work, research, communication, entertainment...) and filters noise automatically |
 | **How it handles interruptions** | Breaks the recording | Tracks task continuity across interruptions — if you pause for Slack and come back, it reconnects the workflow |
 | **What happens with repetition** | You get multiple identical recordings | Demonstrations are semantically aligned and merged into one canonical procedure with typed variables and confidence scores |
-| **What the output looks like** | A video file | A structured SKILL.md with steps, inputs, outputs, preconditions, verification criteria, and failure recovery |
+| **What the output looks like** | A video file | A structured SKILL.md with steps, inputs, outputs, preconditions, verification criteria, failure recovery, and a DOM hints appendix with CSS selectors for browser automation |
 | **Can an agent use it?** | No | Yes — with lifecycle gates, readiness checks, and execution monitoring |
 
 The intelligence comes from a **local vision-language model** that looks at each screenshot and answers: *What app is this? What is the user doing? Is this a repeatable workflow or just browsing?* That structured understanding is what makes the difference between "a recording" and "a learned procedure."
@@ -62,7 +62,7 @@ The intelligence comes from a **local vision-language model** that looks at each
 
 OpenMimic runs four layers of intelligence on every screen capture:
 
-**Layer 1: See** — A local vision model (running on your machine, not in the cloud) looks at each screenshot and produces a structured annotation: what app is open, what URL, what the user is doing, what they'll likely do next, and whether this looks like a repeatable workflow.
+**Layer 1: See** — A local vision model (running on your machine, not in the cloud) looks at each screenshot and produces a structured annotation: what app is open, what URL, what the user is doing, what they'll likely do next, and whether this looks like a repeatable workflow. When the Chrome extension is loaded, this is enriched with **real DOM context** — CSS selectors, ARIA labels, `data-testid` attributes, form field names, and Shadow DOM paths — giving agents precise targets for browser automation, not just visual descriptions.
 
 **Layer 2: Classify** — An 8-class activity classifier separates signal from noise. Your expense filing is "work." Your Reddit scrolling is "entertainment." Your Slack reply is "communication." Only workflow-relevant activity feeds into learning. You can override any classification with policy rules (e.g., "always ignore YouTube", "always track VS Code").
 
@@ -212,7 +212,7 @@ ollama pull all-minilm:l6-v2   # Task embeddings
 
 Or: `openmimic setup --vlm` for guided setup (includes cloud API option).
 
-**3. Load Chrome extension** (optional — enriches SOPs with DOM context)
+**3. Load Chrome extension** (recommended — adds CSS selectors, ARIA labels, and form field IDs to procedures)
 
 Open `chrome://extensions` → Enable Developer Mode → Load unpacked → select the extension directory shown by `openmimic doctor`.
 
