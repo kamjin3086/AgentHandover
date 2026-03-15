@@ -18,7 +18,9 @@
 
 ---
 
-OpenMimic is a local, privacy-first apprentice that silently observes your macOS workflows, learns repeatable patterns, and produces semantic procedure files that AI agents can execute.
+> *You spend hours teaching Claude Code how to deploy, telling OpenClaw how to file expenses, writing SOPs that are outdated before the ink dries. What if your agents could just watch you do it once — and learn?*
+
+OpenMimic is a local, privacy-first apprentice that silently observes your macOS workflows, learns repeatable patterns, and produces semantic procedure files that AI agents like Claude Code and OpenClaw can execute — without you writing a single instruction.
 
 You keep working. OpenMimic watches, learns, and writes the manual.
 
