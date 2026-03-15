@@ -50,6 +50,10 @@ just build-all
 # Install Chrome native messaging host (required for extension connection)
 ./scripts/setup.sh
 
+# Install launchd service plists (required for `openmimic start all`)
+cp resources/launchd/com.openmimic.daemon.plist ~/Library/LaunchAgents/
+cp resources/launchd/com.openmimic.worker.plist ~/Library/LaunchAgents/
+
 # Run tests
 just test-all
 ```

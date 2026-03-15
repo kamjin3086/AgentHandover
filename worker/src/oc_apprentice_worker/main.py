@@ -2806,6 +2806,156 @@ def _process_lifecycle_promote_trigger(
     _remove_trigger(trigger_path)
 
 
+def _process_merge_trigger(
+    *,
+    procedure_curator: "ProcedureCurator | None" = None,
+) -> None:
+    """Process a merge-trigger.json written by the SwiftUI app."""
+    state_dir = _status_dir()
+    trigger_path = state_dir / "merge-trigger.json"
+
+    if not trigger_path.is_file():
+        return
+
+    try:
+        with open(trigger_path) as f:
+            trigger = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        logger.debug("Could not read merge-trigger.json", exc_info=True)
+        _remove_trigger(trigger_path)
+        return
+
+    # The SwiftUI app writes procedure_slug + merge_target; also accept
+    # the slug_a/slug_b form for CLI callers.
+    slug_a = trigger.get("slug_a") or trigger.get("procedure_slug", "")
+    slug_b = trigger.get("slug_b") or trigger.get("merge_target", "")
+    action = trigger.get("action", "merge")
+
+    if not slug_a or not slug_b:
+        logger.warning("Merge trigger missing slug_a/slug_b or procedure_slug/merge_target")
+        _remove_trigger(trigger_path)
+        return
+
+    # Handle dismiss action
+    if action == "dismiss":
+        logger.info("Processing merge dismiss: %s + %s", slug_a, slug_b)
+        if procedure_curator is not None:
+            try:
+                procedure_curator.dismiss_merge(slug_a, slug_b)
+                logger.info("Merge dismissed: %s + %s", slug_a, slug_b)
+            except Exception:
+                logger.warning("Merge dismiss failed for %s + %s", slug_a, slug_b, exc_info=True)
+        else:
+            logger.warning("Merge dismiss received but procedure_curator is not available")
+        _remove_trigger(trigger_path)
+        return
+
+    logger.info("Processing merge trigger: %s + %s", slug_a, slug_b)
+
+    if procedure_curator is not None:
+        try:
+            result = procedure_curator.execute_merge(slug_a, slug_b, actor="human")
+            logger.info("Merge result: %s", result)
+        except Exception:
+            logger.warning("Merge trigger failed for %s + %s", slug_a, slug_b, exc_info=True)
+    else:
+        logger.warning("Merge trigger received but procedure_curator is not available")
+
+    _remove_trigger(trigger_path)
+
+
+def _process_drift_reviewed_trigger(
+    *,
+    procedure_curator: "ProcedureCurator | None" = None,
+) -> None:
+    """Process a drift-reviewed-trigger.json written by the SwiftUI app."""
+    state_dir = _status_dir()
+    trigger_path = state_dir / "drift-reviewed-trigger.json"
+
+    if not trigger_path.is_file():
+        return
+
+    try:
+        with open(trigger_path) as f:
+            trigger = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        logger.debug("Could not read drift-reviewed-trigger.json", exc_info=True)
+        _remove_trigger(trigger_path)
+        return
+
+    slug = trigger.get("procedure_slug", "")
+    drift_type = trigger.get("drift_type", "")
+    action = trigger.get("action", "dismiss")
+
+    if not slug:
+        logger.warning("Drift reviewed trigger missing procedure_slug")
+        _remove_trigger(trigger_path)
+        return
+
+    logger.info("Processing drift reviewed trigger: %s type=%s action=%s", slug, drift_type, action)
+
+    if procedure_curator is not None:
+        try:
+            if action == "dismiss" and drift_type:
+                procedure_curator.dismiss_drift(slug, drift_type)
+                logger.info("Drift signal dismissed: %s/%s", slug, drift_type)
+            elif action in ("reviewed", "acknowledged"):
+                # Mark the procedure's staleness as confirmed
+                proc = procedure_curator._kb.get_procedure(slug)
+                if proc is not None:
+                    from datetime import datetime, timezone
+                    proc.setdefault("staleness", {})["last_confirmed"] = datetime.now(timezone.utc).isoformat()
+                    procedure_curator._kb.save_procedure(proc)
+                    logger.info("Drift reviewed and confirmed for %s", slug)
+            elif action == "revert":
+                # Revert is treated as a dismiss + record for now
+                if drift_type:
+                    procedure_curator.dismiss_drift(slug, drift_type)
+                logger.info("Drift revert recorded for %s", slug)
+        except Exception:
+            logger.warning("Drift reviewed trigger failed for %s", slug, exc_info=True)
+    else:
+        logger.warning("Drift reviewed trigger received but procedure_curator is not available")
+
+    _remove_trigger(trigger_path)
+
+
+def _process_lifecycle_dismiss_trigger(
+    *,
+    procedure_curator: "ProcedureCurator | None" = None,
+) -> None:
+    """Process lifecycle-dismiss-trigger.json — records that user dismissed an upgrade suggestion."""
+    state_dir = _status_dir()
+    trigger_path = state_dir / "lifecycle-dismiss-trigger.json"
+    if not trigger_path.is_file():
+        return
+    try:
+        with open(trigger_path) as f:
+            trigger = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        _remove_trigger(trigger_path)
+        return
+
+    slug = trigger.get("procedure_slug", "")
+    if slug and procedure_curator is not None:
+        try:
+            # Record dismissal so upgrade card doesn't reappear
+            decisions = procedure_curator._decisions
+            if not isinstance(decisions, dict):
+                # _decisions is a list of CurationDecision dicts; use _save_decisions
+                # to persist.  We record via a special dismiss decision entry.
+                procedure_curator._dismissed_drift.append({
+                    "slug": slug,
+                    "drift_type": "__lifecycle_upgrade_dismissed__",
+                })
+                procedure_curator._save_decisions()
+            logger.info("Lifecycle upgrade dismissed for %s", slug)
+        except Exception:
+            logger.debug("Lifecycle dismiss failed", exc_info=True)
+
+    _remove_trigger(trigger_path)
+
+
 def _process_execution_start_trigger(
     status_dir: Path, execution_monitor, knowledge_base,
 ) -> None:
@@ -4033,6 +4183,15 @@ def main(argv: list[str] | None = None) -> None:
                 )
                 _process_lifecycle_promote_trigger(
                     lifecycle_manager=lifecycle_manager,
+                )
+                _process_merge_trigger(
+                    procedure_curator=procedure_curator,
+                )
+                _process_drift_reviewed_trigger(
+                    procedure_curator=procedure_curator,
+                )
+                _process_lifecycle_dismiss_trigger(
+                    procedure_curator=procedure_curator,
                 )
 
                 # Execution feedback triggers

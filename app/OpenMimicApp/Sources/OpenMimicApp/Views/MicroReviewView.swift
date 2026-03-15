@@ -433,8 +433,16 @@ final class MicroReviewViewModel: ObservableObject {
             )
         case (.lifecycleUpgrade, .reject),
              (.lifecycleUpgrade, .dismiss):
-            // Reject/dismiss just removes from queue
-            success = true
+            // Dismiss: write trigger so worker records the decision durably
+            success = writeTrigger(
+                dir: stateDir,
+                filename: "lifecycle-dismiss-trigger.json",
+                payload: [
+                    "procedure_slug": card.slug,
+                    "action": "dismiss",
+                    "requested_at": now,
+                ]
+            )
 
         // Merge candidate cards -> merge-trigger.json
         case (.mergeCandidate, .approve):
@@ -450,7 +458,17 @@ final class MicroReviewViewModel: ObservableObject {
             )
         case (.mergeCandidate, .reject),
              (.mergeCandidate, .dismiss):
-            success = true
+            let mergeTarget = card.metadata["mergeTarget"] ?? ""
+            success = writeTrigger(
+                dir: stateDir,
+                filename: "merge-trigger.json",
+                payload: [
+                    "procedure_slug": card.slug,
+                    "merge_target": mergeTarget,
+                    "action": "dismiss",
+                    "requested_at": now,
+                ]
+            )
 
         // Drift alert cards -> drift-reviewed-trigger.json
         case (.driftAlert, .approve):
@@ -474,7 +492,15 @@ final class MicroReviewViewModel: ObservableObject {
                 ]
             )
         case (.driftAlert, .dismiss):
-            success = true
+            success = writeTrigger(
+                dir: stateDir,
+                filename: "drift-reviewed-trigger.json",
+                payload: [
+                    "procedure_slug": card.slug,
+                    "action": "dismiss",
+                    "requested_at": now,
+                ]
+            )
 
         // Dismiss only applies to trust suggestions; ignore for other types
         default:
