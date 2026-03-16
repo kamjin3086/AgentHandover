@@ -22,6 +22,105 @@ dependencies = [
 ]
 
 [[package]]
+name = "agenthandover-cli"
+version = "0.1.0"
+dependencies = [
+ "agenthandover-common",
+ "anyhow",
+ "chrono",
+ "clap",
+ "colored",
+ "libc",
+ "serde",
+ "serde_json",
+ "uuid",
+]
+
+[[package]]
+name = "agenthandover-common"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "directories",
+ "figment",
+ "libc",
+ "regex",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "toml",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "agenthandover-daemon"
+version = "0.1.0"
+dependencies = [
+ "accessibility-sys",
+ "agenthandover-common",
+ "agenthandover-storage",
+ "anyhow",
+ "cc",
+ "chrono",
+ "core-foundation",
+ "core-graphics",
+ "hex",
+ "image",
+ "libc",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "sha2",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
+name = "agenthandover-storage"
+version = "0.1.0"
+dependencies = [
+ "agenthandover-common",
+ "anyhow",
+ "chacha20poly1305",
+ "chrono",
+ "hex",
+ "libc",
+ "regex",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror",
+ "tracing",
+ "uuid",
+ "zstd",
+]
+
+[[package]]
+name = "agenthandover-test-harness"
+version = "0.1.0"
+dependencies = [
+ "agenthandover-common",
+ "agenthandover-storage",
+ "anyhow",
+ "chrono",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "ahash"
 version = "0.8.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -836,90 +935,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "oc-apprentice-common"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "directories",
- "figment",
- "libc",
- "regex",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror",
- "toml",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "oc-apprentice-daemon"
-version = "0.1.0"
-dependencies = [
- "accessibility-sys",
- "anyhow",
- "cc",
- "chrono",
- "core-foundation",
- "core-graphics",
- "hex",
- "image",
- "libc",
- "oc-apprentice-common",
- "oc-apprentice-storage",
- "rusqlite",
- "serde",
- "serde_json",
- "serial_test",
- "sha2",
- "tempfile",
- "thiserror",
- "tokio",
- "tracing",
- "tracing-appender",
- "tracing-subscriber",
- "uuid",
-]
-
-[[package]]
-name = "oc-apprentice-storage"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chacha20poly1305",
- "chrono",
- "hex",
- "libc",
- "oc-apprentice-common",
- "regex",
- "rusqlite",
- "serde",
- "serde_json",
- "sha2",
- "tempfile",
- "thiserror",
- "tracing",
- "uuid",
- "zstd",
-]
-
-[[package]]
-name = "oc-apprentice-test-harness"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chrono",
- "oc-apprentice-common",
- "oc-apprentice-storage",
- "serde",
- "serde_json",
- "tempfile",
- "tracing",
- "uuid",
-]
-
-[[package]]
 name = "once_cell"
 version = "1.21.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -936,21 +951,6 @@ name = "opaque-debug"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c08d65885ee38876c4f86fa503fb49d7b507c2b62552df7c70b2fce627e06381"
-
-[[package]]
-name = "openmimic-cli"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chrono",
- "clap",
- "colored",
- "libc",
- "oc-apprentice-common",
- "serde",
- "serde_json",
- "uuid",
-]
 
 [[package]]
 name = "option-ext"

@@ -1,5 +1,5 @@
 /**
- * OpenMimic Observer — Click Intent Capture
+ * AgentHandover Observer — Click Intent Capture
  *
  * Captures click events with semantic information about the target element.
  * Extracts composedPath (CSS selector path through the composed tree), ARIA role,

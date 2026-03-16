@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import re
 
-from oc_apprentice_worker.deep_scan import (
+from agenthandover_worker.deep_scan import (
     DeepScanner,
     DeepScanResult,
     PIIMatch,

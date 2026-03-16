@@ -1,5 +1,5 @@
 /**
- * OpenMimic Observer — Secure Field Detection
+ * AgentHandover Observer — Secure Field Detection
  *
  * Detects when a user focuses a password or other sensitive input field,
  * and signals other capture modules to suppress data collection while

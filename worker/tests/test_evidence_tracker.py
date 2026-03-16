@@ -6,14 +6,14 @@ from pathlib import Path
 
 import pytest
 
-from oc_apprentice_worker.evidence_tracker import (
+from agenthandover_worker.evidence_tracker import (
     EvidenceTracker,
     ObservationEvidence,
     StepEvidence,
     _actions_match,
 )
-from oc_apprentice_worker.knowledge_base import KnowledgeBase
-from oc_apprentice_worker.procedure_schema import sop_to_procedure
+from agenthandover_worker.knowledge_base import KnowledgeBase
+from agenthandover_worker.procedure_schema import sop_to_procedure
 
 
 @pytest.fixture()

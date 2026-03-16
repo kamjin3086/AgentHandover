@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import pytest
 
-from oc_apprentice_worker.confidence import (
+from agenthandover_worker.confidence import (
     V2ConfidenceBreakdown,
     _FOCUS_BONUS,
     _W_ANNOTATION_QUALITY,

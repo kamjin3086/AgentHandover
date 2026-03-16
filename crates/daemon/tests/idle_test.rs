@@ -1,6 +1,6 @@
 #[cfg(target_os = "macos")]
 mod macos_tests {
-    use oc_apprentice_daemon::platform::IdleDetector;
+    use agenthandover_daemon::platform::IdleDetector;
 
     #[test]
     fn test_idle_seconds_returns_non_negative() {

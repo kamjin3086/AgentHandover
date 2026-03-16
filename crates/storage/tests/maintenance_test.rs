@@ -1,6 +1,6 @@
-use oc_apprentice_storage::EventStore;
-use oc_apprentice_storage::maintenance::MaintenanceRunner;
-use oc_apprentice_common::event::*;
+use agenthandover_storage::EventStore;
+use agenthandover_storage::maintenance::MaintenanceRunner;
+use agenthandover_common::event::*;
 use chrono::Utc;
 use rusqlite;
 use uuid::Uuid;

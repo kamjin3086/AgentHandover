@@ -1,5 +1,5 @@
 /**
- * OpenMimic Observer — Background Service Worker (MV3)
+ * AgentHandover Observer — Background Service Worker (MV3)
  *
  * Responsibilities:
  *   1. Log service worker lifecycle events (install, activate).
@@ -26,11 +26,11 @@ import {
 // ---------------------------------------------------------------------------
 
 self.addEventListener('install', () => {
-  console.log('[OpenMimic:bg] Service worker installed');
+  console.log('[AgentHandover:bg] Service worker installed');
 });
 
 self.addEventListener('activate', () => {
-  console.log('[OpenMimic:bg] Service worker activated');
+  console.log('[AgentHandover:bg] Service worker activated');
   initNativeConnection();
 });
 
@@ -67,7 +67,7 @@ let unsubDisconnect: (() => void) | null = null;
  */
 function initNativeConnection(): void {
   if (isConnected()) {
-    console.log('[OpenMimic:bg] Native connection already active');
+    console.log('[AgentHandover:bg] Native connection already active');
     return;
   }
 
@@ -84,20 +84,20 @@ function initNativeConnection(): void {
     reconnectAttempts = 0;
 
     unsubMessage = onNativeMessage((message: NativeInboundMessage) => {
-      console.log('[OpenMimic:bg] Daemon message:', message.type);
+      console.log('[AgentHandover:bg] Daemon message:', message.type);
       handleDaemonMessage(message);
     });
 
     unsubDisconnect = onNativeDisconnect(() => {
       reconnectAttempts++;
       if (reconnectAttempts > MAX_RECONNECT_ATTEMPTS) {
-        console.error('[OpenMimic:bg] Max reconnect attempts reached. Giving up.');
+        console.error('[AgentHandover:bg] Max reconnect attempts reached. Giving up.');
         return;
       }
       const delay = Math.min(5_000 * Math.pow(1.5, reconnectAttempts - 1), MAX_RECONNECT_DELAY);
       const jitter = delay * 0.1 * Math.random();
       console.warn(
-        `[OpenMimic:bg] Lost daemon connection — reconnect attempt ${reconnectAttempts} in ${Math.round(delay + jitter)}ms`,
+        `[AgentHandover:bg] Lost daemon connection — reconnect attempt ${reconnectAttempts} in ${Math.round(delay + jitter)}ms`,
       );
       setTimeout(() => {
         initNativeConnection();
@@ -109,15 +109,15 @@ function initNativeConnection(): void {
       }, delay + jitter);
     });
   } catch (err) {
-    console.error('[OpenMimic:bg] Failed to connect to daemon:', err);
+    console.error('[AgentHandover:bg] Failed to connect to daemon:', err);
     reconnectAttempts++;
     if (reconnectAttempts > MAX_RECONNECT_ATTEMPTS) {
-      console.error('[OpenMimic:bg] Max reconnect attempts reached. Giving up.');
+      console.error('[AgentHandover:bg] Max reconnect attempts reached. Giving up.');
       return;
     }
     const delay = Math.min(5_000 * Math.pow(1.5, reconnectAttempts - 1), MAX_RECONNECT_DELAY);
     const jitter = delay * 0.1 * Math.random();
-    console.log(`[OpenMimic:bg] Retrying in ${Math.round(delay + jitter)}ms`);
+    console.log(`[AgentHandover:bg] Retrying in ${Math.round(delay + jitter)}ms`);
     setTimeout(initNativeConnection, delay + jitter);
   }
 }
@@ -140,7 +140,7 @@ chrome.runtime.onMessage.addListener(
     const url = sender.tab?.url ?? sender.url ?? 'unknown';
 
     console.log(
-      '[OpenMimic:bg] Content script message from tab', tabId,
+      '[AgentHandover:bg] Content script message from tab', tabId,
       'type:', message.type,
       'url:', url,
     );
@@ -161,7 +161,7 @@ chrome.runtime.onMessage.addListener(
         break;
 
       default:
-        console.warn('[OpenMimic:bg] Unknown message type:', message.type);
+        console.warn('[AgentHandover:bg] Unknown message type:', message.type);
         sendResponse({ ok: false, error: 'unknown_message_type' });
     }
 
@@ -197,7 +197,7 @@ interface BackgroundResponse {
 // ---------------------------------------------------------------------------
 
 function handleContentReady(tabId: number, url: string): void {
-  console.log('[OpenMimic:bg] Content script ready in tab', tabId, '—', url);
+  console.log('[AgentHandover:bg] Content script ready in tab', tabId, '—', url);
 
   if (isConnected()) {
     sendToNative('content_ready', { tabId, url });
@@ -211,7 +211,7 @@ function handleContentReady(tabId: number, url: string): void {
 function drainDisconnectQueue(): void {
   if (disconnectQueue.length === 0) return;
 
-  console.log('[OpenMimic:bg] Draining disconnect queue:', disconnectQueue.length, 'messages');
+  console.log('[AgentHandover:bg] Draining disconnect queue:', disconnectQueue.length, 'messages');
   // Splice the queue so forwardToDaemon sees an empty queue (avoids re-queuing
   // if the connection drops again mid-drain — those would be freshly queued).
   const pending = disconnectQueue.splice(0);
@@ -227,10 +227,10 @@ function forwardToDaemon(
 ): void {
   if (!isConnected()) {
     if (disconnectQueue.length >= MAX_DISCONNECT_QUEUE) {
-      console.warn('[OpenMimic:bg] Disconnect queue full — dropping oldest to enqueue', message.type);
+      console.warn('[AgentHandover:bg] Disconnect queue full — dropping oldest to enqueue', message.type);
       disconnectQueue.shift();
     }
-    console.log('[OpenMimic:bg] Daemon not connected — queuing', message.type, `(${disconnectQueue.length + 1}/${MAX_DISCONNECT_QUEUE})`);
+    console.log('[AgentHandover:bg] Daemon not connected — queuing', message.type, `(${disconnectQueue.length + 1}/${MAX_DISCONNECT_QUEUE})`);
     disconnectQueue.push({ message, tabId, url });
     return;
   }
@@ -251,7 +251,7 @@ function forwardToDaemon(
 function handleDaemonMessage(message: NativeInboundMessage): void {
   switch (message.type) {
     case 'ping':
-      console.log('[OpenMimic:bg] Daemon ping received');
+      console.log('[AgentHandover:bg] Daemon ping received');
       sendToNative('pong', {});
       break;
 
@@ -267,7 +267,7 @@ function handleDaemonMessage(message: NativeInboundMessage): void {
         chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
           const activeTab = tabs[0]?.id;
           if (activeTab) {
-            console.log('[OpenMimic:bg] request_snapshot fallback to active tab', activeTab);
+            console.log('[AgentHandover:bg] request_snapshot fallback to active tab', activeTab);
             chrome.tabs.sendMessage(activeTab, {
               type: 'request_snapshot',
               payload: message.payload,
@@ -279,6 +279,6 @@ function handleDaemonMessage(message: NativeInboundMessage): void {
     }
 
     default:
-      console.log('[OpenMimic:bg] Unhandled daemon message type:', message.type);
+      console.log('[AgentHandover:bg] Unhandled daemon message type:', message.type);
   }
 }

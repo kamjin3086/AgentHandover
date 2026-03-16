@@ -21,7 +21,7 @@ from pathlib import Path
 
 import pytest
 
-from oc_apprentice_worker.sop_dedup import (
+from agenthandover_worker.sop_dedup import (
     _extract_action_verbs,
     _extract_apps,
     _extract_domains,

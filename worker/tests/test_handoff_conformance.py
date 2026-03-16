@@ -32,7 +32,7 @@ from unittest.mock import MagicMock
 @pytest.fixture
 def kb(tmp_path):
     """Create a KnowledgeBase with a temp root."""
-    from oc_apprentice_worker.knowledge_base import KnowledgeBase
+    from agenthandover_worker.knowledge_base import KnowledgeBase
     kb = KnowledgeBase(root=tmp_path)
     kb.ensure_structure()
     return kb
@@ -108,7 +108,7 @@ def sample_sop_template():
 @pytest.fixture
 def sample_procedure(sample_sop_template):
     """A v3 procedure converted from the sample SOP template."""
-    from oc_apprentice_worker.procedure_schema import sop_to_procedure
+    from agenthandover_worker.procedure_schema import sop_to_procedure
     proc = sop_to_procedure(sample_sop_template)
     return proc
 
@@ -167,7 +167,7 @@ class TestSchemaCompleteness:
 
     def test_validate_procedure_passes(self, sample_procedure):
         """validate_procedure() returns no errors for well-formed procedure."""
-        from oc_apprentice_worker.procedure_schema import validate_procedure
+        from agenthandover_worker.procedure_schema import validate_procedure
         errors = validate_procedure(sample_procedure)
         assert errors == [], f"Validation errors: {errors}"
 
@@ -179,8 +179,8 @@ class TestExportWriteProcedure:
 
     def test_procedure_to_sop_template_roundtrip(self, sample_sop_template):
         """procedure_to_sop_template preserves critical fields."""
-        from oc_apprentice_worker.procedure_schema import sop_to_procedure
-        from oc_apprentice_worker.export_adapter import procedure_to_sop_template
+        from agenthandover_worker.procedure_schema import sop_to_procedure
+        from agenthandover_worker.export_adapter import procedure_to_sop_template
 
         proc = sop_to_procedure(sample_sop_template)
         template = procedure_to_sop_template(proc)
@@ -192,7 +192,7 @@ class TestExportWriteProcedure:
 
     def test_openclaw_writer_write_procedure(self, tmp_path, sample_procedure):
         """OpenClawWriter.write_procedure() produces a file."""
-        from oc_apprentice_worker.openclaw_writer import OpenClawWriter
+        from agenthandover_worker.openclaw_writer import OpenClawWriter
         writer = OpenClawWriter(workspace_dir=tmp_path)
         path = writer.write_procedure(sample_procedure)
         assert path.exists()
@@ -200,7 +200,7 @@ class TestExportWriteProcedure:
 
     def test_skill_md_writer_write_procedure(self, tmp_path, sample_procedure):
         """SkillMdWriter.write_procedure() includes v3 sections."""
-        from oc_apprentice_worker.skill_md_writer import SkillMdWriter
+        from agenthandover_worker.skill_md_writer import SkillMdWriter
         writer = SkillMdWriter(workspace_dir=tmp_path)
         path = writer.write_procedure(sample_procedure)
         assert path.exists()
@@ -209,7 +209,7 @@ class TestExportWriteProcedure:
 
     def test_claude_skill_writer_write_procedure(self, tmp_path, sample_procedure):
         """ClaudeSkillWriter.write_procedure() produces SKILL.md."""
-        from oc_apprentice_worker.claude_skill_writer import ClaudeSkillWriter
+        from agenthandover_worker.claude_skill_writer import ClaudeSkillWriter
         writer = ClaudeSkillWriter(skills_dir=tmp_path)
         path = writer.write_procedure(sample_procedure)
         assert path.exists()
@@ -217,7 +217,7 @@ class TestExportWriteProcedure:
 
     def test_generic_writer_write_procedure(self, tmp_path, sample_procedure):
         """GenericWriter.write_procedure() produces .md file."""
-        from oc_apprentice_worker.generic_writer import GenericWriter
+        from agenthandover_worker.generic_writer import GenericWriter
         writer = GenericWriter(output_dir=tmp_path)
         path = writer.write_procedure(sample_procedure)
         assert path.exists()
@@ -230,7 +230,7 @@ class TestFreshnessScore:
 
     def test_fresh_procedure_score_near_one(self):
         """Recently observed procedure has high freshness."""
-        from oc_apprentice_worker.staleness_detector import procedure_freshness
+        from agenthandover_worker.staleness_detector import procedure_freshness
         proc = {
             "staleness": {
                 "last_observed": datetime.now(timezone.utc).isoformat(),
@@ -243,7 +243,7 @@ class TestFreshnessScore:
 
     def test_old_procedure_score_decays(self):
         """Procedure not observed in 60 days has low freshness."""
-        from oc_apprentice_worker.staleness_detector import procedure_freshness
+        from agenthandover_worker.staleness_detector import procedure_freshness
         old_date = (datetime.now(timezone.utc) - timedelta(days=60)).isoformat()
         proc = {
             "staleness": {
@@ -257,7 +257,7 @@ class TestFreshnessScore:
 
     def test_confirmed_procedure_gets_bonus(self):
         """Recent confirmation boosts freshness."""
-        from oc_apprentice_worker.staleness_detector import procedure_freshness
+        from agenthandover_worker.staleness_detector import procedure_freshness
         old_date = (datetime.now(timezone.utc) - timedelta(days=20)).isoformat()
         recent_confirm = (datetime.now(timezone.utc) - timedelta(days=2)).isoformat()
 
@@ -284,7 +284,7 @@ class TestFreshnessScore:
 
     def test_contradictions_reduce_score(self):
         """Contradictions in evidence reduce freshness."""
-        from oc_apprentice_worker.staleness_detector import procedure_freshness
+        from agenthandover_worker.staleness_detector import procedure_freshness
         proc_clean = {
             "staleness": {
                 "last_observed": datetime.now(timezone.utc).isoformat(),
@@ -309,7 +309,7 @@ class TestFreshnessScore:
 
     def test_declining_confidence_reduces_score(self):
         """Declining confidence trend reduces freshness."""
-        from oc_apprentice_worker.staleness_detector import procedure_freshness
+        from agenthandover_worker.staleness_detector import procedure_freshness
         proc_stable = {
             "staleness": {
                 "last_observed": datetime.now(timezone.utc).isoformat(),
@@ -337,7 +337,7 @@ class TestPreflightVerification:
 
     def test_preflight_missing_procedure(self, kb):
         """Preflight fails for nonexistent procedure."""
-        from oc_apprentice_worker.procedure_verifier import ProcedureVerifier
+        from agenthandover_worker.procedure_verifier import ProcedureVerifier
         verifier = ProcedureVerifier(kb)
         result = verifier.preflight("nonexistent-slug")
         assert not result.can_execute
@@ -345,7 +345,7 @@ class TestPreflightVerification:
 
     def test_preflight_observe_trust_blocks_execution(self, kb, sample_procedure):
         """Procedure at 'observe' trust cannot execute."""
-        from oc_apprentice_worker.procedure_verifier import ProcedureVerifier
+        from agenthandover_worker.procedure_verifier import ProcedureVerifier
         sample_procedure["constraints"]["trust_level"] = "observe"
         kb.save_procedure(sample_procedure)
 
@@ -355,7 +355,7 @@ class TestPreflightVerification:
 
     def test_preflight_autonomous_trust_allows_execution(self, kb, sample_procedure):
         """Procedure at 'autonomous' trust can execute."""
-        from oc_apprentice_worker.procedure_verifier import ProcedureVerifier
+        from agenthandover_worker.procedure_verifier import ProcedureVerifier
         sample_procedure["constraints"]["trust_level"] = "autonomous"
         sample_procedure["evidence"]["total_observations"] = 5
         sample_procedure["lifecycle_state"] = "agent_ready"
@@ -367,7 +367,7 @@ class TestPreflightVerification:
 
     def test_preflight_draft_trust_allows_drafting(self, kb, sample_procedure):
         """Procedure at 'draft' trust can draft but not execute."""
-        from oc_apprentice_worker.procedure_verifier import ProcedureVerifier
+        from agenthandover_worker.procedure_verifier import ProcedureVerifier
         sample_procedure["constraints"]["trust_level"] = "draft"
         sample_procedure["evidence"]["total_observations"] = 3
         sample_procedure["lifecycle_state"] = "draft"
@@ -380,7 +380,7 @@ class TestPreflightVerification:
 
     def test_preflight_blocked_domain(self, kb, sample_procedure):
         """Blocked domain in constraints prevents execution."""
-        from oc_apprentice_worker.procedure_verifier import ProcedureVerifier
+        from agenthandover_worker.procedure_verifier import ProcedureVerifier
         sample_procedure["constraints"]["trust_level"] = "autonomous"
         sample_procedure["evidence"]["total_observations"] = 5
         # Add a URL to a step that matches a blocked domain
@@ -400,7 +400,7 @@ class TestPostconditionValidation:
 
     def test_no_expected_outcomes_passes(self, kb, sample_procedure):
         """If no expected outcomes defined, postcondition passes."""
-        from oc_apprentice_worker.procedure_verifier import ProcedureVerifier
+        from agenthandover_worker.procedure_verifier import ProcedureVerifier
         sample_procedure["expected_outcomes"] = []
         kb.save_procedure(sample_procedure)
 
@@ -412,7 +412,7 @@ class TestPostconditionValidation:
 
     def test_matching_outcomes_pass(self, kb, sample_procedure):
         """Matching outcome types pass validation."""
-        from oc_apprentice_worker.procedure_verifier import ProcedureVerifier
+        from agenthandover_worker.procedure_verifier import ProcedureVerifier
         sample_procedure["expected_outcomes"] = [
             {"type": "data_transfer", "description": "Domain info copied"},
         ]
@@ -427,7 +427,7 @@ class TestPostconditionValidation:
 
     def test_missing_outcome_fails(self, kb, sample_procedure):
         """Missing expected outcome type fails validation."""
-        from oc_apprentice_worker.procedure_verifier import ProcedureVerifier
+        from agenthandover_worker.procedure_verifier import ProcedureVerifier
         sample_procedure["expected_outcomes"] = [
             {"type": "file_created", "description": "Report saved"},
         ]
@@ -447,7 +447,7 @@ class TestExecutionFeedback:
 
     def test_start_and_complete(self, kb, sample_procedure):
         """Full execution lifecycle: start -> steps -> complete."""
-        from oc_apprentice_worker.execution_monitor import ExecutionMonitor, ExecutionStatus
+        from agenthandover_worker.execution_monitor import ExecutionMonitor, ExecutionStatus
         kb.save_procedure(sample_procedure)
         monitor = ExecutionMonitor(kb)
 
@@ -462,7 +462,7 @@ class TestExecutionFeedback:
 
     def test_failed_execution(self, kb, sample_procedure):
         """Failed execution records error."""
-        from oc_apprentice_worker.execution_monitor import ExecutionMonitor, ExecutionStatus
+        from agenthandover_worker.execution_monitor import ExecutionMonitor, ExecutionStatus
         kb.save_procedure(sample_procedure)
         monitor = ExecutionMonitor(kb)
 
@@ -473,7 +473,7 @@ class TestExecutionFeedback:
 
     def test_deviation_detected(self, kb, sample_procedure):
         """Deviation recorded when actual differs from expected."""
-        from oc_apprentice_worker.execution_monitor import ExecutionMonitor, ExecutionStatus
+        from agenthandover_worker.execution_monitor import ExecutionMonitor, ExecutionStatus
         kb.save_procedure(sample_procedure)
         monitor = ExecutionMonitor(kb)
 
@@ -487,7 +487,7 @@ class TestExecutionFeedback:
 
     def test_success_rate_computation(self, kb, sample_procedure):
         """Success rate computed from execution history."""
-        from oc_apprentice_worker.execution_monitor import ExecutionMonitor
+        from agenthandover_worker.execution_monitor import ExecutionMonitor
         kb.save_procedure(sample_procedure)
         monitor = ExecutionMonitor(kb)
 
@@ -516,8 +516,8 @@ class TestEnvironmentEnrichment:
 
     def test_apps_extracted_from_steps(self, kb, sample_sop_template):
         """Required apps populated from step app fields."""
-        from oc_apprentice_worker.evidence_tracker import EvidenceTracker
-        from oc_apprentice_worker.procedure_writer import ProcedureWriter
+        from agenthandover_worker.evidence_tracker import EvidenceTracker
+        from agenthandover_worker.procedure_writer import ProcedureWriter
 
         et = EvidenceTracker(knowledge_base=kb)
         pw = ProcedureWriter(kb=kb, evidence=et)
@@ -530,8 +530,8 @@ class TestEnvironmentEnrichment:
 
     def test_accounts_detected_from_urls(self, kb):
         """Account hints extracted from step URLs."""
-        from oc_apprentice_worker.evidence_tracker import EvidenceTracker
-        from oc_apprentice_worker.procedure_writer import ProcedureWriter
+        from agenthandover_worker.evidence_tracker import EvidenceTracker
+        from agenthandover_worker.procedure_writer import ProcedureWriter
 
         et = EvidenceTracker(knowledge_base=kb)
         pw = ProcedureWriter(kb=kb, evidence=et)
@@ -576,8 +576,8 @@ class TestProcedureComposition:
 
     def test_chain_enrichment_from_summaries(self, kb, sample_procedure):
         """Chain.followed_by populated from daily summaries."""
-        from oc_apprentice_worker.evidence_tracker import EvidenceTracker
-        from oc_apprentice_worker.procedure_writer import ProcedureWriter
+        from agenthandover_worker.evidence_tracker import EvidenceTracker
+        from agenthandover_worker.procedure_writer import ProcedureWriter
 
         slug = sample_procedure["id"]
         kb.save_procedure(sample_procedure)
@@ -611,7 +611,7 @@ class TestQueryAPIContract:
         kb.save_procedure(sample_procedure)
 
         # Test the handler logic directly
-        from oc_apprentice_worker.staleness_detector import procedure_freshness
+        from agenthandover_worker.staleness_detector import procedure_freshness
         freshness = procedure_freshness(sample_procedure)
 
         # Verify the fields that the bundle endpoint would include
@@ -623,7 +623,7 @@ class TestQueryAPIContract:
 
     def test_ready_filter_excludes_observe_trust(self, kb, sample_procedure):
         """Procedures at 'observe' trust are not ready for agents."""
-        from oc_apprentice_worker.staleness_detector import procedure_freshness
+        from agenthandover_worker.staleness_detector import procedure_freshness
 
         sample_procedure["constraints"]["trust_level"] = "observe"
         kb.save_procedure(sample_procedure)
@@ -635,7 +635,7 @@ class TestQueryAPIContract:
 
     def test_ready_filter_includes_autonomous(self, kb, sample_procedure):
         """Procedures at 'autonomous' trust with good freshness are ready."""
-        from oc_apprentice_worker.staleness_detector import procedure_freshness
+        from agenthandover_worker.staleness_detector import procedure_freshness
 
         sample_procedure["constraints"]["trust_level"] = "autonomous"
         kb.save_procedure(sample_procedure)
@@ -659,7 +659,7 @@ class TestContractConsistency:
 
     def _simulate_ready_filter(self, proc):
         """Simulate the /ready endpoint filter logic."""
-        from oc_apprentice_worker.staleness_detector import procedure_freshness
+        from agenthandover_worker.staleness_detector import procedure_freshness
 
         _EXECUTABLE_TRUST_LEVELS = frozenset({
             "execute_with_approval", "autonomous",
@@ -687,7 +687,7 @@ class TestContractConsistency:
 
     def test_draft_procedure_consistent(self, kb, sample_procedure):
         """Draft procedure: can_draft=True, can_execute=False in both /ready and preflight."""
-        from oc_apprentice_worker.procedure_verifier import ProcedureVerifier
+        from agenthandover_worker.procedure_verifier import ProcedureVerifier
 
         sample_procedure["constraints"]["trust_level"] = "draft"
         sample_procedure["evidence"]["total_observations"] = 3
@@ -708,7 +708,7 @@ class TestContractConsistency:
 
     def test_observe_procedure_consistent(self, kb, sample_procedure):
         """Observe-only procedure: excluded from /ready, can_execute=False, can_draft=False in preflight."""
-        from oc_apprentice_worker.procedure_verifier import ProcedureVerifier
+        from agenthandover_worker.procedure_verifier import ProcedureVerifier
 
         sample_procedure["constraints"]["trust_level"] = "observe"
         kb.save_procedure(sample_procedure)
@@ -725,7 +725,7 @@ class TestContractConsistency:
 
     def test_autonomous_fresh_consistent(self, kb, sample_procedure):
         """Autonomous + fresh procedure: can_execute=True everywhere."""
-        from oc_apprentice_worker.procedure_verifier import ProcedureVerifier
+        from agenthandover_worker.procedure_verifier import ProcedureVerifier
 
         sample_procedure["constraints"]["trust_level"] = "autonomous"
         sample_procedure["evidence"]["total_observations"] = 5
@@ -744,7 +744,7 @@ class TestContractConsistency:
 
     def test_stale_procedure_consistent(self, kb, sample_procedure):
         """Stale procedure: excluded from /ready, freshness blocks preflight."""
-        from oc_apprentice_worker.procedure_verifier import ProcedureVerifier
+        from agenthandover_worker.procedure_verifier import ProcedureVerifier
 
         sample_procedure["constraints"]["trust_level"] = "autonomous"
         sample_procedure["staleness"]["last_observed"] = "2024-01-01T00:00:00+00:00"
@@ -764,7 +764,7 @@ class TestContractConsistency:
 
     def test_suggest_trust_excluded(self, kb, sample_procedure):
         """Suggest-level trust: excluded from /ready, no drafting allowed."""
-        from oc_apprentice_worker.procedure_verifier import ProcedureVerifier
+        from agenthandover_worker.procedure_verifier import ProcedureVerifier
 
         sample_procedure["constraints"]["trust_level"] = "suggest"
         kb.save_procedure(sample_procedure)
@@ -785,7 +785,7 @@ class TestNoFalseReady:
 
     def test_draft_never_executable(self, kb, sample_procedure):
         """Draft trust + any freshness must never yield can_execute=True."""
-        from oc_apprentice_worker.procedure_verifier import ProcedureVerifier
+        from agenthandover_worker.procedure_verifier import ProcedureVerifier
 
         sample_procedure["constraints"]["trust_level"] = "draft"
         sample_procedure["evidence"]["total_observations"] = 100
@@ -797,7 +797,7 @@ class TestNoFalseReady:
 
     def test_stale_autonomous_never_executable(self, kb, sample_procedure):
         """Autonomous trust but stale freshness must not yield can_execute=True."""
-        from oc_apprentice_worker.procedure_verifier import ProcedureVerifier
+        from agenthandover_worker.procedure_verifier import ProcedureVerifier
 
         sample_procedure["constraints"]["trust_level"] = "autonomous"
         sample_procedure["staleness"]["last_observed"] = "2020-01-01T00:00:00+00:00"
@@ -811,7 +811,7 @@ class TestNoFalseReady:
 
     def test_no_steps_blocks_execution(self, kb, sample_procedure):
         """Procedure with no steps must not be executable."""
-        from oc_apprentice_worker.procedure_verifier import ProcedureVerifier
+        from agenthandover_worker.procedure_verifier import ProcedureVerifier
 
         sample_procedure["constraints"]["trust_level"] = "autonomous"
         sample_procedure["steps"] = []
@@ -824,7 +824,7 @@ class TestNoFalseReady:
 
     def test_blocked_domain_blocks_execution(self, kb, sample_procedure):
         """Even autonomous + fresh, a blocked domain prevents execution."""
-        from oc_apprentice_worker.procedure_verifier import ProcedureVerifier
+        from agenthandover_worker.procedure_verifier import ProcedureVerifier
 
         sample_procedure["constraints"]["trust_level"] = "autonomous"
         sample_procedure["evidence"]["total_observations"] = 5
@@ -844,7 +844,7 @@ class TestPreflightAdvisoryLabeling:
 
     def test_required_apps_is_advisory(self, kb, sample_procedure):
         """required_apps check has severity='advisory'."""
-        from oc_apprentice_worker.procedure_verifier import ProcedureVerifier
+        from agenthandover_worker.procedure_verifier import ProcedureVerifier
 
         sample_procedure["constraints"]["trust_level"] = "autonomous"
         sample_procedure["evidence"]["total_observations"] = 5
@@ -859,7 +859,7 @@ class TestPreflightAdvisoryLabeling:
 
     def test_observations_is_advisory(self, kb, sample_procedure):
         """observations check has severity='advisory'."""
-        from oc_apprentice_worker.procedure_verifier import ProcedureVerifier
+        from agenthandover_worker.procedure_verifier import ProcedureVerifier
 
         sample_procedure["constraints"]["trust_level"] = "autonomous"
         sample_procedure["evidence"]["total_observations"] = 5
@@ -874,7 +874,7 @@ class TestPreflightAdvisoryLabeling:
 
     def test_advisories_dont_gate_execution(self, kb, sample_procedure):
         """Procedure with advisory-only issues can still execute."""
-        from oc_apprentice_worker.procedure_verifier import ProcedureVerifier
+        from agenthandover_worker.procedure_verifier import ProcedureVerifier
 
         sample_procedure["constraints"]["trust_level"] = "autonomous"
         sample_procedure["evidence"]["total_observations"] = 0  # advisory: no observations
@@ -894,7 +894,7 @@ class TestPreflightAdvisoryLabeling:
 
     def test_advisory_property_returns_advisory_checks(self, kb, sample_procedure):
         """PreflightResult.advisories returns advisory checks."""
-        from oc_apprentice_worker.procedure_verifier import ProcedureVerifier
+        from agenthandover_worker.procedure_verifier import ProcedureVerifier
 
         sample_procedure["constraints"]["trust_level"] = "autonomous"
         sample_procedure["evidence"]["total_observations"] = 5
@@ -917,10 +917,10 @@ class TestExportParity:
 
     def test_all_adapters_produce_files(self, tmp_path, sample_procedure):
         """All 4 adapters successfully write_procedure()."""
-        from oc_apprentice_worker.openclaw_writer import OpenClawWriter
-        from oc_apprentice_worker.skill_md_writer import SkillMdWriter
-        from oc_apprentice_worker.claude_skill_writer import ClaudeSkillWriter
-        from oc_apprentice_worker.generic_writer import GenericWriter
+        from agenthandover_worker.openclaw_writer import OpenClawWriter
+        from agenthandover_worker.skill_md_writer import SkillMdWriter
+        from agenthandover_worker.claude_skill_writer import ClaudeSkillWriter
+        from agenthandover_worker.generic_writer import GenericWriter
 
         results = {}
 
@@ -943,10 +943,10 @@ class TestExportParity:
 
     def test_v3_aware_adapters_include_environment(self, tmp_path, sample_procedure):
         """v3-aware adapters include environment/constraints in output."""
-        from oc_apprentice_worker.openclaw_writer import OpenClawWriter
-        from oc_apprentice_worker.skill_md_writer import SkillMdWriter
-        from oc_apprentice_worker.claude_skill_writer import ClaudeSkillWriter
-        from oc_apprentice_worker.generic_writer import GenericWriter
+        from agenthandover_worker.openclaw_writer import OpenClawWriter
+        from agenthandover_worker.skill_md_writer import SkillMdWriter
+        from agenthandover_worker.claude_skill_writer import ClaudeSkillWriter
+        from agenthandover_worker.generic_writer import GenericWriter
 
         # Enrich procedure with non-empty v3 sections
         sample_procedure["environment"]["required_apps"] = ["Chrome", "Slack"]
@@ -970,7 +970,7 @@ class TestExportParity:
 
     def test_openclaw_v3_json_sidecar(self, tmp_path, sample_procedure):
         """OpenClawWriter produces a v3 JSON sidecar alongside the markdown."""
-        from oc_apprentice_worker.openclaw_writer import OpenClawWriter
+        from agenthandover_worker.openclaw_writer import OpenClawWriter
 
         writer = OpenClawWriter(workspace_dir=tmp_path)
         writer.write_procedure(sample_procedure)
@@ -988,7 +988,7 @@ class TestExportParity:
 
     def test_generic_v3_json(self, tmp_path, sample_procedure):
         """GenericWriter produces v3 JSON alongside the markdown."""
-        from oc_apprentice_worker.generic_writer import GenericWriter
+        from agenthandover_worker.generic_writer import GenericWriter
 
         writer = GenericWriter(output_dir=tmp_path, json_export=True)
         writer.write_procedure(sample_procedure)
@@ -1003,11 +1003,11 @@ class TestExportParity:
 
     def test_export_via_adapter_uses_v3_when_available(self, kb, tmp_path, sample_procedure):
         """_export_via_adapter() calls write_procedure() when v3 exists in KB."""
-        from oc_apprentice_worker.evidence_tracker import EvidenceTracker
-        from oc_apprentice_worker.procedure_writer import ProcedureWriter
-        from oc_apprentice_worker.generic_writer import GenericWriter
-        from oc_apprentice_worker.main import _export_via_adapter
-        from oc_apprentice_worker.export_adapter import procedure_to_sop_template
+        from agenthandover_worker.evidence_tracker import EvidenceTracker
+        from agenthandover_worker.procedure_writer import ProcedureWriter
+        from agenthandover_worker.generic_writer import GenericWriter
+        from agenthandover_worker.main import _export_via_adapter
+        from agenthandover_worker.export_adapter import procedure_to_sop_template
 
         et = EvidenceTracker(knowledge_base=kb)
         pw = ProcedureWriter(kb=kb, evidence=et)
@@ -1026,8 +1026,8 @@ class TestExportParity:
 
     def test_export_via_adapter_falls_back_to_sop(self, tmp_path, sample_sop_template):
         """_export_via_adapter() falls back to write_sop() when no v3 in KB."""
-        from oc_apprentice_worker.generic_writer import GenericWriter
-        from oc_apprentice_worker.main import _export_via_adapter
+        from agenthandover_worker.generic_writer import GenericWriter
+        from agenthandover_worker.main import _export_via_adapter
 
         adapter = GenericWriter(output_dir=tmp_path)
         # No procedure_writer → falls back to write_sop

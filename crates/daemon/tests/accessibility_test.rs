@@ -1,6 +1,6 @@
 #[cfg(target_os = "macos")]
 mod ax_tests {
-    use oc_apprentice_daemon::platform::accessibility::{
+    use agenthandover_daemon::platform::accessibility::{
         check_accessibility_permission, is_secure_field_focused,
     };
 

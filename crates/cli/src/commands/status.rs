@@ -1,13 +1,13 @@
 use anyhow::Result;
 use colored::Colorize;
-use oc_apprentice_common::focus_session::read_focus_signal;
-use oc_apprentice_common::pid;
-use oc_apprentice_common::status;
+use agenthandover_common::focus_session::read_focus_signal;
+use agenthandover_common::pid;
+use agenthandover_common::status;
 
 use crate::display::{format_number, format_relative_time, is_heartbeat_stale};
 
 pub fn run() -> Result<()> {
-    println!("{}", "OpenMimic Status".bold());
+    println!("{}", "AgentHandover Status".bold());
     println!("{}", "=".repeat(50));
     println!();
 

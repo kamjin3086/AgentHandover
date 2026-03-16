@@ -17,7 +17,7 @@ use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
-use oc_apprentice_common::event::*;
+use agenthandover_common::event::*;
 
 // ---------------------------------------------------------------------------
 // Outbound command channel (internal tasks -> NM server -> extension)
@@ -36,8 +36,8 @@ pub enum DaemonCommand {
 /// Maximum allowed message size per the Chrome Native Messaging spec (1 MB).
 pub const MAX_MESSAGE_SIZE: u32 = 1_048_576;
 
-/// Chrome Native Messaging host name for the OpenClaw Apprentice bridge.
-pub const NATIVE_HOST_NAME: &str = "com.openclaw.apprentice";
+/// Chrome Native Messaging host name for the AgentHandover bridge.
+pub const NATIVE_HOST_NAME: &str = "com.agenthandover.host";
 
 // ---------------------------------------------------------------------------
 // Inbound message types (extension -> daemon)

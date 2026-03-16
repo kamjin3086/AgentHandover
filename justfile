@@ -1,4 +1,4 @@
-# OpenMimic — build and packaging commands
+# AgentHandover — build and packaging commands
 
 # Default recipe
 default: build-all
@@ -13,16 +13,16 @@ build-daemon:
     set -euo pipefail
     source ~/.cargo/env 2>/dev/null || true
     echo "Building daemon for aarch64..."
-    cargo build --release -p oc-apprentice-daemon --target aarch64-apple-darwin
+    cargo build --release -p agenthandover-daemon --target aarch64-apple-darwin
     echo "Building daemon for x86_64..."
-    cargo build --release -p oc-apprentice-daemon --target x86_64-apple-darwin
+    cargo build --release -p agenthandover-daemon --target x86_64-apple-darwin
     echo "Creating universal binary..."
     mkdir -p target/universal-release
     lipo -create \
-        target/aarch64-apple-darwin/release/oc-apprentice-daemon \
-        target/x86_64-apple-darwin/release/oc-apprentice-daemon \
-        -output target/universal-release/oc-apprentice-daemon
-    echo "Universal daemon binary: target/universal-release/oc-apprentice-daemon"
+        target/aarch64-apple-darwin/release/agenthandover-daemon \
+        target/x86_64-apple-darwin/release/agenthandover-daemon \
+        -output target/universal-release/agenthandover-daemon
+    echo "Universal daemon binary: target/universal-release/agenthandover-daemon"
 
 # Build CLI (universal binary for macOS)
 build-cli:
@@ -30,16 +30,16 @@ build-cli:
     set -euo pipefail
     source ~/.cargo/env 2>/dev/null || true
     echo "Building CLI for aarch64..."
-    cargo build --release -p openmimic-cli --target aarch64-apple-darwin
+    cargo build --release -p agenthandover-cli --target aarch64-apple-darwin
     echo "Building CLI for x86_64..."
-    cargo build --release -p openmimic-cli --target x86_64-apple-darwin
+    cargo build --release -p agenthandover-cli --target x86_64-apple-darwin
     echo "Creating universal binary..."
     mkdir -p target/universal-release
     lipo -create \
-        target/aarch64-apple-darwin/release/openmimic \
-        target/x86_64-apple-darwin/release/openmimic \
-        -output target/universal-release/openmimic
-    echo "Universal CLI binary: target/universal-release/openmimic"
+        target/aarch64-apple-darwin/release/agenthandover \
+        target/x86_64-apple-darwin/release/agenthandover \
+        -output target/universal-release/agenthandover
+    echo "Universal CLI binary: target/universal-release/agenthandover"
 
 # Build worker (Python venv + install)
 build-worker:
@@ -67,9 +67,9 @@ build-extension:
 build-app:
     #!/usr/bin/env bash
     set -euo pipefail
-    cd app/OpenMimicApp
+    cd app/AgentHandoverApp
     swift build -c release
-    echo "App built: app/OpenMimicApp/.build/release/OpenMimicApp"
+    echo "App built: app/AgentHandoverApp/.build/release/AgentHandoverApp"
 
 # Run all tests
 test-all: test-rust test-python test-extension
@@ -108,5 +108,5 @@ clean:
     rm -rf target/universal-release
     rm -rf worker/dist worker/build worker/src/*.egg-info
     rm -rf extension/dist
-    rm -rf app/OpenMimicApp/.build
+    rm -rf app/AgentHandoverApp/.build
     echo "Cleaned."

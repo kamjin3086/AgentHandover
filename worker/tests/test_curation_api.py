@@ -11,13 +11,13 @@ from pathlib import Path
 
 import pytest
 
-from oc_apprentice_worker.knowledge_base import KnowledgeBase
-from oc_apprentice_worker.lifecycle_manager import LifecycleManager
-from oc_apprentice_worker.procedure_curator import ProcedureCurator
-from oc_apprentice_worker.procedure_schema import sop_to_procedure
-from oc_apprentice_worker.query_api import QueryAPIServer
-from oc_apprentice_worker.staleness_detector import StalenessDetector
-from oc_apprentice_worker.trust_advisor import TrustAdvisor
+from agenthandover_worker.knowledge_base import KnowledgeBase
+from agenthandover_worker.lifecycle_manager import LifecycleManager
+from agenthandover_worker.procedure_curator import ProcedureCurator
+from agenthandover_worker.procedure_schema import sop_to_procedure
+from agenthandover_worker.query_api import QueryAPIServer
+from agenthandover_worker.staleness_detector import StalenessDetector
+from agenthandover_worker.trust_advisor import TrustAdvisor
 
 
 # ---------------------------------------------------------------------------

@@ -15,16 +15,16 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from oc_apprentice_worker.db import WorkerDB
-from oc_apprentice_worker.frame_differ import DiffConfig, FrameDiffer
-from oc_apprentice_worker.main import (
+from agenthandover_worker.db import WorkerDB
+from agenthandover_worker.frame_differ import DiffConfig, FrameDiffer
+from agenthandover_worker.main import (
     _check_v2_schema,
     _process_annotations,
     _process_diffs,
     _read_vlm_v2_config,
     _write_worker_status,
 )
-from oc_apprentice_worker.scene_annotator import (
+from agenthandover_worker.scene_annotator import (
     AnnotationConfig,
     AnnotationResult,
     SceneAnnotator,
@@ -106,7 +106,7 @@ def v2_db(v2_db_path: Path) -> WorkerDB:
 class TestReadVlmV2Config:
     def test_defaults_when_no_config(self, tmp_path: Path, monkeypatch):
         """When no config.toml exists, return all defaults."""
-        from oc_apprentice_worker import main as main_mod
+        from agenthandover_worker import main as main_mod
 
         # Monkeypatch _read_vlm_config_field to return defaults
         monkeypatch.setattr(
@@ -123,7 +123,7 @@ class TestReadVlmV2Config:
         assert cfg["ollama_host"] == "http://localhost:11434"
 
     def test_annotation_disabled(self, monkeypatch):
-        from oc_apprentice_worker import main as main_mod
+        from agenthandover_worker import main as main_mod
 
         overrides = {"annotation_enabled": "false"}
         monkeypatch.setattr(
@@ -135,7 +135,7 @@ class TestReadVlmV2Config:
         assert cfg["annotation_enabled"] is False
 
     def test_custom_model(self, monkeypatch):
-        from oc_apprentice_worker import main as main_mod
+        from agenthandover_worker import main as main_mod
 
         overrides = {"annotation_model": "qwen3:4b"}
         monkeypatch.setattr(
@@ -576,7 +576,7 @@ class TestProcessDiffs:
             "step_description": "User entered name in the form",
         }
 
-        from oc_apprentice_worker.frame_differ import DiffResult
+        from agenthandover_worker.frame_differ import DiffResult
 
         with patch.object(
             differ, "diff_pair",
@@ -647,7 +647,7 @@ class TestProcessDiffs:
 class TestWorkerStatusV2:
     def test_v2_fields_included_when_enabled(self, tmp_path: Path, monkeypatch):
         """Status file includes v2 annotation stats when enabled."""
-        from oc_apprentice_worker import main as main_mod
+        from agenthandover_worker import main as main_mod
         monkeypatch.setattr(main_mod, "_status_dir", lambda: tmp_path)
 
         _write_worker_status(
@@ -672,7 +672,7 @@ class TestWorkerStatusV2:
 
     def test_v2_fields_excluded_when_disabled(self, tmp_path: Path, monkeypatch):
         """Status file omits v2 fields when annotation is disabled."""
-        from oc_apprentice_worker import main as main_mod
+        from agenthandover_worker import main as main_mod
         monkeypatch.setattr(main_mod, "_status_dir", lambda: tmp_path)
 
         _write_worker_status(
@@ -702,15 +702,15 @@ class TestV2DoesNotBreakV1:
 
     def test_run_pipeline_still_works(self, tmp_path: Path):
         """run_pipeline continues to work normally with v2 imports added."""
-        from oc_apprentice_worker.clipboard_linker import ClipboardLinker
-        from oc_apprentice_worker.confidence import ConfidenceScorer
-        from oc_apprentice_worker.episode_builder import EpisodeBuilder
-        from oc_apprentice_worker.exporter import IndexGenerator
-        from oc_apprentice_worker.main import run_pipeline
-        from oc_apprentice_worker.negative_demo import NegativeDemoPruner
-        from oc_apprentice_worker.openclaw_writer import OpenClawWriter
-        from oc_apprentice_worker.translator import SemanticTranslator
-        from oc_apprentice_worker.vlm_queue import VLMFallbackQueue
+        from agenthandover_worker.clipboard_linker import ClipboardLinker
+        from agenthandover_worker.confidence import ConfidenceScorer
+        from agenthandover_worker.episode_builder import EpisodeBuilder
+        from agenthandover_worker.exporter import IndexGenerator
+        from agenthandover_worker.main import run_pipeline
+        from agenthandover_worker.negative_demo import NegativeDemoPruner
+        from agenthandover_worker.openclaw_writer import OpenClawWriter
+        from agenthandover_worker.translator import SemanticTranslator
+        from agenthandover_worker.vlm_queue import VLMFallbackQueue
 
         workspace = tmp_path / "workspace"
         summary = run_pipeline(

@@ -1,7 +1,7 @@
 {
-  "name": "openmimic-extension",
+  "name": "agenthandover-extension",
   "version": "0.1.0",
-  "description": "OpenMimic Observer - Chrome MV3 extension for silent workflow learning",
+  "description": "AgentHandover Observer - Chrome MV3 extension for silent workflow learning",
   "private": true,
   "scripts": {
     "build": "webpack --mode production",

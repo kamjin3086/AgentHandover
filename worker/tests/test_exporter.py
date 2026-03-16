@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from oc_apprentice_worker.exporter import AtomicWriter, IndexGenerator, SOPExporter
-from oc_apprentice_worker.sop_format import SOPFormatter
-from oc_apprentice_worker.sop_versioner import SOPVersioner
+from agenthandover_worker.exporter import AtomicWriter, IndexGenerator, SOPExporter
+from agenthandover_worker.sop_format import SOPFormatter
+from agenthandover_worker.sop_versioner import SOPVersioner
 
 
 # ---------------------------------------------------------------------------

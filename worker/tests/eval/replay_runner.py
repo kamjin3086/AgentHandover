@@ -2,7 +2,7 @@
 
 Provides ``ReplayScenario`` (parsed fixture data) and ``ReplayRunner``
 (executes pipeline stages against fixture events and procedures).
-Together they allow deterministic, offline evaluation of the OpenMimic
+Together they allow deterministic, offline evaluation of the AgentHandover
 pipeline using pre-recorded ground-truth data.
 """
 
@@ -139,7 +139,7 @@ class ReplayRunner:
         Returns:
             A ``KnowledgeBase`` instance rooted at *tmp_path*.
         """
-        from oc_apprentice_worker.knowledge_base import KnowledgeBase
+        from agenthandover_worker.knowledge_base import KnowledgeBase
 
         kb = KnowledgeBase(root=tmp_path)
         kb.ensure_structure()
@@ -229,7 +229,7 @@ class ReplayRunner:
             "learnability": str, "confidence": float, "source": str}``
             dicts, one per event with a valid annotation.
         """
-        from oc_apprentice_worker.activity_classifier import ActivityClassifier
+        from agenthandover_worker.activity_classifier import ActivityClassifier
 
         classifier = ActivityClassifier()
         results: list[dict] = []
@@ -277,7 +277,7 @@ class ReplayRunner:
         Returns:
             A ``SegmentationResult`` from the task segmenter.
         """
-        from oc_apprentice_worker.task_segmenter import (
+        from agenthandover_worker.task_segmenter import (
             TaskSegmenter,
             SegmentationResult,
         )
@@ -312,7 +312,7 @@ class ReplayRunner:
         segmenter = TaskSegmenter()
 
         with patch(
-            "oc_apprentice_worker.task_segmenter._compute_embeddings",
+            "agenthandover_worker.task_segmenter._compute_embeddings",
             side_effect=_mock_compute_embeddings,
         ):
             return segmenter.segment(prepared_events)
@@ -333,7 +333,7 @@ class ReplayRunner:
         Returns:
             List of ``TaskBoundary`` objects.
         """
-        from oc_apprentice_worker.daily_processor import DailyBatchProcessor
+        from agenthandover_worker.daily_processor import DailyBatchProcessor
 
         kb = self.setup_kb(tmp_path)
         processor = DailyBatchProcessor(knowledge_base=kb)
@@ -370,8 +370,8 @@ class ReplayRunner:
         Returns:
             List of ``(slug_a, slug_b, similarity)`` tuples.
         """
-        from oc_apprentice_worker.export_adapter import procedure_to_sop_template
-        from oc_apprentice_worker.sop_dedup import (
+        from agenthandover_worker.export_adapter import procedure_to_sop_template
+        from agenthandover_worker.sop_dedup import (
             compute_fingerprint,
             fingerprint_similarity,
         )
@@ -409,7 +409,7 @@ class ReplayRunner:
             List of ``{"slug": str, "can_execute": bool, "can_draft": bool}``
             dicts, one per procedure.
         """
-        from oc_apprentice_worker.procedure_verifier import ProcedureVerifier
+        from agenthandover_worker.procedure_verifier import ProcedureVerifier
 
         verifier = ProcedureVerifier(kb)
         results: list[dict] = []
@@ -444,10 +444,10 @@ class ReplayRunner:
             Dict with ``field_coverage_parity`` (float 0-1),
             ``adapters_checked`` (int), and ``procedures_checked`` (int).
         """
-        from oc_apprentice_worker.openclaw_writer import OpenClawWriter
-        from oc_apprentice_worker.skill_md_writer import SkillMdWriter
-        from oc_apprentice_worker.claude_skill_writer import ClaudeSkillWriter
-        from oc_apprentice_worker.generic_writer import GenericWriter
+        from agenthandover_worker.openclaw_writer import OpenClawWriter
+        from agenthandover_worker.skill_md_writer import SkillMdWriter
+        from agenthandover_worker.claude_skill_writer import ClaudeSkillWriter
+        from agenthandover_worker.generic_writer import GenericWriter
 
         # Each adapter gets its own subdirectory
         adapters = [
@@ -531,7 +531,7 @@ class ReplayRunner:
         Returns:
             List of pattern dicts (serialized ``RecurrencePattern`` objects).
         """
-        from oc_apprentice_worker.pattern_detector import PatternDetector
+        from agenthandover_worker.pattern_detector import PatternDetector
 
         if not self._scenario.daily_summaries:
             return []
@@ -576,8 +576,8 @@ class ReplayRunner:
             List of span dicts with ``span_id``, ``event_ids`` (resolved),
             ``goal_summary``, and ``state``.
         """
-        from oc_apprentice_worker.continuity_tracker import ContinuityTracker
-        from oc_apprentice_worker.knowledge_base import KnowledgeBase
+        from agenthandover_worker.continuity_tracker import ContinuityTracker
+        from agenthandover_worker.knowledge_base import KnowledgeBase
 
         # 1. Run segmentation to get segments
         seg_result = self.run_segmentation()

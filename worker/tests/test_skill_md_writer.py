@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from oc_apprentice_worker.skill_md_writer import SkillMdWriter
+from agenthandover_worker.skill_md_writer import SkillMdWriter
 
 
 def _make_sop_template(**overrides) -> dict:
@@ -538,7 +538,7 @@ class TestDomHintsWithTimeline:
         assert "#search-input" in hints[1]
 
     def test_hints_with_timeline_interactive_elements(self) -> None:
-        from oc_apprentice_worker.skill_md_writer import _extract_page_interactive_elements
+        from agenthandover_worker.skill_md_writer import _extract_page_interactive_elements
 
         timeline = [{
             "dom_nodes": [
@@ -615,7 +615,7 @@ class TestDomHintsWithTimeline:
 
     def test_page_elements_deduplicates(self) -> None:
         """Same element appearing in multiple timeline entries is only listed once."""
-        from oc_apprentice_worker.skill_md_writer import _extract_page_interactive_elements
+        from agenthandover_worker.skill_md_writer import _extract_page_interactive_elements
 
         timeline = [
             {"dom_nodes": [{"tag": "button", "text": "Save", "id": "save-btn"}]},
@@ -626,7 +626,7 @@ class TestDomHintsWithTimeline:
 
     def test_page_elements_capped_at_20(self) -> None:
         """Interactive elements list is capped at 20."""
-        from oc_apprentice_worker.skill_md_writer import _extract_page_interactive_elements
+        from agenthandover_worker.skill_md_writer import _extract_page_interactive_elements
 
         nodes = [
             {"tag": "button", "text": f"Button {i}", "id": f"btn-{i}"}

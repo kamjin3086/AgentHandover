@@ -1,6 +1,6 @@
 #[cfg(target_os = "macos")]
 mod window_tests {
-    use oc_apprentice_daemon::platform::window_capture::{get_display_topology, get_focused_window};
+    use agenthandover_daemon::platform::window_capture::{get_display_topology, get_focused_window};
 
     #[test]
     fn test_display_topology_returns_at_least_one() {

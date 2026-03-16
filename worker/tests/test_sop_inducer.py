@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from oc_apprentice_worker.sop_inducer import SOPInducer
+from agenthandover_worker.sop_inducer import SOPInducer
 
 
 # ---------------------------------------------------------------------------

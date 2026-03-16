@@ -14,7 +14,7 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from oc_apprentice_worker.scene_annotator import (
+from agenthandover_worker.scene_annotator import (
     AnnotationConfig,
     AnnotationResult,
     SceneAnnotator,
@@ -372,7 +372,7 @@ class TestSceneAnnotator:
         }
 
         with patch(
-            "oc_apprentice_worker.scene_annotator._call_ollama_vlm",
+            "agenthandover_worker.scene_annotator._call_ollama_vlm",
             side_effect=_canned_vlm_call,
         ):
             result = annotator.annotate_event(event)
@@ -424,7 +424,7 @@ class TestSceneAnnotator:
         }
 
         with patch(
-            "oc_apprentice_worker.scene_annotator._call_ollama_vlm",
+            "agenthandover_worker.scene_annotator._call_ollama_vlm",
             side_effect=_mock_call,
         ):
             result = annotator.annotate_event(event)
@@ -450,7 +450,7 @@ class TestSceneAnnotator:
         }
 
         with patch(
-            "oc_apprentice_worker.scene_annotator._call_ollama_vlm",
+            "agenthandover_worker.scene_annotator._call_ollama_vlm",
             side_effect=_failing_vlm_call,
         ):
             result = annotator.annotate_event(event)
@@ -476,7 +476,7 @@ class TestSceneAnnotator:
         }
 
         with patch(
-            "oc_apprentice_worker.scene_annotator._call_ollama_vlm",
+            "agenthandover_worker.scene_annotator._call_ollama_vlm",
             side_effect=_fenced_vlm_call,
         ):
             result = annotator.annotate_event(event)
@@ -501,7 +501,7 @@ class TestSceneAnnotator:
         }
 
         with patch(
-            "oc_apprentice_worker.scene_annotator._call_ollama_vlm",
+            "agenthandover_worker.scene_annotator._call_ollama_vlm",
             side_effect=_thinking_vlm_call,
         ):
             result = annotator.annotate_event(event)
@@ -529,7 +529,7 @@ class TestSceneAnnotator:
             raise ConnectionError("Ollama not reachable")
 
         with patch(
-            "oc_apprentice_worker.scene_annotator._call_ollama_vlm",
+            "agenthandover_worker.scene_annotator._call_ollama_vlm",
             side_effect=_raise_conn,
         ):
             result = annotator.annotate_event(event)
@@ -555,7 +555,7 @@ class TestSceneAnnotator:
         }
 
         with patch(
-            "oc_apprentice_worker.scene_annotator._call_ollama_vlm",
+            "agenthandover_worker.scene_annotator._call_ollama_vlm",
             side_effect=_canned_vlm_call,
         ):
             result = annotator.annotate_event(event)
@@ -581,7 +581,7 @@ class TestSceneAnnotator:
         }
 
         with patch(
-            "oc_apprentice_worker.scene_annotator._call_ollama_vlm",
+            "agenthandover_worker.scene_annotator._call_ollama_vlm",
             side_effect=_failing_vlm_call,
         ):
             result = annotator.annotate_event(event)
@@ -607,7 +607,7 @@ class TestSceneAnnotator:
         }
 
         with patch(
-            "oc_apprentice_worker.scene_annotator._call_ollama_vlm",
+            "agenthandover_worker.scene_annotator._call_ollama_vlm",
             side_effect=_canned_vlm_call,
         ):
             annotator.annotate_event(event)
@@ -624,7 +624,7 @@ class TestDBAnnotationMethods:
 
     def test_save_and_retrieve_annotation(self, tmp_db_path, write_conn):
         """save_annotation + get_recent_annotations round-trip."""
-        from oc_apprentice_worker.db import WorkerDB
+        from agenthandover_worker.db import WorkerDB
 
         eid = insert_event(
             write_conn,
@@ -649,7 +649,7 @@ class TestDBAnnotationMethods:
             assert recent[0]["id"] == eid
 
     def test_get_unannotated_events(self, tmp_db_path, write_conn):
-        from oc_apprentice_worker.db import WorkerDB
+        from agenthandover_worker.db import WorkerDB
 
         eid = insert_event(write_conn, timestamp="2026-03-03T09:14:50.000Z")
 
@@ -659,7 +659,7 @@ class TestDBAnnotationMethods:
             assert events[0]["id"] == eid
 
     def test_save_frame_diff(self, tmp_db_path, write_conn):
-        from oc_apprentice_worker.db import WorkerDB
+        from agenthandover_worker.db import WorkerDB
 
         eid = insert_event(write_conn, timestamp="2026-03-03T09:14:50.000Z")
         diff = {"diff_type": "no_change", "what_doing": "reading", "duration_seconds": 30}
@@ -678,7 +678,7 @@ class TestDBAnnotationMethods:
         assert parsed["diff_type"] == "no_change"
 
     def test_get_events_needing_diff(self, tmp_db_path, write_conn):
-        from oc_apprentice_worker.db import WorkerDB
+        from agenthandover_worker.db import WorkerDB
 
         eid = insert_event(write_conn, timestamp="2026-03-03T09:14:50.000Z")
         # Manually mark as completed with annotation but no diff
@@ -695,7 +695,7 @@ class TestDBAnnotationMethods:
             assert events[0]["id"] == eid
 
     def test_get_annotation_before(self, tmp_db_path, write_conn):
-        from oc_apprentice_worker.db import WorkerDB
+        from agenthandover_worker.db import WorkerDB
 
         eid1 = insert_event(write_conn, timestamp="2026-03-03T09:14:50.000Z")
         eid2 = insert_event(write_conn, timestamp="2026-03-03T09:15:00.000Z")
@@ -714,7 +714,7 @@ class TestDBAnnotationMethods:
 
     def test_focus_first_ordering(self, tmp_db_path, write_conn):
         """Focus session events should come before non-focus events."""
-        from oc_apprentice_worker.db import WorkerDB
+        from agenthandover_worker.db import WorkerDB
 
         # Normal event (earlier timestamp)
         eid1 = insert_event(

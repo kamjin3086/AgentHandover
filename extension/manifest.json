@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "OpenMimic Observer",
+  "name": "AgentHandover Observer",
   "version": "0.1.0",
   "description": "Silent observer for workflow learning - captures DOM snapshots, click intent, and accessibility metadata",
   "permissions": ["nativeMessaging", "activeTab"],

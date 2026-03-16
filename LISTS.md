@@ -1,4 +1,4 @@
-# OpenMimic — Issue Tracker Lists
+# AgentHandover — Issue Tracker Lists
 
 Compiled 2026-03-06 from external AI audit, verified against codebase.
 

@@ -16,14 +16,14 @@ from pathlib import Path
 
 import pytest
 
-from oc_apprentice_worker.evidence_normalizer import (
+from agenthandover_worker.evidence_normalizer import (
     EvidenceNormalizer,
     NormalizedStep,
     _deep_copy_proc,
 )
-from oc_apprentice_worker.knowledge_base import KnowledgeBase
-from oc_apprentice_worker.procedure_schema import sop_to_procedure
-from oc_apprentice_worker.variant_detector import VariantDetector
+from agenthandover_worker.knowledge_base import KnowledgeBase
+from agenthandover_worker.procedure_schema import sop_to_procedure
+from agenthandover_worker.variant_detector import VariantDetector
 
 
 # ------------------------------------------------------------------

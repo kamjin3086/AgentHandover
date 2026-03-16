@@ -1,4 +1,4 @@
-use oc_apprentice_daemon::capture::clipboard::{ClipboardMeta, hash_content, is_high_entropy};
+use agenthandover_daemon::capture::clipboard::{ClipboardMeta, hash_content, is_high_entropy};
 
 #[test]
 fn test_hash_content_deterministic() {

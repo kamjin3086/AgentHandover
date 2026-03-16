@@ -1,4 +1,4 @@
-use oc_apprentice_common::config::AppConfig;
+use agenthandover_common::config::AppConfig;
 
 #[test]
 fn test_default_config_is_valid() {

@@ -1,8 +1,8 @@
 use anyhow::Result;
 use chrono::Utc;
-use oc_apprentice_common::event::*;
-use oc_apprentice_common::redaction::Redactor;
-use oc_apprentice_storage::artifact_store::{ArtifactMeta, ArtifactStore};
+use agenthandover_common::event::*;
+use agenthandover_common::redaction::Redactor;
+use agenthandover_storage::artifact_store::{ArtifactMeta, ArtifactStore};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -56,12 +56,12 @@ impl Default for ObserverConfig {
             capture_screenshots: true,
             screenshot_max_per_minute: 20,
             poll_interval: Duration::from_millis(500),
-            db_path: PathBuf::from("openmimic.db"),
+            db_path: PathBuf::from("agenthandover.db"),
             dhash_threshold: 10,
             screenshot_format: "jpeg".to_string(),
             screenshot_quality: 70,
             screenshot_scale: 0.5,
-            screenshots_dir: PathBuf::from("/tmp/openmimic-screenshots"),
+            screenshots_dir: PathBuf::from("/tmp/agenthandover-screenshots"),
         }
     }
 }
@@ -104,7 +104,7 @@ pub async fn run_observer_loop(
     let mut last_focus_capture = Instant::now();
 
     // Focus recording session tracking
-    let state_dir = oc_apprentice_common::status::data_dir();
+    let state_dir = agenthandover_common::status::data_dir();
     let mut active_focus_session_id: Option<String> = None;
 
     // AppleScript throttle: at most once per 2 seconds per app
@@ -125,7 +125,7 @@ pub async fn run_observer_loop(
                 }
 
                 // Check for focus recording session signal (cheap stat() call)
-                match oc_apprentice_common::focus_session::read_focus_signal(&state_dir) {
+                match agenthandover_common::focus_session::read_focus_signal(&state_dir) {
                     Some(signal) if signal.is_recording() => {
                         if active_focus_session_id.as_deref() != Some(&signal.session_id) {
                             info!(
@@ -536,7 +536,7 @@ pub async fn run_storage_writer(
 ) -> Result<()> {
     info!(path = %db_path.display(), "Storage writer starting");
 
-    let store = oc_apprentice_storage::EventStore::open(&db_path)?;
+    let store = agenthandover_storage::EventStore::open(&db_path)?;
     let mut event_count = 0u64;
 
     // recv() returns None only when ALL senders have been dropped, so every

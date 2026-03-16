@@ -19,7 +19,7 @@ class TestDetectPreconditions:
     def test_common_app_detected(self) -> None:
         """App appearing in 80%+ of instances is a precondition."""
         try:
-            from oc_apprentice_worker.sop_inducer import SOPInducer
+            from agenthandover_worker.sop_inducer import SOPInducer
         except ImportError:
             import pytest
             pytest.skip("prefixspan not installed")
@@ -39,7 +39,7 @@ class TestDetectPreconditions:
     def test_no_precondition_when_diverse(self) -> None:
         """No precondition when apps are diverse (< 80%)."""
         try:
-            from oc_apprentice_worker.sop_inducer import SOPInducer
+            from agenthandover_worker.sop_inducer import SOPInducer
         except ImportError:
             import pytest
             pytest.skip("prefixspan not installed")
@@ -58,7 +58,7 @@ class TestDetectPreconditions:
     def test_url_precondition(self) -> None:
         """Common URL in first step is a precondition."""
         try:
-            from oc_apprentice_worker.sop_inducer import SOPInducer
+            from agenthandover_worker.sop_inducer import SOPInducer
         except ImportError:
             import pytest
             pytest.skip("prefixspan not installed")
@@ -77,7 +77,7 @@ class TestDetectPostconditions:
     def test_common_final_action(self) -> None:
         """Common final intent is a postcondition."""
         try:
-            from oc_apprentice_worker.sop_inducer import SOPInducer
+            from agenthandover_worker.sop_inducer import SOPInducer
         except ImportError:
             import pytest
             pytest.skip("prefixspan not installed")
@@ -99,7 +99,7 @@ class TestDetectPostconditions:
 
     def test_empty_instances(self) -> None:
         try:
-            from oc_apprentice_worker.sop_inducer import SOPInducer
+            from agenthandover_worker.sop_inducer import SOPInducer
         except ImportError:
             import pytest
             pytest.skip("prefixspan not installed")
@@ -115,7 +115,7 @@ class TestDetectExceptions:
     def test_cancel_detected(self) -> None:
         """Cancel events in pattern episodes are detected as exceptions."""
         try:
-            from oc_apprentice_worker.sop_inducer import SOPInducer
+            from agenthandover_worker.sop_inducer import SOPInducer
         except ImportError:
             import pytest
             pytest.skip("prefixspan not installed")
@@ -151,7 +151,7 @@ class TestDetectExceptions:
 
     def test_no_exceptions_in_clean_episodes(self) -> None:
         try:
-            from oc_apprentice_worker.sop_inducer import SOPInducer
+            from agenthandover_worker.sop_inducer import SOPInducer
         except ImportError:
             import pytest
             pytest.skip("prefixspan not installed")
@@ -191,7 +191,7 @@ class TestScanEpisodesForPattern:
     @staticmethod
     def _skip_if_no_prefixspan():
         try:
-            from oc_apprentice_worker.sop_inducer import SOPInducer
+            from agenthandover_worker.sop_inducer import SOPInducer
             return SOPInducer
         except ImportError:
             import pytest
@@ -402,7 +402,7 @@ class TestStratifiedSample:
     @staticmethod
     def _skip_if_no_prefixspan():
         try:
-            from oc_apprentice_worker.sop_inducer import SOPInducer
+            from agenthandover_worker.sop_inducer import SOPInducer
             return SOPInducer
         except ImportError:
             import pytest

@@ -8,7 +8,7 @@
 //!   - CdpTarget serialization roundtrip
 //!   - build_cdp_eval_script: valid JS with escaped selector
 
-use oc_apprentice_daemon::ipc::cdp_bridge::{
+use agenthandover_daemon::ipc::cdp_bridge::{
     build_cdp_eval_script, CdpBridge, CdpConfig, CdpConnectionResult, CdpTarget,
 };
 use std::collections::HashSet;

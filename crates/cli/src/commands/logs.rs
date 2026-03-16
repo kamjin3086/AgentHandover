@@ -4,9 +4,9 @@ use std::process::Command;
 fn logs_dir() -> std::path::PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
     if cfg!(target_os = "macos") {
-        std::path::PathBuf::from(home).join("Library/Application Support/oc-apprentice/logs")
+        std::path::PathBuf::from(home).join("Library/Application Support/agenthandover/logs")
     } else {
-        std::path::PathBuf::from(home).join(".local/share/oc-apprentice/logs")
+        std::path::PathBuf::from(home).join(".local/share/agenthandover/logs")
     }
 }
 

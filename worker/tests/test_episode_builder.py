@@ -1,4 +1,4 @@
-"""Tests for oc_apprentice_worker.episode_builder.
+"""Tests for agenthandover_worker.episode_builder.
 
 Covers thread multiplexing, soft/hard cap splitting, segment linking,
 and edge cases (empty input, interleaved apps).
@@ -10,7 +10,7 @@ import json
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from oc_apprentice_worker.episode_builder import Episode, EpisodeBuilder
+from agenthandover_worker.episode_builder import Episode, EpisodeBuilder
 
 
 def _ts(dt: datetime) -> str:

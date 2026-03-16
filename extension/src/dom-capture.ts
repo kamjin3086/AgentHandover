@@ -1,5 +1,5 @@
 /**
- * OpenMimic Observer — Viewport-Bounded DOM Snapshot Capture
+ * AgentHandover Observer — Viewport-Bounded DOM Snapshot Capture
  *
  * Captures a semantic DOM tree of all elements currently visible within the
  * browser viewport.  The snapshot is designed for downstream workflow learning,
@@ -320,7 +320,7 @@ function buildRowNode(row: HTMLTableRowElement): DomNode {
 /**
  * Extracts semantic information from a DOM Element into a DomNode.
  *
- * This is the core mapping from browser DOM -> OpenMimic snapshot format.
+ * This is the core mapping from browser DOM -> AgentHandover snapshot format.
  * We capture everything that an agent would need to identify and interact
  * with the element, while ignoring implementation details like generated
  * class names.

@@ -23,7 +23,7 @@ class TestFocusSessionInduction:
     """Test SOPInducer.induce_from_focus_session()."""
 
     def _make_inducer(self):
-        from oc_apprentice_worker.sop_inducer import SOPInducer
+        from agenthandover_worker.sop_inducer import SOPInducer
         return SOPInducer()
 
     def _make_steps(self, n: int = 5) -> list[dict]:

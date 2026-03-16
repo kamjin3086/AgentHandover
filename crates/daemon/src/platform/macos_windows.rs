@@ -9,7 +9,7 @@ use core_graphics::window::{
     kCGWindowListExcludeDesktopElements, kCGWindowListOptionOnScreenOnly, kCGWindowName,
     kCGWindowNumber, kCGWindowOwnerName, kCGWindowOwnerPID,
 };
-use oc_apprentice_common::event::{CursorPosition, DisplayInfo, WindowInfo};
+use agenthandover_common::event::{CursorPosition, DisplayInfo, WindowInfo};
 use tracing::debug;
 
 /// Get all active display information (multi-monitor topology).

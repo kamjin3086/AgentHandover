@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from oc_apprentice_worker.openclaw_writer import OpenClawWriter
+from agenthandover_worker.openclaw_writer import OpenClawWriter
 
 
 # ---------------------------------------------------------------------------

@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timedelta, timezone
 
-from oc_apprentice_worker.cleanup import purge_old_clipboard_previews
+from agenthandover_worker.cleanup import purge_old_clipboard_previews
 
 
 def _make_clipboard_event(

@@ -136,7 +136,7 @@ OcrCResult perform_ocr_safe(
             result.success = 1;
         }
         @catch (NSException *exception) {
-            fprintf(stderr, "[OpenMimic] Caught ObjC exception in OCR: %s — %s\n",
+            fprintf(stderr, "[AgentHandover] Caught ObjC exception in OCR: %s — %s\n",
                     [[exception name] UTF8String],
                     [[exception reason] UTF8String]);
             // Clean up partial results
@@ -155,7 +155,7 @@ OcrCResult perform_ocr_safe(
             result.success = 0;
         }
         @catch (...) {
-            fprintf(stderr, "[OpenMimic] Caught unknown exception in OCR\n");
+            fprintf(stderr, "[AgentHandover] Caught unknown exception in OCR\n");
             if (result.elements) {
                 for (int i = 0; i < result.count; i++) {
                     free(result.elements[i].text);
@@ -198,12 +198,12 @@ long long pasteboard_change_count_safe(void) {
             return (long long)[pb changeCount];
         }
         @catch (NSException *exception) {
-            fprintf(stderr, "[OpenMimic] Caught ObjC exception in pasteboard changeCount: %s\n",
+            fprintf(stderr, "[AgentHandover] Caught ObjC exception in pasteboard changeCount: %s\n",
                     [[exception reason] UTF8String]);
             return -1;
         }
         @catch (...) {
-            fprintf(stderr, "[OpenMimic] Caught unknown exception in pasteboard changeCount\n");
+            fprintf(stderr, "[AgentHandover] Caught unknown exception in pasteboard changeCount\n");
             return -1;
         }
     }
@@ -257,12 +257,12 @@ PasteboardInfo pasteboard_get_info_safe(void) {
             info.success = 1;
         }
         @catch (NSException *exception) {
-            fprintf(stderr, "[OpenMimic] Caught ObjC exception in pasteboard info: %s\n",
+            fprintf(stderr, "[AgentHandover] Caught ObjC exception in pasteboard info: %s\n",
                     [[exception reason] UTF8String]);
             info.success = 0;
         }
         @catch (...) {
-            fprintf(stderr, "[OpenMimic] Caught unknown exception in pasteboard info\n");
+            fprintf(stderr, "[AgentHandover] Caught unknown exception in pasteboard info\n");
             info.success = 0;
         }
     }

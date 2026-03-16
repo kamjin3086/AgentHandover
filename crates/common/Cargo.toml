@@ -1,5 +1,5 @@
 [package]
-name = "oc-apprentice-common"
+name = "agenthandover-common"
 version.workspace = true
 edition.workspace = true
 

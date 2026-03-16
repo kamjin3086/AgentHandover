@@ -25,7 +25,7 @@ from unittest.mock import patch
 
 import pytest
 
-from oc_apprentice_worker.vlm_queue import (
+from agenthandover_worker.vlm_queue import (
     DEFAULT_RISK_WEIGHT,
     RISK_WEIGHTS,
     QueueBudget,

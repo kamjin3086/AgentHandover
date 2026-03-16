@@ -1,8 +1,8 @@
 /**
- * Shared TypeScript type definitions for the OpenMimic IPC protocol.
+ * Shared TypeScript type definitions for the AgentHandover IPC protocol.
  *
  * These types define the contract between the Chrome extension and the
- * local daemon process (com.openclaw.apprentice) communicating over
+ * local daemon process (com.agenthandover.host) communicating over
  * Chrome Native Messaging.
  *
  * Message direction:

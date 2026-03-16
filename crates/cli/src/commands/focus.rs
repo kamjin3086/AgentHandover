@@ -1,15 +1,15 @@
 //! CLI commands for Focus Recording Mode.
 //!
-//! `openmimic focus start "title"` — start a focus recording session.
-//! `openmimic focus stop` — stop the active focus recording session.
+//! `agenthandover focus start "title"` — start a focus recording session.
+//! `agenthandover focus stop` — stop the active focus recording session.
 
 use anyhow::Result;
 use chrono::Utc;
 use colored::Colorize;
-use oc_apprentice_common::focus_session::{
+use agenthandover_common::focus_session::{
     read_focus_signal, write_focus_signal, FocusSessionSignal, FocusSessionStatus,
 };
-use oc_apprentice_common::status::data_dir;
+use agenthandover_common::status::data_dir;
 use uuid::Uuid;
 
 /// Start a focus recording session.
@@ -29,7 +29,7 @@ pub fn start(title: &str) -> Result<()> {
                 )
                 .yellow()
             );
-            println!("Stop it first with: openmimic focus stop");
+            println!("Stop it first with: agenthandover focus stop");
             return Ok(());
         }
     }
@@ -49,7 +49,7 @@ pub fn start(title: &str) -> Result<()> {
     println!("  Session ID: {}", session_id.dimmed());
     println!();
     println!("Perform your workflow now. When done, run:");
-    println!("  {}", "openmimic focus stop".bold());
+    println!("  {}", "agenthandover focus stop".bold());
 
     Ok(())
 }

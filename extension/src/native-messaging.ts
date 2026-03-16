@@ -1,7 +1,7 @@
 /**
- * Native Messaging client module for OpenMimic Observer.
+ * Native Messaging client module for AgentHandover Observer.
  *
- * Connects to the local daemon (com.openclaw.apprentice) via Chrome Native
+ * Connects to the local daemon (com.agenthandover.host) via Chrome Native
  * Messaging.  The daemon receives browser events (DOM snapshots, click
  * intent, etc.) and pipes back commands or acknowledgements.
  *
@@ -17,7 +17,7 @@
 // Constants
 // ---------------------------------------------------------------------------
 
-const NATIVE_HOST_NAME = 'com.openclaw.apprentice';
+const NATIVE_HOST_NAME = 'com.agenthandover.host';
 
 // ---------------------------------------------------------------------------
 // Message types
@@ -84,16 +84,16 @@ export function isValidInboundMessage(msg: unknown): msg is NativeInboundMessage
 
 function handleIncomingMessage(message: unknown): void {
   if (!isValidInboundMessage(message)) {
-    console.warn('[OpenMimic:native] Received invalid message from daemon, ignoring:', message);
+    console.warn('[AgentHandover:native] Received invalid message from daemon, ignoring:', message);
     return;
   }
 
-  console.log('[OpenMimic:native] Received message from daemon:', message.type, 'seq:', message.seq);
+  console.log('[AgentHandover:native] Received message from daemon:', message.type, 'seq:', message.seq);
   for (const listener of messageListeners) {
     try {
       listener(message);
     } catch (err) {
-      console.error('[OpenMimic:native] Listener threw:', err);
+      console.error('[AgentHandover:native] Listener threw:', err);
     }
   }
 }
@@ -101,16 +101,16 @@ function handleIncomingMessage(message: unknown): void {
 function handleDisconnect(): void {
   const lastError = chrome.runtime.lastError;
   if (lastError) {
-    console.warn('[OpenMimic:native] Disconnected with error:', lastError.message);
+    console.warn('[AgentHandover:native] Disconnected with error:', lastError.message);
   } else {
-    console.log('[OpenMimic:native] Disconnected from daemon');
+    console.log('[AgentHandover:native] Disconnected from daemon');
   }
   port = null;
   for (const listener of disconnectListeners) {
     try {
       listener();
     } catch (err) {
-      console.error('[OpenMimic:native] Disconnect listener threw:', err);
+      console.error('[AgentHandover:native] Disconnect listener threw:', err);
     }
   }
 }
@@ -128,17 +128,17 @@ function handleDisconnect(): void {
  */
 export function connectNativeHost(): chrome.runtime.Port {
   if (port !== null) {
-    console.log('[OpenMimic:native] Already connected to daemon');
+    console.log('[AgentHandover:native] Already connected to daemon');
     return port;
   }
 
-  console.log('[OpenMimic:native] Connecting to', NATIVE_HOST_NAME);
+  console.log('[AgentHandover:native] Connecting to', NATIVE_HOST_NAME);
   port = chrome.runtime.connectNative(NATIVE_HOST_NAME);
 
   port.onMessage.addListener(handleIncomingMessage);
   port.onDisconnect.addListener(handleDisconnect);
 
-  console.log('[OpenMimic:native] Connection established');
+  console.log('[AgentHandover:native] Connection established');
   return port;
 }
 
@@ -149,11 +149,11 @@ export function connectNativeHost(): chrome.runtime.Port {
  */
 export function disconnectNativeHost(): void {
   if (port === null) {
-    console.log('[OpenMimic:native] Already disconnected');
+    console.log('[AgentHandover:native] Already disconnected');
     return;
   }
 
-  console.log('[OpenMimic:native] Disconnecting from daemon');
+  console.log('[AgentHandover:native] Disconnecting from daemon');
   port.disconnect();
   // handleDisconnect fires synchronously on disconnect() and resets `port`.
 }
@@ -166,7 +166,7 @@ export function disconnectNativeHost(): void {
  */
 export function sendToNative(type: string, payload: Record<string, unknown> = {}): void {
   if (port === null) {
-    throw new Error('[OpenMimic:native] Cannot send: not connected to daemon');
+    throw new Error('[AgentHandover:native] Cannot send: not connected to daemon');
   }
 
   messageSeq += 1;
@@ -183,7 +183,7 @@ export function sendToNative(type: string, payload: Record<string, unknown> = {}
     sentBuffer.shift();
   }
 
-  console.log('[OpenMimic:native] Sending to daemon:', type, 'seq:', messageSeq);
+  console.log('[AgentHandover:native] Sending to daemon:', type, 'seq:', messageSeq);
   port.postMessage(message);
 }
 
@@ -194,7 +194,7 @@ export function sendToNative(type: string, payload: Record<string, unknown> = {}
  */
 export function resendBufferedMessages(): void {
   if (port === null) {
-    console.warn('[OpenMimic:native] Cannot resend: not connected');
+    console.warn('[AgentHandover:native] Cannot resend: not connected');
     return;
   }
 
@@ -202,7 +202,7 @@ export function resendBufferedMessages(): void {
   const toResend = sentBuffer.filter((entry) => entry.timestamp >= cutoff);
 
   if (toResend.length > 0) {
-    console.log('[OpenMimic:native] Resending', toResend.length, 'buffered messages after reconnect');
+    console.log('[AgentHandover:native] Resending', toResend.length, 'buffered messages after reconnect');
     for (const entry of toResend) {
       port.postMessage(entry.msg);
     }

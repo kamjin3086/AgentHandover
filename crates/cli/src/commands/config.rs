@@ -4,9 +4,9 @@ fn config_path() -> std::path::PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
     if cfg!(target_os = "macos") {
         std::path::PathBuf::from(home)
-            .join("Library/Application Support/oc-apprentice/config.toml")
+            .join("Library/Application Support/agenthandover/config.toml")
     } else {
-        std::path::PathBuf::from(home).join(".config/oc-apprentice/config.toml")
+        std::path::PathBuf::from(home).join(".config/agenthandover/config.toml")
     }
 }
 

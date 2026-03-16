@@ -1,6 +1,6 @@
 #[cfg(target_os = "macos")]
 mod screenshot_tests {
-    use oc_apprentice_daemon::capture::screenshot::{
+    use agenthandover_daemon::capture::screenshot::{
         capture_main_display, has_screen_recording_permission,
     };
 

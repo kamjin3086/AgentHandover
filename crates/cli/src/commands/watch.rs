@@ -1,6 +1,6 @@
 use anyhow::Result;
 use colored::Colorize;
-use oc_apprentice_common::status;
+use agenthandover_common::status;
 use std::io::Write;
 
 use crate::display::{format_number, format_uptime, is_heartbeat_stale};
@@ -10,14 +10,14 @@ use crate::display::{format_number, format_uptime, is_heartbeat_stale};
 /// Polls daemon-status.json and worker-status.json every 2 seconds
 /// and prints a compact one-screen summary.  Press Ctrl-C to exit.
 pub fn run() -> Result<()> {
-    println!("{}", "OpenMimic Watch — press Ctrl-C to stop".bold());
+    println!("{}", "AgentHandover Watch — press Ctrl-C to stop".bold());
     println!();
 
     loop {
         // Clear screen and move cursor to top-left
         print!("\x1B[2J\x1B[H");
 
-        println!("{}", "OpenMimic Watch".bold());
+        println!("{}", "AgentHandover Watch".bold());
         println!("{}", "═".repeat(50));
 
         // Read daemon status

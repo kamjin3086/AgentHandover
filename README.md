@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/sandroandric/OpenMimic/main/resources/icon.png" width="120" alt="OpenMimic icon" />
+  <img src="https://raw.githubusercontent.com/sandroandric/AgentHandover/main/resources/icon.png" width="120" alt="AgentHandover icon" />
 </p>
 
-<h1 align="center">OpenMimic</h1>
+<h1 align="center">AgentHandover</h1>
 
 <p align="center">
   <strong>Watch your screen. Learn your workflows. Hand them to agents.</strong>
@@ -20,16 +20,16 @@
 
 Every time you hand a task to an AI agent, you end up explaining the same steps you already know how to do. Open this app, go to this URL, fill in these fields, click submit, verify it worked. You do it every day without thinking — but your agent needs a manual.
 
-OpenMimic writes that manual by watching you work. It runs locally on your Mac, observes your screen, and turns your real workflows into step-by-step procedures that agents like Claude Code and OpenClaw can follow.
+AgentHandover writes that manual by watching you work. It runs locally on your Mac, observes your screen, and turns your real workflows into step-by-step procedures that agents like Claude Code and OpenClaw can follow.
 
-You keep working. OpenMimic watches, learns, and writes the manual.
+You keep working. AgentHandover watches, learns, and writes the manual.
 
 ## What You Get
 
 ```
 You work normally on your laptop
         ↓
-OpenMimic silently observes (screenshots + vision model)
+AgentHandover silently observes (screenshots + vision model)
         ↓
 It understands what you're doing, not just what's on screen
         ↓
@@ -40,13 +40,13 @@ You review and approve in the menu bar app
 Agent-ready procedure files exported to OpenClaw / Claude Code
 ```
 
-**No macros. No brittle automation scripts. No manual documentation.** OpenMimic captures *intent* — what you're doing and why — augmented with real DOM context (CSS selectors, ARIA labels, form field IDs) from the Chrome extension. The output is a human-readable procedure enriched with machine-usable selectors that agents can follow reliably.
+**No macros. No brittle automation scripts. No manual documentation.** AgentHandover captures *intent* — what you're doing and why — augmented with real DOM context (CSS selectors, ARIA labels, form field IDs) from the Chrome extension. The output is a human-readable procedure enriched with machine-usable selectors that agents can follow reliably.
 
 ## Why Not Just Screen Recording?
 
-Screen recording gives you pixels. OpenMimic gives you *understanding*.
+Screen recording gives you pixels. AgentHandover gives you *understanding*.
 
-| | Screen recording | OpenMimic |
+| | Screen recording | AgentHandover |
 |---|---|---|
 | **What it captures** | Raw video frames | Structured intent + DOM context: "User is filing an expense report in Chrome on Expensify, clicking `#submit-btn` in a form with ARIA label 'Expense Form'" |
 | **What it knows** | Nothing — just pixels | App context, task purpose, step sequence, CSS selectors, form field IDs, ARIA labels, verification criteria |
@@ -62,13 +62,13 @@ The intelligence comes from a **local vision-language model** that looks at each
 
 ### The observation pipeline
 
-OpenMimic runs four layers of intelligence on every screen capture:
+AgentHandover runs four layers of intelligence on every screen capture:
 
 **Layer 1: See** — A local vision model (running on your machine, not in the cloud) looks at each screenshot and produces a structured annotation: what app is open, what URL, what the user is doing, what they'll likely do next, and whether this looks like a repeatable workflow. When the Chrome extension is loaded, this is enriched with **real DOM context** — CSS selectors, ARIA labels, `data-testid` attributes, form field names, and Shadow DOM paths — giving agents precise targets for browser automation, not just visual descriptions.
 
 **Layer 2: Classify** — An 8-class activity classifier separates signal from noise. Your expense filing is "work." Your Reddit scrolling is "entertainment." Your Slack reply is "communication." Only workflow-relevant activity feeds into learning. You can override any classification with policy rules (e.g., "always ignore YouTube", "always track VS Code").
 
-**Layer 3: Connect** — A continuity tracker links related work across interruptions, app switches, and time gaps. If you start a PR review, get pulled into a Slack thread, and come back 20 minutes later, OpenMimic knows it's the same task. It builds confidence-ranked spans, not hard IDs — when uncertain, it keeps segments separate rather than falsely merging.
+**Layer 3: Connect** — A continuity tracker links related work across interruptions, app switches, and time gaps. If you start a PR review, get pulled into a Slack thread, and come back 20 minutes later, AgentHandover knows it's the same task. It builds confidence-ranked spans, not hard IDs — when uncertain, it keeps segments separate rather than falsely merging.
 
 **Layer 4: Learn** — When the same workflow appears in 2+ demonstrations, the system aligns steps semantically (not positionally), extracts parameters that vary across demonstrations (e.g., the domain name you searched), detects branches and variants, and produces a canonical procedure with evidence-weighted confidence.
 
@@ -81,16 +81,16 @@ Screenshots are captured as half-resolution JPEGs (~270 KB each), deduplicated v
 **Focus Recording** — Click Record in the menu bar, name the task, perform it, click Stop. One demonstration → one SKILL.md in ~60 seconds.
 
 ```bash
-openmimic focus start "File expense report"
+agenthandover focus start "File expense report"
 # ... do the workflow ...
-openmimic focus stop
+agenthandover focus stop
 ```
 
 **Passive Discovery** — Just work normally. When the same task appears in 2+ demonstrations (detected by embedding similarity), a procedure is generated automatically. No user action required.
 
 ### Any vision model, not just Qwen
 
-OpenMimic defaults to local Qwen models via Ollama because they're free, fast, and private. But you can use **any of 6 supported backends**:
+AgentHandover defaults to local Qwen models via Ollama because they're free, fast, and private. But you can use **any of 6 supported backends**:
 
 | Backend | How to use | Best for |
 |---------|-----------|----------|
@@ -101,7 +101,7 @@ OpenMimic defaults to local Qwen models via Ollama because they're free, fast, a
 | **Anthropic** | `mode = "remote"` in config | Claude vision |
 | **Google** | `mode = "remote"` in config | Gemini vision |
 
-Switch models by editing `annotation_model` and `sop_model` in config, or run `openmimic setup --vlm` for guided setup. Remote APIs require explicit opt-in and show a privacy warning.
+Switch models by editing `annotation_model` and `sop_model` in config, or run `agenthandover setup --vlm` for guided setup. Remote APIs require explicit opt-in and show a privacy warning.
 
 ### Review and approve
 
@@ -129,7 +129,7 @@ Approved procedures are compiled into target-specific formats from a single cano
 |--------|----------|---------|
 | **SKILL.md** | `~/.openclaw/workspace/memory/apprentice/sops/` | OpenClaw agents |
 | **Claude Code Skill** | `~/.claude/skills/<slug>/SKILL.md` | Claude Code (`/skill-name`) |
-| **v3 Procedure JSON** | `~/.openmimic/knowledge/procedures/` | Any agent via Query API |
+| **v3 Procedure JSON** | `~/.agenthandover/knowledge/procedures/` | Any agent via Query API |
 
 Agents query `GET /ready` on port 9477 to discover executable procedures, or `GET /bundle/<slug>` for a fully resolved handoff package with readiness checks, preflight validation, and execution stats.
 
@@ -152,13 +152,13 @@ All six must pass. A procedure with lifecycle=agent_ready but low freshness won'
 
 ### Recommended: macOS Installer
 
-Download the latest `.pkg` from [**Releases**](https://github.com/sandroandric/OpenMimic/releases) and double-click to install.
+Download the latest `.pkg` from [**Releases**](https://github.com/sandroandric/AgentHandover/releases) and double-click to install.
 
 Then:
 
 ```bash
-openmimic doctor     # Verify everything is set up
-openmimic start all  # Start observing
+agenthandover doctor     # Verify everything is set up
+agenthandover start all  # Start observing
 ```
 
 That's it. The daemon, worker, CLI, and Chrome extension are installed to standard paths.
@@ -168,24 +168,24 @@ That's it. The daemon, worker, CLI, and Chrome extension are installed to standa
 
 **Homebrew:**
 ```bash
-brew tap sandroandric/openmimic
-brew install --HEAD openmimic
+brew tap sandroandric/agenthandover
+brew install --HEAD agenthandover
 ```
 
 **Source build** (requires Rust, Node.js 18+, Python 3.11+):
 ```bash
-git clone https://github.com/sandroandric/OpenMimic.git && cd OpenMimic
+git clone https://github.com/sandroandric/AgentHandover.git && cd AgentHandover
 just build-all           # Daemon, CLI, worker venv, extension, app
 ./scripts/setup.sh       # Native messaging host + VLM setup
 
 # Install launchd services (rewrite paths for source build):
-cp resources/launchd/com.openmimic.*.plist ~/Library/LaunchAgents/
-sed -i '' "s|/usr/local/bin/oc-apprentice-daemon|$(pwd)/target/release/oc-apprentice-daemon|" \
-    ~/Library/LaunchAgents/com.openmimic.daemon.plist
-sed -i '' "s|/usr/local/lib/openmimic/venv/bin/python|$(pwd)/worker/.venv/bin/python|" \
-    ~/Library/LaunchAgents/com.openmimic.worker.plist
-sed -i '' "s|/usr/local/lib/openmimic|$(pwd)/worker|" \
-    ~/Library/LaunchAgents/com.openmimic.worker.plist
+cp resources/launchd/com.agenthandover.*.plist ~/Library/LaunchAgents/
+sed -i '' "s|/usr/local/bin/agenthandover-daemon|$(pwd)/target/release/agenthandover-daemon|" \
+    ~/Library/LaunchAgents/com.agenthandover.daemon.plist
+sed -i '' "s|/usr/local/lib/agenthandover/venv/bin/python|$(pwd)/worker/.venv/bin/python|" \
+    ~/Library/LaunchAgents/com.agenthandover.worker.plist
+sed -i '' "s|/usr/local/lib/agenthandover|$(pwd)/worker|" \
+    ~/Library/LaunchAgents/com.agenthandover.worker.plist
 ```
 
 </details>
@@ -197,11 +197,11 @@ After install, three things need to happen once:
 **1. Grant permissions**
 
 ```bash
-openmimic doctor
+agenthandover doctor
 ```
 
 Fix any `FAIL` items. Usually:
-- **Accessibility** — System Settings → Privacy & Security → Accessibility → add `oc-apprentice-daemon`
+- **Accessibility** — System Settings → Privacy & Security → Accessibility → add `agenthandover-daemon`
 - **Screen Recording** — same location
 
 **2. Pull VLM models** (~6 GB for default local models)
@@ -212,11 +212,11 @@ ollama pull qwen3.5:4b         # SOP generation
 ollama pull all-minilm:l6-v2   # Task embeddings
 ```
 
-Or: `openmimic setup --vlm` for guided setup (includes cloud API option).
+Or: `agenthandover setup --vlm` for guided setup (includes cloud API option).
 
 **3. Load Chrome extension** (recommended — adds CSS selectors, ARIA labels, and form field IDs to procedures)
 
-Open `chrome://extensions` → Enable Developer Mode → Load unpacked → select the extension directory shown by `openmimic doctor`.
+Open `chrome://extensions` → Enable Developer Mode → Load unpacked → select the extension directory shown by `agenthandover doctor`.
 
 ## Usage
 
@@ -224,19 +224,19 @@ Open `chrome://extensions` → Enable Developer Mode → Load unpacked → selec
 
 | Command | Description |
 |---------|-------------|
-| `openmimic status` | Service health and stats |
-| `openmimic start all` | Start daemon + worker |
-| `openmimic stop all` | Stop services |
-| `openmimic focus start "title"` | Record a workflow |
-| `openmimic focus stop` | Stop recording, generate SOP |
-| `openmimic sops list` | List all SOPs |
-| `openmimic sops drafts` | List SOPs awaiting review |
-| `openmimic sops approve <slug>` | Approve a draft for export |
-| `openmimic sops promote <slug> <state>` | Promote lifecycle (e.g., `reviewed`, `agent_ready`) |
-| `openmimic doctor` | Pre-flight health check |
-| `openmimic watch` | Live dashboard |
-| `openmimic export --format claude-skill` | Re-export as Claude Code skills |
-| `openmimic logs worker -f` | Follow worker logs |
+| `agenthandover status` | Service health and stats |
+| `agenthandover start all` | Start daemon + worker |
+| `agenthandover stop all` | Stop services |
+| `agenthandover focus start "title"` | Record a workflow |
+| `agenthandover focus stop` | Stop recording, generate SOP |
+| `agenthandover sops list` | List all SOPs |
+| `agenthandover sops drafts` | List SOPs awaiting review |
+| `agenthandover sops approve <slug>` | Approve a draft for export |
+| `agenthandover sops promote <slug> <state>` | Promote lifecycle (e.g., `reviewed`, `agent_ready`) |
+| `agenthandover doctor` | Pre-flight health check |
+| `agenthandover watch` | Live dashboard |
+| `agenthandover export --format claude-skill` | Re-export as Claude Code skills |
+| `agenthandover logs worker -f` | Follow worker logs |
 
 ### Query API (for agent developers)
 
@@ -293,7 +293,7 @@ Chrome Extension ──→ Daemon (Rust) ──SQLite WAL──→ Worker (Pytho
 
 ### Processing budget
 
-OpenMimic uses ~39% of GPU time per work hour. 37 minutes of headroom remain for your own GPU tasks.
+AgentHandover uses ~39% of GPU time per work hour. 37 minutes of headroom remain for your own GPU tasks.
 
 | Stage | Time per hour | Notes |
 |-------|---------------|-------|
@@ -304,7 +304,7 @@ OpenMimic uses ~39% of GPU time per work hour. 37 minutes of headroom remain for
 
 ## Privacy
 
-OpenMimic is designed to never leave your machine:
+AgentHandover is designed to never leave your machine:
 
 - **Local-first.** All VLM inference runs locally via Ollama by default. Cloud APIs are opt-in with explicit consent and a privacy warning.
 - **Screenshots are temporary.** Raw JPEGs are deleted immediately after the vision model annotates them. Only the structured annotation (~500 bytes) is kept — never the screenshot itself.
@@ -316,7 +316,7 @@ OpenMimic is designed to never leave your machine:
 
 ## Configuration
 
-Config lives at `~/Library/Application Support/oc-apprentice/config.toml`.
+Config lives at `~/Library/Application Support/agenthandover/config.toml`.
 
 <details>
 <summary>Full configuration reference</summary>
@@ -373,9 +373,9 @@ Config lives at `~/Library/Application Support/oc-apprentice/config.toml`.
 <summary>Services not starting</summary>
 
 ```bash
-openmimic doctor        # Check all prerequisites
-openmimic logs daemon   # Daemon-specific errors
-openmimic logs worker   # Worker-specific errors
+agenthandover doctor        # Check all prerequisites
+agenthandover logs daemon   # Daemon-specific errors
+agenthandover logs worker   # Worker-specific errors
 ```
 
 </details>
@@ -384,7 +384,7 @@ openmimic logs worker   # Worker-specific errors
 <summary>No events being captured</summary>
 
 - Verify Accessibility permission: System Settings → Privacy & Security → Accessibility
-- Check `openmimic status` for daemon health
+- Check `agenthandover status` for daemon health
 - Ensure Chrome extension is loaded and enabled
 
 </details>
@@ -394,7 +394,7 @@ openmimic logs worker   # Worker-specific errors
 
 - **Passive mode** requires 2+ similar demonstrations of the same workflow
 - Verify Ollama is running: `ollama list`
-- Check worker logs: `openmimic logs worker -f`
+- Check worker logs: `agenthandover logs worker -f`
 - Ensure `annotation_enabled = true` in config
 
 </details>
@@ -402,7 +402,7 @@ openmimic logs worker   # Worker-specific errors
 <details>
 <summary>Extension not connecting</summary>
 
-- Run `openmimic doctor` to verify native messaging host
+- Run `agenthandover doctor` to verify native messaging host
 - Reload the extension in `chrome://extensions`
 - Check Chrome developer console for errors
 
@@ -411,8 +411,8 @@ openmimic logs worker   # Worker-specific errors
 ## Uninstall
 
 ```bash
-openmimic uninstall              # Remove services, keep data
-openmimic uninstall --purge-data # Remove everything
+agenthandover uninstall              # Remove services, keep data
+agenthandover uninstall --purge-data # Remove everything
 ```
 
 ## License

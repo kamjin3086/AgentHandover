@@ -1,4 +1,4 @@
-use oc_apprentice_common::event::{
+use agenthandover_common::event::{
     Event, EventKind, DisplayInfo, WindowInfo, CursorPosition,
 };
 use chrono::Utc;

@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from oc_apprentice_worker.sop_schema import (
+from agenthandover_worker.sop_schema import (
     SOP_SCHEMA_VERSION,
     _ACCEPTED_VERSIONS,
     sop_to_json,
@@ -118,7 +118,7 @@ class TestSopToJsonTopLevel:
 
     def test_metadata_generator(self):
         result = sop_to_json(_sample_template())
-        assert result["metadata"]["generator"] == "openmimic"
+        assert result["metadata"]["generator"] == "agenthandover"
         assert "generator_version" in result["metadata"]
 
     def test_preconditions(self):

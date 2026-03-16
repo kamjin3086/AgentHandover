@@ -1,4 +1,4 @@
-"""Tests for oc_apprentice_worker.css_filter.
+"""Tests for agenthandover_worker.css_filter.
 
 Covers CSS rot detection for all framework patterns, semantic class
 preservation, full selector cleaning, stability ranking, and best-selector
@@ -7,7 +7,7 @@ selection.
 
 from __future__ import annotations
 
-from oc_apprentice_worker.css_filter import CSSRotFilter
+from agenthandover_worker.css_filter import CSSRotFilter
 
 
 # ------------------------------------------------------------------

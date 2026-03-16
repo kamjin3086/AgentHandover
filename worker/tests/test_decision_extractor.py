@@ -6,12 +6,12 @@ from pathlib import Path
 
 import pytest
 
-from oc_apprentice_worker.decision_extractor import (
+from agenthandover_worker.decision_extractor import (
     DecisionExtractor,
     DecisionRule,
     DecisionSet,
 )
-from oc_apprentice_worker.knowledge_base import KnowledgeBase
+from agenthandover_worker.knowledge_base import KnowledgeBase
 
 
 # ---------------------------------------------------------------------------

@@ -1,4 +1,4 @@
-"""Tests for oc_apprentice_worker.activity_search — Activity Search + Session Recall.
+"""Tests for agenthandover_worker.activity_search — Activity Search + Session Recall.
 
 Each test gets a temporary SQLite database (created by conftest fixtures)
 pre-initialised with the daemon's schema.  We insert events with
@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from oc_apprentice_worker.activity_search import (
+from agenthandover_worker.activity_search import (
     ActivitySearcher,
     ActivityTimeline,
     SearchResult,

@@ -1,4 +1,4 @@
-use oc_apprentice_daemon::observer::health::HealthWatcher;
+use agenthandover_daemon::observer::health::HealthWatcher;
 
 #[test]
 fn test_health_check_does_not_panic() {

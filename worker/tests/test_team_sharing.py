@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from oc_apprentice_worker.knowledge_base import KnowledgeBase
-from oc_apprentice_worker.team_sharing import (
+from agenthandover_worker.knowledge_base import KnowledgeBase
+from agenthandover_worker.team_sharing import (
     ImportResult,
     SharedProcedure,
     TeamSharing,
@@ -309,7 +309,7 @@ class TestExportToFile:
         with open(output) as f:
             data = json.load(f)
 
-        assert data["openmimic_shared_procedures"] == "1.0"
+        assert data["agenthandover_shared_procedures"] == "1.0"
         assert data["exported_by"] == "test-machine"
         assert isinstance(data["procedures"], list)
         assert len(data["procedures"]) == 1

@@ -7,7 +7,7 @@
 //!   - AppRuntime serialization roundtrip
 //!   - Case-insensitive matching for known Electron apps
 
-use oc_apprentice_daemon::platform::electron_detect::{
+use agenthandover_daemon::platform::electron_detect::{
     detect_runtime, is_known_electron_app, scan_directory, AppInfo, AppRuntime,
 };
 use std::fs;

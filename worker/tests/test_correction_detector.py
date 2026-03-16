@@ -7,7 +7,7 @@ from datetime import datetime, timezone, timedelta
 
 import pytest
 
-from oc_apprentice_worker.correction_detector import (
+from agenthandover_worker.correction_detector import (
     Correction,
     CorrectionDetector,
     CorrectionSummary,
@@ -17,7 +17,7 @@ from oc_apprentice_worker.correction_detector import (
     _get_what_doing,
     _get_location,
 )
-from oc_apprentice_worker.knowledge_base import KnowledgeBase
+from agenthandover_worker.knowledge_base import KnowledgeBase
 
 
 # ---------------------------------------------------------------------------

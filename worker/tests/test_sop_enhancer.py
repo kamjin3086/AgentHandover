@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from oc_apprentice_worker.sop_enhancer import (
+from agenthandover_worker.sop_enhancer import (
     SOPEnhancer,
     _OVERVIEW_KEYS,
     create_llm_backend,
@@ -366,7 +366,7 @@ class TestCreateLlmBackend:
             result = create_llm_backend({"model": ""}, {"mode": "local"})
         assert result is None
 
-    @patch("oc_apprentice_worker.vlm_worker.VLMWorker")
+    @patch("agenthandover_worker.vlm_worker.VLMWorker")
     def test_remote_provider_mapping(self, mock_worker_cls):
         mock_backend = MagicMock()
         mock_backend.is_available.return_value = True
@@ -380,7 +380,7 @@ class TestCreateLlmBackend:
         )
         assert result is mock_backend
 
-    @patch("oc_apprentice_worker.vlm_worker.VLMWorker")
+    @patch("agenthandover_worker.vlm_worker.VLMWorker")
     def test_remote_unknown_provider_returns_none(self, mock_worker_cls):
         result = create_llm_backend(
             {"model": ""},
@@ -388,7 +388,7 @@ class TestCreateLlmBackend:
         )
         assert result is None
 
-    @patch("oc_apprentice_worker.vlm_worker.VLMWorker")
+    @patch("agenthandover_worker.vlm_worker.VLMWorker")
     def test_remote_backend_not_available_returns_none(self, mock_worker_cls):
         mock_backend = MagicMock()
         mock_backend.is_available.return_value = False
@@ -408,6 +408,6 @@ class TestCreateLlmBackend:
         # or None otherwise.
         result = create_llm_backend({"model": ""}, None)
         if result is not None:
-            from oc_apprentice_worker.backends.ollama import OllamaBackend
+            from agenthandover_worker.backends.ollama import OllamaBackend
             assert isinstance(result, OllamaBackend)
         # Either case is valid — depends on environment

@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 import pytest
 
-from oc_apprentice_worker.frame_differ import (
+from agenthandover_worker.frame_differ import (
     DiffConfig,
     DiffResult,
     FrameDiffer,
@@ -374,7 +374,7 @@ class TestFrameDiffer:
             return json.dumps(VALID_DIFF_RESPONSE), 3.6
 
         with patch(
-            "oc_apprentice_worker.scene_annotator._call_ollama_vlm",
+            "agenthandover_worker.scene_annotator._call_ollama_vlm",
             side_effect=_mock_llm,
         ):
             result = differ.diff_pair(prev, curr)
@@ -394,7 +394,7 @@ class TestFrameDiffer:
             return "This is not JSON", 1.0
 
         with patch(
-            "oc_apprentice_worker.scene_annotator._call_ollama_vlm",
+            "agenthandover_worker.scene_annotator._call_ollama_vlm",
             side_effect=_mock_llm,
         ):
             result = differ.diff_pair(prev, curr)
@@ -412,7 +412,7 @@ class TestFrameDiffer:
             raise ConnectionError("Ollama not reachable")
 
         with patch(
-            "oc_apprentice_worker.scene_annotator._call_ollama_vlm",
+            "agenthandover_worker.scene_annotator._call_ollama_vlm",
             side_effect=_mock_llm,
         ):
             result = differ.diff_pair(prev, curr)

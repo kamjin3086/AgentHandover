@@ -1,6 +1,6 @@
-use oc_apprentice_test_harness::recorder::EventRecorder;
-use oc_apprentice_test_harness::replayer::EventReplayer;
-use oc_apprentice_common::event::*;
+use agenthandover_test_harness::recorder::EventRecorder;
+use agenthandover_test_harness::replayer::EventReplayer;
+use agenthandover_common::event::*;
 use chrono::Utc;
 use uuid::Uuid;
 use tempfile::TempDir;

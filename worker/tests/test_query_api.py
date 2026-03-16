@@ -13,8 +13,8 @@ from typing import Any
 
 import pytest
 
-from oc_apprentice_worker.knowledge_base import KnowledgeBase
-from oc_apprentice_worker.query_api import QueryAPIServer
+from agenthandover_worker.knowledge_base import KnowledgeBase
+from agenthandover_worker.query_api import QueryAPIServer
 
 
 # ---------------------------------------------------------------------------

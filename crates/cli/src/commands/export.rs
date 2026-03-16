@@ -1,13 +1,13 @@
 //! CLI command for re-exporting SOPs in a specific format.
 //!
-//! `openmimic export --format skill-md [--sop <slug>] [--output <dir>]`
+//! `agenthandover export --format skill-md [--sop <slug>] [--output <dir>]`
 //!
 //! This triggers the worker to re-export existing SOPs by writing a trigger
 //! file that the worker picks up on its next cycle.
 
 use anyhow::Result;
 use colored::Colorize;
-use oc_apprentice_common::status::data_dir;
+use agenthandover_common::status::data_dir;
 use std::io::Write;
 
 const EXPORT_TRIGGER_FILE: &str = "export-trigger.json";

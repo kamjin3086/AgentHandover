@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from oc_apprentice_worker.sop_format import SOPFormatter
+from agenthandover_worker.sop_format import SOPFormatter
 
 
 # ---------------------------------------------------------------------------
@@ -86,7 +86,7 @@ class TestFormatSOPWithFrontmatter:
         assert fm["sop_version"] == 1
         assert fm["sop_slug"] == "test_workflow"
         assert fm["sop_title"] == "Test Workflow"
-        assert "oc-apprentice" in fm["generated_by"]
+        assert "agenthandover" in fm["generated_by"]
         assert "generated_at" in fm
         assert fm["evidence_window"] == "last_30_days"
         assert "confidence_summary" in fm

@@ -15,15 +15,15 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from oc_apprentice_worker.clipboard_linker import ClipboardLinker
-from oc_apprentice_worker.confidence import ConfidenceScorer
-from oc_apprentice_worker.episode_builder import EpisodeBuilder
-from oc_apprentice_worker.exporter import IndexGenerator
-from oc_apprentice_worker.main import run_pipeline
-from oc_apprentice_worker.negative_demo import NegativeDemoPruner
-from oc_apprentice_worker.openclaw_writer import OpenClawWriter
-from oc_apprentice_worker.translator import SemanticTranslator
-from oc_apprentice_worker.vlm_queue import VLMFallbackQueue
+from agenthandover_worker.clipboard_linker import ClipboardLinker
+from agenthandover_worker.confidence import ConfidenceScorer
+from agenthandover_worker.episode_builder import EpisodeBuilder
+from agenthandover_worker.exporter import IndexGenerator
+from agenthandover_worker.main import run_pipeline
+from agenthandover_worker.negative_demo import NegativeDemoPruner
+from agenthandover_worker.openclaw_writer import OpenClawWriter
+from agenthandover_worker.translator import SemanticTranslator
+from agenthandover_worker.vlm_queue import VLMFallbackQueue
 
 
 def _ts(dt: datetime) -> str:
@@ -311,8 +311,8 @@ class TestProcessVLMJobsReconciliation:
     def test_success_path_calls_record_completion(self):
         """On VLM success, in-memory queue job must move to COMPLETED."""
         from unittest.mock import MagicMock, patch
-        from oc_apprentice_worker.main import _process_vlm_jobs
-        from oc_apprentice_worker.vlm_queue import (
+        from agenthandover_worker.main import _process_vlm_jobs
+        from agenthandover_worker.vlm_queue import (
             VLMFallbackQueue,
             VLMJob,
             VLMJobStatus,
@@ -365,8 +365,8 @@ class TestProcessVLMJobsReconciliation:
     def test_budget_exhaustion_defers_job(self):
         """Budget errors should defer (keep PENDING), not mark FAILED."""
         from unittest.mock import MagicMock
-        from oc_apprentice_worker.main import _process_vlm_jobs
-        from oc_apprentice_worker.vlm_queue import (
+        from agenthandover_worker.main import _process_vlm_jobs
+        from agenthandover_worker.vlm_queue import (
             VLMFallbackQueue,
             VLMJob,
             VLMJobStatus,
@@ -406,8 +406,8 @@ class TestProcessVLMJobsReconciliation:
     def test_non_budget_failure_marks_in_memory_failed(self):
         """Non-budget VLM errors should mark the job as FAILED."""
         from unittest.mock import MagicMock
-        from oc_apprentice_worker.main import _process_vlm_jobs
-        from oc_apprentice_worker.vlm_queue import (
+        from agenthandover_worker.main import _process_vlm_jobs
+        from agenthandover_worker.vlm_queue import (
             VLMFallbackQueue,
             VLMJob,
             VLMJobStatus,
@@ -446,7 +446,7 @@ class TestProcessVLMJobsReconciliation:
     def test_without_vlm_queue_still_works(self):
         """Passing vlm_queue=None should not crash (backward compat)."""
         from unittest.mock import MagicMock
-        from oc_apprentice_worker.main import _process_vlm_jobs
+        from agenthandover_worker.main import _process_vlm_jobs
 
         db = MagicMock()
         db.get_event_by_id.return_value = {
@@ -481,7 +481,7 @@ class TestSOPCache:
     """Tests for _save_sop_cache / _load_sop_cache."""
 
     def test_save_and_load_roundtrip(self, tmp_path: Path, monkeypatch):
-        from oc_apprentice_worker import main as main_mod
+        from agenthandover_worker import main as main_mod
         monkeypatch.setattr(main_mod, "_status_dir", lambda: tmp_path)
 
         templates = [
@@ -496,20 +496,20 @@ class TestSOPCache:
         assert loaded[1]["slug"] == "another"
 
     def test_load_empty_when_no_file(self, tmp_path: Path, monkeypatch):
-        from oc_apprentice_worker import main as main_mod
+        from agenthandover_worker import main as main_mod
         monkeypatch.setattr(main_mod, "_status_dir", lambda: tmp_path)
 
         assert main_mod._load_sop_cache() == []
 
     def test_load_corrupted_returns_empty(self, tmp_path: Path, monkeypatch):
-        from oc_apprentice_worker import main as main_mod
+        from agenthandover_worker import main as main_mod
         monkeypatch.setattr(main_mod, "_status_dir", lambda: tmp_path)
 
         (tmp_path / "sop-templates-cache.json").write_text("not json{{{")
         assert main_mod._load_sop_cache() == []
 
     def test_save_empty_is_noop(self, tmp_path: Path, monkeypatch):
-        from oc_apprentice_worker import main as main_mod
+        from agenthandover_worker import main as main_mod
         monkeypatch.setattr(main_mod, "_status_dir", lambda: tmp_path)
 
         main_mod._save_sop_cache([])
@@ -528,7 +528,7 @@ class TestCheckExportTrigger:
         (state_dir / "sop-templates-cache.json").write_text(json.dumps(templates))
 
     def test_no_trigger_is_noop(self, tmp_path: Path, monkeypatch):
-        from oc_apprentice_worker import main as main_mod
+        from agenthandover_worker import main as main_mod
         monkeypatch.setattr(main_mod, "_status_dir", lambda: tmp_path)
 
         writer = MagicMock()
@@ -536,7 +536,7 @@ class TestCheckExportTrigger:
         writer.write_sop.assert_not_called()
 
     def test_skill_md_export(self, tmp_path: Path, monkeypatch):
-        from oc_apprentice_worker import main as main_mod
+        from agenthandover_worker import main as main_mod
         monkeypatch.setattr(main_mod, "_status_dir", lambda: tmp_path)
 
         templates = [{"slug": "test", "title": "Test", "steps": []}]
@@ -557,7 +557,7 @@ class TestCheckExportTrigger:
         assert skills_dir.exists()
 
     def test_openclaw_export(self, tmp_path: Path, monkeypatch):
-        from oc_apprentice_worker import main as main_mod
+        from agenthandover_worker import main as main_mod
         monkeypatch.setattr(main_mod, "_status_dir", lambda: tmp_path)
 
         templates = [{"slug": "test", "title": "Test", "steps": []}]
@@ -571,7 +571,7 @@ class TestCheckExportTrigger:
         assert not (tmp_path / "export-trigger.json").exists()
 
     def test_generic_export(self, tmp_path: Path, monkeypatch):
-        from oc_apprentice_worker import main as main_mod
+        from agenthandover_worker import main as main_mod
         monkeypatch.setattr(main_mod, "_status_dir", lambda: tmp_path)
 
         templates = [{"slug": "test", "title": "Test", "steps": [], "variables": []}]
@@ -591,7 +591,7 @@ class TestCheckExportTrigger:
         assert (sops_dir / "sops" / "sop.test.md").exists()
 
     def test_output_dir_override(self, tmp_path: Path, monkeypatch):
-        from oc_apprentice_worker import main as main_mod
+        from agenthandover_worker import main as main_mod
         monkeypatch.setattr(main_mod, "_status_dir", lambda: tmp_path)
 
         custom_output = tmp_path / "custom_output"
@@ -607,7 +607,7 @@ class TestCheckExportTrigger:
         assert not (tmp_path / "export-trigger.json").exists()
 
     def test_slug_filter(self, tmp_path: Path, monkeypatch):
-        from oc_apprentice_worker import main as main_mod
+        from agenthandover_worker import main as main_mod
         monkeypatch.setattr(main_mod, "_status_dir", lambda: tmp_path)
 
         templates = [
@@ -626,7 +626,7 @@ class TestCheckExportTrigger:
         assert sop_arg["slug"] == "wanted"
 
     def test_empty_cache_warns_and_removes_trigger(self, tmp_path: Path, monkeypatch):
-        from oc_apprentice_worker import main as main_mod
+        from agenthandover_worker import main as main_mod
         monkeypatch.setattr(main_mod, "_status_dir", lambda: tmp_path)
 
         self._write_trigger(tmp_path, "skill-md")
@@ -641,7 +641,7 @@ class TestCheckExportTrigger:
     def test_openclaw_output_dir_override(self, tmp_path: Path, monkeypatch):
         """When output_dir is set for openclaw format, a new OpenClawWriter
         is created pointing to that directory instead of using the default."""
-        from oc_apprentice_worker import main as main_mod
+        from agenthandover_worker import main as main_mod
         monkeypatch.setattr(main_mod, "_status_dir", lambda: tmp_path)
 
         custom_output = tmp_path / "custom_oc"
@@ -662,7 +662,7 @@ class TestCheckExportTrigger:
         assert not (tmp_path / "export-trigger.json").exists()
 
     def test_all_format_exports_all_three(self, tmp_path: Path, monkeypatch):
-        from oc_apprentice_worker import main as main_mod
+        from agenthandover_worker import main as main_mod
         monkeypatch.setattr(main_mod, "_status_dir", lambda: tmp_path)
 
         templates = [{"slug": "test", "title": "Test", "steps": [], "variables": []}]

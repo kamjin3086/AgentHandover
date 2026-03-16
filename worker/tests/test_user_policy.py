@@ -11,8 +11,8 @@ from dataclasses import asdict
 
 import pytest
 
-from oc_apprentice_worker.knowledge_base import KnowledgeBase
-from oc_apprentice_worker.user_policy import PolicyAction, PolicyRule, UserPolicy
+from agenthandover_worker.knowledge_base import KnowledgeBase
+from agenthandover_worker.user_policy import PolicyAction, PolicyRule, UserPolicy
 
 
 # ---------------------------------------------------------------------------

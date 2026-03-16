@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from oc_apprentice_worker.outcome_tracker import (
+from agenthandover_worker.outcome_tracker import (
     DetectedOutcome,
     OutcomeTracker,
     _event_annotation,

@@ -43,7 +43,7 @@ from unittest.mock import patch
 
 import pytest
 
-from oc_apprentice_worker.privacy_zones import (
+from agenthandover_worker.privacy_zones import (
     ObservationTier,
     PrivacyZoneChecker,
     PrivacyZoneConfig,
@@ -390,14 +390,14 @@ class TestAutoPauseDuringWindow:
         config = PrivacyZoneConfig(auto_pause=["09:00-17:00"])
         checker = PrivacyZoneChecker(config)
         # Mock current time to be within the window
-        with patch("oc_apprentice_worker.privacy_zones.datetime") as mock_dt:
+        with patch("agenthandover_worker.privacy_zones.datetime") as mock_dt:
             mock_dt.now.return_value.time.return_value = dt_time(12, 0)
             assert checker.is_auto_paused() is True
 
     def test_event_blocked_during_auto_pause(self) -> None:
         config = PrivacyZoneConfig(auto_pause=["09:00-17:00"])
         checker = PrivacyZoneChecker(config)
-        with patch("oc_apprentice_worker.privacy_zones.datetime") as mock_dt:
+        with patch("agenthandover_worker.privacy_zones.datetime") as mock_dt:
             mock_dt.now.return_value.time.return_value = dt_time(12, 0)
             event = _make_event(app="Visual Studio Code")
             assert checker.check_event(event) == ObservationTier.BLOCKED
@@ -412,14 +412,14 @@ class TestAutoPauseOutsideWindow:
     def test_not_paused_outside_window(self) -> None:
         config = PrivacyZoneConfig(auto_pause=["09:00-17:00"])
         checker = PrivacyZoneChecker(config)
-        with patch("oc_apprentice_worker.privacy_zones.datetime") as mock_dt:
+        with patch("agenthandover_worker.privacy_zones.datetime") as mock_dt:
             mock_dt.now.return_value.time.return_value = dt_time(20, 0)
             assert checker.is_auto_paused() is False
 
     def test_event_allowed_outside_auto_pause(self) -> None:
         config = PrivacyZoneConfig(auto_pause=["09:00-17:00"])
         checker = PrivacyZoneChecker(config)
-        with patch("oc_apprentice_worker.privacy_zones.datetime") as mock_dt:
+        with patch("agenthandover_worker.privacy_zones.datetime") as mock_dt:
             mock_dt.now.return_value.time.return_value = dt_time(20, 0)
             event = _make_event(app="Visual Studio Code")
             assert checker.check_event(event) == ObservationTier.FULL
@@ -435,7 +435,7 @@ class TestAutoPauseOvernight:
         """22:00-06:00 — 23:00 should be paused."""
         config = PrivacyZoneConfig(auto_pause=["22:00-06:00"])
         checker = PrivacyZoneChecker(config)
-        with patch("oc_apprentice_worker.privacy_zones.datetime") as mock_dt:
+        with patch("agenthandover_worker.privacy_zones.datetime") as mock_dt:
             mock_dt.now.return_value.time.return_value = dt_time(23, 0)
             assert checker.is_auto_paused() is True
 
@@ -443,7 +443,7 @@ class TestAutoPauseOvernight:
         """22:00-06:00 — 03:00 should be paused."""
         config = PrivacyZoneConfig(auto_pause=["22:00-06:00"])
         checker = PrivacyZoneChecker(config)
-        with patch("oc_apprentice_worker.privacy_zones.datetime") as mock_dt:
+        with patch("agenthandover_worker.privacy_zones.datetime") as mock_dt:
             mock_dt.now.return_value.time.return_value = dt_time(3, 0)
             assert checker.is_auto_paused() is True
 
@@ -451,7 +451,7 @@ class TestAutoPauseOvernight:
         """22:00-06:00 — 12:00 should NOT be paused."""
         config = PrivacyZoneConfig(auto_pause=["22:00-06:00"])
         checker = PrivacyZoneChecker(config)
-        with patch("oc_apprentice_worker.privacy_zones.datetime") as mock_dt:
+        with patch("agenthandover_worker.privacy_zones.datetime") as mock_dt:
             mock_dt.now.return_value.time.return_value = dt_time(12, 0)
             assert checker.is_auto_paused() is False
 
@@ -459,7 +459,7 @@ class TestAutoPauseOvernight:
         """22:00-06:00 — 00:00 should be paused."""
         config = PrivacyZoneConfig(auto_pause=["22:00-06:00"])
         checker = PrivacyZoneChecker(config)
-        with patch("oc_apprentice_worker.privacy_zones.datetime") as mock_dt:
+        with patch("agenthandover_worker.privacy_zones.datetime") as mock_dt:
             mock_dt.now.return_value.time.return_value = dt_time(0, 0)
             assert checker.is_auto_paused() is True
 
@@ -473,21 +473,21 @@ class TestMultipleAutoPauseWindows:
     def test_first_window_matches(self) -> None:
         config = PrivacyZoneConfig(auto_pause=["12:00-13:00", "18:00-19:00"])
         checker = PrivacyZoneChecker(config)
-        with patch("oc_apprentice_worker.privacy_zones.datetime") as mock_dt:
+        with patch("agenthandover_worker.privacy_zones.datetime") as mock_dt:
             mock_dt.now.return_value.time.return_value = dt_time(12, 30)
             assert checker.is_auto_paused() is True
 
     def test_second_window_matches(self) -> None:
         config = PrivacyZoneConfig(auto_pause=["12:00-13:00", "18:00-19:00"])
         checker = PrivacyZoneChecker(config)
-        with patch("oc_apprentice_worker.privacy_zones.datetime") as mock_dt:
+        with patch("agenthandover_worker.privacy_zones.datetime") as mock_dt:
             mock_dt.now.return_value.time.return_value = dt_time(18, 30)
             assert checker.is_auto_paused() is True
 
     def test_between_windows_not_paused(self) -> None:
         config = PrivacyZoneConfig(auto_pause=["12:00-13:00", "18:00-19:00"])
         checker = PrivacyZoneChecker(config)
-        with patch("oc_apprentice_worker.privacy_zones.datetime") as mock_dt:
+        with patch("agenthandover_worker.privacy_zones.datetime") as mock_dt:
             mock_dt.now.return_value.time.return_value = dt_time(15, 0)
             assert checker.is_auto_paused() is False
 
@@ -772,28 +772,28 @@ class TestAutoPauseBoundaryTimes:
     def test_exactly_at_start(self) -> None:
         config = PrivacyZoneConfig(auto_pause=["09:00-17:00"])
         checker = PrivacyZoneChecker(config)
-        with patch("oc_apprentice_worker.privacy_zones.datetime") as mock_dt:
+        with patch("agenthandover_worker.privacy_zones.datetime") as mock_dt:
             mock_dt.now.return_value.time.return_value = dt_time(9, 0)
             assert checker.is_auto_paused() is True
 
     def test_exactly_at_end(self) -> None:
         config = PrivacyZoneConfig(auto_pause=["09:00-17:00"])
         checker = PrivacyZoneChecker(config)
-        with patch("oc_apprentice_worker.privacy_zones.datetime") as mock_dt:
+        with patch("agenthandover_worker.privacy_zones.datetime") as mock_dt:
             mock_dt.now.return_value.time.return_value = dt_time(17, 0)
             assert checker.is_auto_paused() is True
 
     def test_one_minute_before_start(self) -> None:
         config = PrivacyZoneConfig(auto_pause=["09:00-17:00"])
         checker = PrivacyZoneChecker(config)
-        with patch("oc_apprentice_worker.privacy_zones.datetime") as mock_dt:
+        with patch("agenthandover_worker.privacy_zones.datetime") as mock_dt:
             mock_dt.now.return_value.time.return_value = dt_time(8, 59)
             assert checker.is_auto_paused() is False
 
     def test_one_minute_after_end(self) -> None:
         config = PrivacyZoneConfig(auto_pause=["09:00-17:00"])
         checker = PrivacyZoneChecker(config)
-        with patch("oc_apprentice_worker.privacy_zones.datetime") as mock_dt:
+        with patch("agenthandover_worker.privacy_zones.datetime") as mock_dt:
             mock_dt.now.return_value.time.return_value = dt_time(17, 1)
             assert checker.is_auto_paused() is False
 

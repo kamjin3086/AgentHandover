@@ -1,4 +1,4 @@
-"""Pure-function metric computations for the OpenMimic evaluation harness.
+"""Pure-function metric computations for the AgentHandover evaluation harness.
 
 All functions use only the Python standard library (no numpy).
 Every function returns a dict or float.

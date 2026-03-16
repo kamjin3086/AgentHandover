@@ -16,7 +16,7 @@ from unittest.mock import patch
 
 import pytest
 
-from oc_apprentice_worker.main import (
+from agenthandover_worker.main import (
     _wait_for_db,
     _write_worker_status,
     _remove_worker_status,
@@ -38,16 +38,16 @@ class TestWaitForDB:
 
     def test_returns_false_on_timeout(self, tmp_path: Path) -> None:
         db = tmp_path / "events.db"
-        with patch("oc_apprentice_worker.main._DB_RETRY_MAX_SECONDS", 1), \
-             patch("oc_apprentice_worker.main._DB_RETRY_POLL_SECONDS", 0.2):
+        with patch("agenthandover_worker.main._DB_RETRY_MAX_SECONDS", 1), \
+             patch("agenthandover_worker.main._DB_RETRY_POLL_SECONDS", 0.2):
             result = _wait_for_db(db, [False])
         assert result is False
 
     def test_returns_false_on_shutdown(self, tmp_path: Path) -> None:
         db = tmp_path / "events.db"
         shutdown_flag = [True]
-        with patch("oc_apprentice_worker.main._DB_RETRY_MAX_SECONDS", 10), \
-             patch("oc_apprentice_worker.main._DB_RETRY_POLL_SECONDS", 0.1):
+        with patch("agenthandover_worker.main._DB_RETRY_MAX_SECONDS", 10), \
+             patch("agenthandover_worker.main._DB_RETRY_POLL_SECONDS", 0.1):
             result = _wait_for_db(db, shutdown_flag)
         assert result is False
 
@@ -65,8 +65,8 @@ class TestWaitForDB:
                 return False
             return original_is_file(p)
 
-        with patch("oc_apprentice_worker.main._DB_RETRY_MAX_SECONDS", 10), \
-             patch("oc_apprentice_worker.main._DB_RETRY_POLL_SECONDS", 0.05), \
+        with patch("agenthandover_worker.main._DB_RETRY_MAX_SECONDS", 10), \
+             patch("agenthandover_worker.main._DB_RETRY_POLL_SECONDS", 0.05), \
              patch.object(Path, "is_file", patched_is_file):
             result = _wait_for_db(db, [False])
         assert result is True
@@ -79,7 +79,7 @@ class TestWaitForDB:
 
 class TestWriteWorkerStatus:
     def test_writes_valid_json(self, tmp_path: Path) -> None:
-        with patch("oc_apprentice_worker.main._status_dir", return_value=tmp_path):
+        with patch("agenthandover_worker.main._status_dir", return_value=tmp_path):
             _write_worker_status(
                 started_at="2026-02-18T10:00:00Z",
                 events_processed_today=42,
@@ -104,7 +104,7 @@ class TestWriteWorkerStatus:
         assert "heartbeat" in data
 
     def test_overwrites_previous_status(self, tmp_path: Path) -> None:
-        with patch("oc_apprentice_worker.main._status_dir", return_value=tmp_path):
+        with patch("agenthandover_worker.main._status_dir", return_value=tmp_path):
             _write_worker_status(
                 started_at="2026-02-18T10:00:00Z",
                 events_processed_today=10,
@@ -130,7 +130,7 @@ class TestWriteWorkerStatus:
         assert data["consecutive_errors"] == 1
 
     def test_null_pipeline_duration(self, tmp_path: Path) -> None:
-        with patch("oc_apprentice_worker.main._status_dir", return_value=tmp_path):
+        with patch("agenthandover_worker.main._status_dir", return_value=tmp_path):
             _write_worker_status(
                 started_at="2026-02-18T10:00:00Z",
                 events_processed_today=0,
@@ -145,7 +145,7 @@ class TestWriteWorkerStatus:
 
     def test_creates_directory_if_missing(self, tmp_path: Path) -> None:
         nested = tmp_path / "sub" / "dir"
-        with patch("oc_apprentice_worker.main._status_dir", return_value=nested):
+        with patch("agenthandover_worker.main._status_dir", return_value=nested):
             _write_worker_status(
                 started_at="2026-02-18T10:00:00Z",
                 events_processed_today=0,
@@ -167,12 +167,12 @@ class TestRemoveWorkerStatus:
     def test_removes_existing_file(self, tmp_path: Path) -> None:
         status_file = tmp_path / "worker-status.json"
         status_file.write_text("{}")
-        with patch("oc_apprentice_worker.main._status_dir", return_value=tmp_path):
+        with patch("agenthandover_worker.main._status_dir", return_value=tmp_path):
             _remove_worker_status()
         assert not status_file.exists()
 
     def test_no_error_if_missing(self, tmp_path: Path) -> None:
-        with patch("oc_apprentice_worker.main._status_dir", return_value=tmp_path):
+        with patch("agenthandover_worker.main._status_dir", return_value=tmp_path):
             _remove_worker_status()  # Should not raise
 
 
@@ -187,16 +187,16 @@ class TestStatusDir:
         assert isinstance(result, Path)
 
     def test_darwin_path(self) -> None:
-        with patch("oc_apprentice_worker.main._platform") as mock_platform:
+        with patch("agenthandover_worker.main._platform") as mock_platform:
             mock_platform.system.return_value = "Darwin"
             result = _status_dir()
-        assert "Library/Application Support/oc-apprentice" in str(result)
+        assert "Library/Application Support/agenthandover" in str(result)
 
     def test_linux_path(self) -> None:
-        with patch("oc_apprentice_worker.main._platform") as mock_platform:
+        with patch("agenthandover_worker.main._platform") as mock_platform:
             mock_platform.system.return_value = "Linux"
             result = _status_dir()
-        assert ".local/share/oc-apprentice" in str(result)
+        assert ".local/share/agenthandover" in str(result)
 
 
 # ------------------------------------------------------------------

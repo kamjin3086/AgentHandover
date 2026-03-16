@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from oc_apprentice_worker.confidence import (
+from agenthandover_worker.confidence import (
     ConfidenceScore,
     ConfidenceScorer,
     is_native_app_context,
 )
-from oc_apprentice_worker.translator import TranslationResult, UIAnchor
+from agenthandover_worker.translator import TranslationResult, UIAnchor
 
 
 def _make_translation(

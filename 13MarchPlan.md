@@ -1,8 +1,8 @@
-# OpenMimic Workflow Compiler Program Plan
+# AgentHandover Workflow Compiler Program Plan
 
 ## Summary
 
-OpenMimic should be built as a **workflow compiler**, not as a better SOP generator. The product goal is: observe a messy human workday, separate signal from noise, recover full task continuity across interruptions, induce stable reusable procedures, let humans curate and promote them, and then hand agents a **truthful, executable bundle** that matches the human's real workflow.
+AgentHandover should be built as a **workflow compiler**, not as a better SOP generator. The product goal is: observe a messy human workday, separate signal from noise, recover full task continuity across interruptions, induce stable reusable procedures, let humans curate and promote them, and then hand agents a **truthful, executable bundle** that matches the human's real workflow.
 
 This plan assumes:
 - **Full-product scope**, not worker-only. That includes capture enrichment, worker logic, knowledge model, query/API contract, export targets, and human curation surfaces.

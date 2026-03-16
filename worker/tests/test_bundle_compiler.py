@@ -18,17 +18,17 @@ from pathlib import Path
 
 import pytest
 
-from oc_apprentice_worker.bundle_compiler import (
+from agenthandover_worker.bundle_compiler import (
     BundleCompiler,
     CompiledOutput,
     ProcedureBundle,
     ReadinessResult,
     _procedure_checksum,
 )
-from oc_apprentice_worker.knowledge_base import KnowledgeBase
-from oc_apprentice_worker.lifecycle_manager import LifecycleManager, ProcedureLifecycle
-from oc_apprentice_worker.procedure_schema import sop_to_procedure
-from oc_apprentice_worker.procedure_verifier import (
+from agenthandover_worker.knowledge_base import KnowledgeBase
+from agenthandover_worker.lifecycle_manager import LifecycleManager, ProcedureLifecycle
+from agenthandover_worker.procedure_schema import sop_to_procedure
+from agenthandover_worker.procedure_verifier import (
     PreflightCheck,
     PreflightResult,
     ProcedureVerifier,
@@ -65,7 +65,7 @@ def compiler(kb, lm, verifier):
 @pytest.fixture
 def compiler_with_adapters(kb, lm, verifier, tmp_path):
     """BundleCompiler with GenericWriter adapters for 4 targets."""
-    from oc_apprentice_worker.generic_writer import GenericWriter
+    from agenthandover_worker.generic_writer import GenericWriter
 
     adapters = {}
     for name in ("target_a", "target_b", "target_c", "target_d"):

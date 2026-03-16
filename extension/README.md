@@ -1,6 +1,6 @@
-# OpenMimic Chrome Extension
+# AgentHandover Chrome Extension
 
-Browser observer for the OpenMimic apprentice system. Captures DOM snapshots, click intent, scroll-read patterns, and dwell time — sent to the local daemon via Chrome Native Messaging.
+Browser observer for the AgentHandover system. Captures DOM snapshots, click intent, scroll-read patterns, and dwell time — sent to the local daemon via Chrome Native Messaging.
 
 ## Setup
 

@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from oc_apprentice_worker.daily_processor import (
+from agenthandover_worker.daily_processor import (
     DailyBatchProcessor,
     DailySummary,
     TaskBoundary,
@@ -25,7 +25,7 @@ from oc_apprentice_worker.daily_processor import (
     _minutes_between,
     _parse_iso,
 )
-from oc_apprentice_worker.knowledge_base import KnowledgeBase
+from agenthandover_worker.knowledge_base import KnowledgeBase
 
 
 # ---------------------------------------------------------------------------

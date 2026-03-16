@@ -1,5 +1,5 @@
-from oc_apprentice_worker.ops_telemetry import OpsTelemetry, PipelineMetrics
-from oc_apprentice_worker.knowledge_base import KnowledgeBase
+from agenthandover_worker.ops_telemetry import OpsTelemetry, PipelineMetrics
+from agenthandover_worker.knowledge_base import KnowledgeBase
 import pytest
 
 @pytest.fixture
@@ -58,7 +58,7 @@ class TestTrend:
 class TestHealthSnapshot:
     def test_returns_procedure_counts(self, kb):
         # Save a procedure
-        from oc_apprentice_worker.procedure_schema import sop_to_procedure
+        from agenthandover_worker.procedure_schema import sop_to_procedure
         proc = sop_to_procedure({"slug": "test", "title": "Test", "steps": [{"step": "Do", "app": "Chrome", "confidence": 0.9}], "confidence_avg": 0.9, "apps_involved": ["Chrome"], "source": "test"})
         kb.save_procedure(proc)
         snapshot = OpsTelemetry(kb).get_health_snapshot()

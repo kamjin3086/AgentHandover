@@ -8,7 +8,7 @@
 //!   - Malformed JSON handling (error, no panic)
 //!   - Async read/write through NativeMessageServer
 
-use oc_apprentice_daemon::ipc::native_messaging::{
+use agenthandover_daemon::ipc::native_messaging::{
     decode_frame, encode_frame, DaemonCommand, NativeMessageServer, MAX_MESSAGE_SIZE,
 };
 use serde_json::json;
@@ -287,12 +287,12 @@ async fn server_run_processes_messages_until_eof() {
     // First event should be FocusChange (from content_ready)
     assert_eq!(
         events[0].kind,
-        oc_apprentice_common::event::EventKind::FocusChange
+        agenthandover_common::event::EventKind::FocusChange
     );
 
     // Second event should be ClickIntent
     match &events[1].kind {
-        oc_apprentice_common::event::EventKind::ClickIntent {
+        agenthandover_common::event::EventKind::ClickIntent {
             target_description, ..
         } => {
             assert!(

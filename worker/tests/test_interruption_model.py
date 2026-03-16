@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from oc_apprentice_worker.task_segmenter import (
+from agenthandover_worker.task_segmenter import (
     AnnotatedFrame,
     InterruptionEvent,
     SegmenterConfig,

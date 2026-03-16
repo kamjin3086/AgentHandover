@@ -11,8 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from oc_apprentice_worker.knowledge_base import KnowledgeBase
-from oc_apprentice_worker.pattern_detector import (
+from agenthandover_worker.knowledge_base import KnowledgeBase
+from agenthandover_worker.pattern_detector import (
     PatternDetector,
     RecurrencePattern,
     TaskChain,

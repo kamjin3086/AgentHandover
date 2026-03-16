@@ -6,10 +6,10 @@ from pathlib import Path
 
 import pytest
 
-from oc_apprentice_worker.evidence_tracker import EvidenceTracker
-from oc_apprentice_worker.knowledge_base import KnowledgeBase
-from oc_apprentice_worker.procedure_schema import validate_procedure
-from oc_apprentice_worker.procedure_writer import ProcedureWriter
+from agenthandover_worker.evidence_tracker import EvidenceTracker
+from agenthandover_worker.knowledge_base import KnowledgeBase
+from agenthandover_worker.procedure_schema import validate_procedure
+from agenthandover_worker.procedure_writer import ProcedureWriter
 
 
 @pytest.fixture()

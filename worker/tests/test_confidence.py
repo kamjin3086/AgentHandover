@@ -1,4 +1,4 @@
-"""Tests for oc_apprentice_worker.confidence.
+"""Tests for agenthandover_worker.confidence.
 
 Covers the three-component additive scoring model, threshold decisions,
 reason generation, and edge cases.
@@ -6,8 +6,8 @@ reason generation, and edge cases.
 
 from __future__ import annotations
 
-from oc_apprentice_worker.confidence import ConfidenceScore, ConfidenceScorer
-from oc_apprentice_worker.translator import TranslationResult, UIAnchor
+from agenthandover_worker.confidence import ConfidenceScore, ConfidenceScorer
+from agenthandover_worker.translator import TranslationResult, UIAnchor
 
 
 def _make_translation(

@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "oc-apprentice-worker"
+name = "agenthandover-worker"
 version = "0.1.0"
-description = "OpenMimic apprentice worker — episode building, semantic translation, SOP induction"
+description = "AgentHandover worker — episode building, semantic translation, SOP induction"
 requires-python = ">=3.11"
 dependencies = ["prefixspan>=0.5.2", "pyyaml>=6.0"]
 
@@ -32,11 +32,11 @@ vlm-all = [
 ]
 
 [project.scripts]
-oc-apprentice-worker = "oc_apprentice_worker.main:main"
-oc-setup-vlm = "oc_apprentice_worker.setup_vlm:main"
+agenthandover-worker = "agenthandover_worker.main:main"
+agenthandover-setup-vlm = "agenthandover_worker.setup_vlm:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/oc_apprentice_worker"]
+packages = ["src/agenthandover_worker"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

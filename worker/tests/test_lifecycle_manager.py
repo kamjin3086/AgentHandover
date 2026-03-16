@@ -15,14 +15,14 @@ from __future__ import annotations
 
 import pytest
 
-from oc_apprentice_worker.knowledge_base import KnowledgeBase
-from oc_apprentice_worker.lifecycle_manager import (
+from agenthandover_worker.knowledge_base import KnowledgeBase
+from agenthandover_worker.lifecycle_manager import (
     InvalidTransitionError,
     LifecycleManager,
     LifecycleTransition,
     ProcedureLifecycle,
 )
-from oc_apprentice_worker.procedure_schema import sop_to_procedure
+from agenthandover_worker.procedure_schema import sop_to_procedure
 
 
 # ---------------------------------------------------------------------------

@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from oc_apprentice_worker.branch_extractor import BranchExtractor, ExtractedBranch
-from oc_apprentice_worker.knowledge_base import KnowledgeBase
-from oc_apprentice_worker.procedure_schema import sop_to_procedure
+from agenthandover_worker.branch_extractor import BranchExtractor, ExtractedBranch
+from agenthandover_worker.knowledge_base import KnowledgeBase
+from agenthandover_worker.procedure_schema import sop_to_procedure
 
 
 # ---------------------------------------------------------------------------

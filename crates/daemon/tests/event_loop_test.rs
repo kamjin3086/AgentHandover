@@ -1,4 +1,4 @@
-use oc_apprentice_daemon::observer::event_loop::{ObserverConfig, run_observer_loop};
+use agenthandover_daemon::observer::event_loop::{ObserverConfig, run_observer_loop};
 use tokio::sync::{mpsc, watch};
 use std::time::Duration;
 

@@ -6,7 +6,7 @@ mod display;
 mod paths;
 
 #[derive(Parser)]
-#[command(name = "openmimic", version, about = "OpenMimic CLI — manage the apprentice system")]
+#[command(name = "agenthandover", version, about = "AgentHandover CLI — manage the apprentice system")]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -72,7 +72,7 @@ enum Commands {
     },
     /// Run pre-flight checks
     Doctor,
-    /// Uninstall OpenMimic
+    /// Uninstall AgentHandover
     Uninstall {
         /// Also remove user data (database, SOPs, config)
         #[arg(long)]

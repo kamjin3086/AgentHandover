@@ -1,4 +1,4 @@
-# OpenMimic Roadmap
+# AgentHandover Roadmap
 
 Last updated: 2026-02-22
 
@@ -12,7 +12,7 @@ Last updated: 2026-02-22
 
 ### Problem
 
-OpenMimic currently enforces `deny_network_egress` — VLM backends must run locally (Ollama, MLX, llama.cpp) or through a localhost-only OpenAI-compatible proxy. This means users need decent hardware (Apple Silicon with 16GB+ RAM) or must manually set up a local proxy to use cloud models. Most users just want to paste an API key and go.
+AgentHandover currently enforces `deny_network_egress` — VLM backends must run locally (Ollama, MLX, llama.cpp) or through a localhost-only OpenAI-compatible proxy. This means users need decent hardware (Apple Silicon with 16GB+ RAM) or must manually set up a local proxy to use cloud models. Most users just want to paste an API key and go.
 
 ### Goal
 

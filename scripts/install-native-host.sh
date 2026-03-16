@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
 #
 # install-native-host.sh — Install the Chrome Native Messaging host manifest
-# for the OpenClaw Apprentice daemon (com.openclaw.apprentice).
+# for the AgentHandover daemon (com.agenthandover.host).
 #
 # Usage:
 #   ./scripts/install-native-host.sh [--extension-id <ID>] [--daemon-path <PATH>]
 #
 # Options:
 #   --extension-id <ID>    Chrome extension ID (default: uses wildcard for dev)
-#   --daemon-path  <PATH>  Absolute path to oc-apprentice-daemon binary
+#   --daemon-path  <PATH>  Absolute path to agenthandover-daemon binary
 #                          (default: searches cargo target/release, then target/debug)
 
 set -euo pipefail
 
-HOST_NAME="com.openclaw.apprentice"
+HOST_NAME="com.agenthandover.host"
 MANIFEST_FILE="${HOST_NAME}.json"
 
 # ---------------------------------------------------------------------------
@@ -37,7 +37,7 @@ while [[ $# -gt 0 ]]; do
             echo "Usage: $0 [--extension-id <ID>] [--daemon-path <PATH>]"
             echo ""
             echo "Install the Chrome Native Messaging host manifest for"
-            echo "the OpenClaw Apprentice daemon."
+            echo "the AgentHandover daemon."
             echo ""
             echo "Options:"
             echo "  --extension-id <ID>    Chrome extension ID"
@@ -86,16 +86,16 @@ if [[ -z "$DAEMON_PATH" ]]; then
     SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
     PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-    if [[ -x "${PROJECT_ROOT}/target/universal-release/oc-apprentice-daemon" ]]; then
-        DAEMON_PATH="${PROJECT_ROOT}/target/universal-release/oc-apprentice-daemon"
-    elif [[ -x "${PROJECT_ROOT}/target/release/oc-apprentice-daemon" ]]; then
-        DAEMON_PATH="${PROJECT_ROOT}/target/release/oc-apprentice-daemon"
-    elif [[ -x "${PROJECT_ROOT}/target/debug/oc-apprentice-daemon" ]]; then
-        DAEMON_PATH="${PROJECT_ROOT}/target/debug/oc-apprentice-daemon"
+    if [[ -x "${PROJECT_ROOT}/target/universal-release/agenthandover-daemon" ]]; then
+        DAEMON_PATH="${PROJECT_ROOT}/target/universal-release/agenthandover-daemon"
+    elif [[ -x "${PROJECT_ROOT}/target/release/agenthandover-daemon" ]]; then
+        DAEMON_PATH="${PROJECT_ROOT}/target/release/agenthandover-daemon"
+    elif [[ -x "${PROJECT_ROOT}/target/debug/agenthandover-daemon" ]]; then
+        DAEMON_PATH="${PROJECT_ROOT}/target/debug/agenthandover-daemon"
     else
-        echo "Error: could not find oc-apprentice-daemon binary." >&2
+        echo "Error: could not find agenthandover-daemon binary." >&2
         echo "Build first with: just build-all (or cargo build --release)" >&2
-        echo "Or specify with: $0 --daemon-path /path/to/oc-apprentice-daemon" >&2
+        echo "Or specify with: $0 --daemon-path /path/to/agenthandover-daemon" >&2
         exit 1
     fi
 fi
@@ -131,7 +131,7 @@ MANIFEST_PATH="${MANIFEST_DIR}/${MANIFEST_FILE}"
 cat > "$MANIFEST_PATH" <<MANIFEST_EOF
 {
   "name": "${HOST_NAME}",
-  "description": "OpenClaw Apprentice Observer Bridge",
+  "description": "AgentHandover Observer Bridge",
   "path": "${DAEMON_PATH}",
   "type": "stdio",
   "allowed_origins": ${ALLOWED_ORIGINS}

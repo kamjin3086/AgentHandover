@@ -8,14 +8,14 @@ from pathlib import Path
 
 import pytest
 
-from oc_apprentice_worker.knowledge_base import KnowledgeBase
-from oc_apprentice_worker.procedure_schema import (
+from agenthandover_worker.knowledge_base import KnowledgeBase
+from agenthandover_worker.procedure_schema import (
     PROCEDURE_SCHEMA_VERSION,
     sop_to_procedure,
     upgrade_v2_to_v3,
     validate_procedure,
 )
-from oc_apprentice_worker.sop_schema import sop_to_json
+from agenthandover_worker.sop_schema import sop_to_json
 
 
 # ---------------------------------------------------------------------------

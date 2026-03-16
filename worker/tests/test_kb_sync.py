@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from oc_apprentice_worker.knowledge_base import KnowledgeBase
-from oc_apprentice_worker.kb_sync import (
+from agenthandover_worker.knowledge_base import KnowledgeBase
+from agenthandover_worker.kb_sync import (
     KBSync,
     SyncDiff,
     SyncManifest,

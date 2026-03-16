@@ -5,7 +5,7 @@
 
 use anyhow::{bail, Result};
 use colored::Colorize;
-use oc_apprentice_common::status::data_dir;
+use agenthandover_common::status::data_dir;
 use std::io::Write;
 use std::path::PathBuf;
 
@@ -60,11 +60,11 @@ fn poll_result(
     let _ = std::fs::remove_file(state_dir.join(trigger_file));
     bail!(
         "Timed out waiting for worker response. Is the worker running?\n\
-         Check with: openmimic status"
+         Check with: agenthandover status"
     );
 }
 
-/// `openmimic search "query"` — full-text search over activity annotations.
+/// `agenthandover search "query"` — full-text search over activity annotations.
 pub fn search(
     query: &str,
     date: Option<&str>,
@@ -152,7 +152,7 @@ pub fn search(
     Ok(())
 }
 
-/// `openmimic recall` — reconstruct what you were doing at a given time.
+/// `agenthandover recall` — reconstruct what you were doing at a given time.
 pub fn recall(
     date: Option<&str>,
     app: Option<&str>,

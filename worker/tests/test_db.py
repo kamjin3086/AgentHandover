@@ -1,4 +1,4 @@
-"""Tests for oc_apprentice_worker.db.WorkerDB.
+"""Tests for agenthandover_worker.db.WorkerDB.
 
 Each test gets a temporary SQLite database (created by conftest fixtures)
 pre-initialised with the daemon's schema.  We insert test data via a
@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from oc_apprentice_worker.db import WorkerDB
+from agenthandover_worker.db import WorkerDB
 
 from conftest import insert_episode, insert_event, insert_vlm_job
 

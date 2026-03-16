@@ -11,7 +11,7 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from oc_apprentice_worker.task_segmenter import (
+from agenthandover_worker.task_segmenter import (
     AnnotatedFrame,
     SegmentationResult,
     SegmenterConfig,
@@ -501,7 +501,7 @@ class TestTaskSegmenterSegment:
         result = seg.segment(events)
         assert len(result.segments) == 0
 
-    @patch("oc_apprentice_worker.task_segmenter._compute_embeddings", side_effect=_mock_embeddings)
+    @patch("agenthandover_worker.task_segmenter._compute_embeddings", side_effect=_mock_embeddings)
     def test_two_expense_events_cluster(self, mock_embed):
         events = [
             _make_event("e1", "2026-03-04T10:00:00Z", what_doing="Filing expense report"),
@@ -513,7 +513,7 @@ class TestTaskSegmenterSegment:
         assert len(result.clusters) == 1
         assert result.segments[0].frame_count == 2
 
-    @patch("oc_apprentice_worker.task_segmenter._compute_embeddings", side_effect=_mock_embeddings)
+    @patch("agenthandover_worker.task_segmenter._compute_embeddings", side_effect=_mock_embeddings)
     def test_mixed_workflow_and_noise(self, mock_embed):
         events = [
             _make_event("e1", "2026-03-04T10:00:00Z",
@@ -530,7 +530,7 @@ class TestTaskSegmenterSegment:
         # At least 1 segment for expense
         assert any(s.frame_count > 0 for s in result.segments)
 
-    @patch("oc_apprentice_worker.task_segmenter._compute_embeddings", side_effect=_mock_embeddings)
+    @patch("agenthandover_worker.task_segmenter._compute_embeddings", side_effect=_mock_embeddings)
     def test_noise_only_events(self, mock_embed):
         """All non-workflow events = all noise = no segments."""
         events = [
@@ -544,7 +544,7 @@ class TestTaskSegmenterSegment:
         assert len(result.segments) == 0
         assert result.noise_frames_dropped == 2
 
-    @patch("oc_apprentice_worker.task_segmenter._compute_embeddings",
+    @patch("agenthandover_worker.task_segmenter._compute_embeddings",
            side_effect=ConnectionError("No Ollama"))
     def test_fallback_on_embedding_failure(self, mock_embed):
         """When embeddings fail, falls back to app-based clustering."""
@@ -663,7 +663,7 @@ class TestDBPassiveDiscoveryMethods:
     def test_get_annotated_events_in_window(self):
         conn, db_path = _make_test_db()
         try:
-            from oc_apprentice_worker.db import WorkerDB
+            from agenthandover_worker.db import WorkerDB
             # Insert annotated events using ISO 8601 format to match
             # the strftime('%Y-%m-%dT%H:%M:%fZ') format used in queries.
             ann = json.dumps({"task_context": {"what_doing": "test", "is_workflow": True}})
@@ -691,7 +691,7 @@ class TestDBPassiveDiscoveryMethods:
     def test_save_and_get_task_segment(self):
         conn, db_path = _make_test_db()
         try:
-            from oc_apprentice_worker.db import WorkerDB
+            from agenthandover_worker.db import WorkerDB
             db = WorkerDB(db_path)
 
             ok = db.save_task_segment(
@@ -717,7 +717,7 @@ class TestDBPassiveDiscoveryMethods:
     def test_mark_segment_sop_generated(self):
         conn, db_path = _make_test_db()
         try:
-            from oc_apprentice_worker.db import WorkerDB
+            from agenthandover_worker.db import WorkerDB
             db = WorkerDB(db_path)
 
             db.save_task_segment(
@@ -746,7 +746,7 @@ class TestDBPassiveDiscoveryMethods:
     def test_get_sop_pending_clusters(self):
         conn, db_path = _make_test_db()
         try:
-            from oc_apprentice_worker.db import WorkerDB
+            from agenthandover_worker.db import WorkerDB
             db = WorkerDB(db_path)
 
             # Create cluster with 2 segments
@@ -779,13 +779,13 @@ class TestDBPassiveDiscoveryMethods:
 # ---------------------------------------------------------------------------
 
 class TestProcessPassiveDiscovery:
-    @patch("oc_apprentice_worker.task_segmenter._compute_embeddings", side_effect=_mock_embeddings)
+    @patch("agenthandover_worker.task_segmenter._compute_embeddings", side_effect=_mock_embeddings)
     def test_full_pipeline_generates_sop(self, mock_embed):
         """End-to-end: events → segment → generate → export."""
         conn, db_path = _make_test_db()
         try:
-            from oc_apprentice_worker.db import WorkerDB
-            from oc_apprentice_worker.main import _process_passive_discovery
+            from agenthandover_worker.db import WorkerDB
+            from agenthandover_worker.main import _process_passive_discovery
 
             # Insert multiple expense-related annotated events
             # Use timestamps relative to "now" so the test doesn't
@@ -819,7 +819,7 @@ class TestProcessPassiveDiscovery:
             db = WorkerDB(db_path)
 
             # Mock SOP generator
-            from oc_apprentice_worker.sop_generator import SOPGenerator, GeneratedSOP
+            from agenthandover_worker.sop_generator import SOPGenerator, GeneratedSOP
             mock_sop_gen = MagicMock(spec=SOPGenerator)
             mock_sop_gen.generate_from_passive.return_value = GeneratedSOP(
                 sop={"slug": "expense-report", "title": "Expense Report",
@@ -853,13 +853,13 @@ class TestProcessPassiveDiscovery:
             conn.close()
             db_path.unlink(missing_ok=True)
 
-    @patch("oc_apprentice_worker.task_segmenter._compute_embeddings", side_effect=_mock_embeddings)
+    @patch("agenthandover_worker.task_segmenter._compute_embeddings", side_effect=_mock_embeddings)
     def test_no_sop_with_single_demonstration(self, mock_embed):
         """Only 1 demonstration = no SOP generated."""
         conn, db_path = _make_test_db()
         try:
-            from oc_apprentice_worker.db import WorkerDB
-            from oc_apprentice_worker.main import _process_passive_discovery
+            from agenthandover_worker.db import WorkerDB
+            from agenthandover_worker.main import _process_passive_discovery
 
             # Insert 2 close events (same demonstration)
             from datetime import datetime, timedelta, timezone

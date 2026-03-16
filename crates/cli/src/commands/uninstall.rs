@@ -2,7 +2,7 @@ use anyhow::Result;
 use colored::Colorize;
 
 pub fn run(purge_data: bool) -> Result<()> {
-    println!("{}", "OpenMimic Uninstaller".bold());
+    println!("{}", "AgentHandover Uninstaller".bold());
     println!();
 
     // Step 1: Stop services
@@ -14,8 +14,8 @@ pub fn run(purge_data: bool) -> Result<()> {
     let launch_agents = std::path::PathBuf::from(&home).join("Library/LaunchAgents");
 
     for label in &[
-        "com.openmimic.daemon.plist",
-        "com.openmimic.worker.plist",
+        "com.agenthandover.daemon.plist",
+        "com.agenthandover.worker.plist",
     ] {
         let path = launch_agents.join(label);
         if path.exists() {
@@ -26,7 +26,7 @@ pub fn run(purge_data: bool) -> Result<()> {
 
     // Step 3: Remove native messaging host manifest
     let nm_path = std::path::PathBuf::from(&home).join(
-        "Library/Application Support/Google/Chrome/NativeMessagingHosts/com.openclaw.apprentice.json",
+        "Library/Application Support/Google/Chrome/NativeMessagingHosts/com.agenthandover.host.json",
     );
     if nm_path.exists() {
         std::fs::remove_file(&nm_path)?;
@@ -34,7 +34,7 @@ pub fn run(purge_data: bool) -> Result<()> {
     }
 
     // Step 4: Remove PID files
-    let data_dir = oc_apprentice_common::status::status_dir();
+    let data_dir = agenthandover_common::status::status_dir();
     for pid_file in &["daemon.pid", "worker.pid"] {
         let path = data_dir.join(pid_file);
         if path.exists() {
@@ -60,13 +60,13 @@ pub fn run(purge_data: bool) -> Result<()> {
     } else {
         println!();
         println!("User data preserved at: {}", data_dir.display());
-        println!("To also remove data, run: openmimic uninstall --purge-data");
+        println!("To also remove data, run: agenthandover uninstall --purge-data");
     }
 
     println!();
     println!("{}", "Uninstall complete.".green().bold());
     println!(
-        "You may also want to remove /usr/local/bin/openmimic and /usr/local/bin/oc-apprentice-daemon"
+        "You may also want to remove /usr/local/bin/agenthandover and /usr/local/bin/agenthandover-daemon"
     );
     Ok(())
 }

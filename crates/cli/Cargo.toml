@@ -1,14 +1,14 @@
 [package]
-name = "openmimic-cli"
+name = "agenthandover-cli"
 version.workspace = true
 edition.workspace = true
 
 [[bin]]
-name = "openmimic"
+name = "agenthandover"
 path = "src/main.rs"
 
 [dependencies]
-oc-apprentice-common = { path = "../common" }
+agenthandover-common = { path = "../common" }
 clap = { version = "4", features = ["derive"] }
 serde.workspace = true
 serde_json.workspace = true

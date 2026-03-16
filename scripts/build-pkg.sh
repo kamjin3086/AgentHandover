@@ -5,25 +5,25 @@ VERSION="${VERSION:-0.1.0}"
 PKG_ROOT="$(mktemp -d)"
 SCRIPTS_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPTS_DIR/.." && pwd)"
-OUTPUT="${REPO_ROOT}/target/OpenMimic-${VERSION}.pkg"
+OUTPUT="${REPO_ROOT}/target/AgentHandover-${VERSION}.pkg"
 
-echo "=== Building OpenMimic ${VERSION} ==="
+echo "=== Building AgentHandover ${VERSION} ==="
 
 # Stage directories
 mkdir -p "${PKG_ROOT}/usr/local/bin"
-mkdir -p "${PKG_ROOT}/usr/local/lib/openmimic/extension"
-mkdir -p "${PKG_ROOT}/usr/local/lib/openmimic/launchd"
+mkdir -p "${PKG_ROOT}/usr/local/lib/agenthandover/extension"
+mkdir -p "${PKG_ROOT}/usr/local/lib/agenthandover/launchd"
 mkdir -p "${PKG_ROOT}/Applications"
 
 # Copy binaries
 echo "Staging binaries..."
-cp "${REPO_ROOT}/target/universal-release/oc-apprentice-daemon" "${PKG_ROOT}/usr/local/bin/"
-cp "${REPO_ROOT}/target/universal-release/openmimic" "${PKG_ROOT}/usr/local/bin/"
+cp "${REPO_ROOT}/target/universal-release/agenthandover-daemon" "${PKG_ROOT}/usr/local/bin/"
+cp "${REPO_ROOT}/target/universal-release/agenthandover" "${PKG_ROOT}/usr/local/bin/"
 
 # Copy extension
 echo "Staging extension..."
 EXT_SRC="${REPO_ROOT}/extension"
-EXT_DST="${PKG_ROOT}/usr/local/lib/openmimic/extension"
+EXT_DST="${PKG_ROOT}/usr/local/lib/agenthandover/extension"
 
 if [ -d "${EXT_SRC}/dist" ]; then
     # Pre-built dist exists — copy contents flat so the extension dir
@@ -58,23 +58,23 @@ elif [ -f "${EXT_SRC}/package.json" ]; then
 fi
 
 # Copy launchd plists (templates)
-cp "${REPO_ROOT}/resources/launchd/"*.plist "${PKG_ROOT}/usr/local/lib/openmimic/launchd/"
+cp "${REPO_ROOT}/resources/launchd/"*.plist "${PKG_ROOT}/usr/local/lib/agenthandover/launchd/"
 
 # Copy worker Python package (source only, no tests/build artifacts)
 echo "Staging worker..."
-mkdir -p "${PKG_ROOT}/usr/local/lib/openmimic/worker"
-cp -R "${REPO_ROOT}/worker/src" "${PKG_ROOT}/usr/local/lib/openmimic/worker/src"
-cp "${REPO_ROOT}/worker/pyproject.toml" "${PKG_ROOT}/usr/local/lib/openmimic/worker/"
+mkdir -p "${PKG_ROOT}/usr/local/lib/agenthandover/worker"
+cp -R "${REPO_ROOT}/worker/src" "${PKG_ROOT}/usr/local/lib/agenthandover/worker/src"
+cp "${REPO_ROOT}/worker/pyproject.toml" "${PKG_ROOT}/usr/local/lib/agenthandover/worker/"
 
 # Copy SwiftUI app if built — SPM produces a binary, not a .app bundle.
 # Wrap it in a minimal .app structure for /Applications.
-APP_BINARY="${REPO_ROOT}/app/OpenMimicApp/.build/release/OpenMimicApp"
+APP_BINARY="${REPO_ROOT}/app/AgentHandoverApp/.build/release/AgentHandoverApp"
 if [ -f "${APP_BINARY}" ]; then
-    APP_BUNDLE="${PKG_ROOT}/Applications/OpenMimic.app/Contents/MacOS"
+    APP_BUNDLE="${PKG_ROOT}/Applications/AgentHandover.app/Contents/MacOS"
     mkdir -p "${APP_BUNDLE}"
-    cp "${APP_BINARY}" "${APP_BUNDLE}/OpenMimic"
-    cp "${REPO_ROOT}/app/OpenMimicApp/Sources/OpenMimicApp/Info.plist" \
-       "${PKG_ROOT}/Applications/OpenMimic.app/Contents/Info.plist"
+    cp "${APP_BINARY}" "${APP_BUNDLE}/AgentHandover"
+    cp "${REPO_ROOT}/app/AgentHandoverApp/Sources/AgentHandoverApp/Info.plist" \
+       "${PKG_ROOT}/Applications/AgentHandover.app/Contents/Info.plist"
 fi
 
 # Copy install scripts
@@ -85,11 +85,11 @@ chmod +x "${SCRIPTS_STAGING}/preinstall" "${SCRIPTS_STAGING}/postinstall"
 
 # Build component .pkg
 echo "Building component package..."
-COMPONENT_PKG="$(mktemp -d)/openmimic-component.pkg"
+COMPONENT_PKG="$(mktemp -d)/agenthandover-component.pkg"
 pkgbuild \
     --root "${PKG_ROOT}" \
     --scripts "${SCRIPTS_STAGING}" \
-    --identifier "com.openmimic.pkg" \
+    --identifier "com.agenthandover.pkg" \
     --version "${VERSION}" \
     --install-location "/" \
     "${COMPONENT_PKG}"

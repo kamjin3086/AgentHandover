@@ -1,4 +1,4 @@
-"""Tests for oc_apprentice_worker.scheduler.
+"""Tests for agenthandover_worker.scheduler.
 
 Covers the IdleJobGate condition checks, time-window logic (including
 midnight-crossing), multiple-blocker accumulation, relaxed configs,
@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import time
 
-from oc_apprentice_worker.scheduler import (
+from agenthandover_worker.scheduler import (
     GateResult,
     IdleJobGate,
     IdleScheduler,

@@ -5,7 +5,7 @@
 
 use anyhow::{bail, Result};
 use colored::Colorize;
-use oc_apprentice_common::status::data_dir;
+use agenthandover_common::status::data_dir;
 use std::io::Write;
 use std::path::PathBuf;
 
@@ -206,7 +206,7 @@ pub fn show(slug: &str) -> Result<()> {
                         "This SOP is a {}. Approve it with:",
                         "draft".yellow()
                     );
-                    println!("  openmimic sops approve {}", slug);
+                    println!("  agenthandover sops approve {}", slug);
                 }
 
                 return Ok(());
@@ -268,9 +268,9 @@ pub fn drafts() -> Result<()> {
     }
 
     println!();
-    println!("Approve a draft:  openmimic sops approve <slug>");
-    println!("View details:     openmimic sops show <slug>");
-    println!("Reject a draft:   openmimic sops reject <slug>");
+    println!("Approve a draft:  agenthandover sops approve <slug>");
+    println!("View details:     agenthandover sops show <slug>");
+    println!("Reject a draft:   agenthandover sops reject <slug>");
 
     Ok(())
 }
@@ -318,7 +318,7 @@ pub fn promote(slug: &str, to_state: &str) -> Result<()> {
         "procedure_slug": slug,
         "to_state": to_state,
         "actor": "human",
-        "reason": format!("Promoted via CLI: openmimic sops promote {} {}", slug, to_state),
+        "reason": format!("Promoted via CLI: agenthandover sops promote {} {}", slug, to_state),
         "requested_at": chrono::Utc::now().to_rfc3339(),
     });
 
@@ -404,7 +404,7 @@ pub fn failed() -> Result<()> {
     let _ = std::fs::remove_file(state_dir.join(FAILED_TRIGGER_FILE));
     bail!(
         "Timed out waiting for worker response. Is the worker running?\n\
-         Check with: openmimic status"
+         Check with: agenthandover status"
     );
 }
 

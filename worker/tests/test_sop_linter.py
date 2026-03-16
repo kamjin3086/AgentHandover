@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from oc_apprentice_worker.sop_linter import LintIssue, LintResult, lint_sop
+from agenthandover_worker.sop_linter import LintIssue, LintResult, lint_sop
 
 
 # ---------------------------------------------------------------------------

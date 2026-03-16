@@ -5,7 +5,7 @@
 //! a focus recording session.  The daemon reads it each poll cycle (500ms)
 //! to tag events with `focus_session_id` metadata.
 //!
-//! File location: `~/Library/Application Support/oc-apprentice/focus-session.json`
+//! File location: `~/Library/Application Support/agenthandover/focus-session.json`
 
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};

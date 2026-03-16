@@ -1,4 +1,4 @@
-use oc_apprentice_common::event::{Event, EventKind};
+use agenthandover_common::event::{Event, EventKind};
 
 /// Result of a pipeline verification run.
 #[derive(Debug)]

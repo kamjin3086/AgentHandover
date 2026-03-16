@@ -1,5 +1,5 @@
-use oc_apprentice_storage::EventStore;
-use oc_apprentice_common::event::*;
+use agenthandover_storage::EventStore;
+use agenthandover_common::event::*;
 use chrono::Utc;
 use uuid::Uuid;
 use tempfile::TempDir;

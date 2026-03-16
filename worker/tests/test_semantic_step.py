@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from oc_apprentice_worker.models.semantic_step import Evidence, SemanticStep
+from agenthandover_worker.models.semantic_step import Evidence, SemanticStep
 
 
 # ---------------------------------------------------------------------------

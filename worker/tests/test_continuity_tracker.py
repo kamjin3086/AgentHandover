@@ -7,14 +7,14 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from oc_apprentice_worker.continuity_tracker import (
+from agenthandover_worker.continuity_tracker import (
     ContinuityEdge,
     ContinuitySpan,
     ContinuityTracker,
     ContinuityType,
 )
-from oc_apprentice_worker.knowledge_base import KnowledgeBase
-from oc_apprentice_worker.task_segmenter import AnnotatedFrame, TaskSegment
+from agenthandover_worker.knowledge_base import KnowledgeBase
+from agenthandover_worker.task_segmenter import AnnotatedFrame, TaskSegment
 
 
 # ---------------------------------------------------------------------------

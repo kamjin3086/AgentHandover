@@ -17,8 +17,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from oc_apprentice_worker.knowledge_base import KnowledgeBase
-from oc_apprentice_worker.escalation_handler import (
+from agenthandover_worker.knowledge_base import KnowledgeBase
+from agenthandover_worker.escalation_handler import (
     EscalationDecision,
     EscalationHandler,
     EscalationResult,
@@ -252,7 +252,7 @@ class TestDemotion:
 
     def test_demotion_transitions_lifecycle(self, kb: KnowledgeBase) -> None:
         """agent_ready -> stale via lifecycle manager."""
-        from oc_apprentice_worker.lifecycle_manager import (
+        from agenthandover_worker.lifecycle_manager import (
             LifecycleManager,
             ProcedureLifecycle,
         )
@@ -290,7 +290,7 @@ class TestDemotion:
 
     def test_demotion_from_draft(self, kb: KnowledgeBase) -> None:
         """Demotion is applied when current state is draft."""
-        from oc_apprentice_worker.lifecycle_manager import (
+        from agenthandover_worker.lifecycle_manager import (
             LifecycleManager,
             ProcedureLifecycle,
         )
@@ -310,7 +310,7 @@ class TestDemotion:
 
     def test_demotion_not_from_observed(self, kb: KnowledgeBase) -> None:
         """Demotion is not applied when current state is observed."""
-        from oc_apprentice_worker.lifecycle_manager import (
+        from agenthandover_worker.lifecycle_manager import (
             LifecycleManager,
             ProcedureLifecycle,
         )

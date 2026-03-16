@@ -6,8 +6,8 @@ and vision_bbox anchors, plus state extraction.
 
 from __future__ import annotations
 
-from oc_apprentice_worker.confidence import ConfidenceScore, ConfidenceScorer
-from oc_apprentice_worker.translator import TranslationResult, UIAnchor
+from agenthandover_worker.confidence import ConfidenceScore, ConfidenceScorer
+from agenthandover_worker.translator import TranslationResult, UIAnchor
 
 
 def _make_translation(

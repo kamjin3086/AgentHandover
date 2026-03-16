@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from oc_apprentice_worker.sop_inducer import SOPInducer
-from oc_apprentice_worker.vlm_worker import (
+from agenthandover_worker.sop_inducer import SOPInducer
+from agenthandover_worker.vlm_worker import (
     MockVLMBackend,
     VLMConfig,
     VLMBackend,

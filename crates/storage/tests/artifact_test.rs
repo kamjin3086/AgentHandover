@@ -1,4 +1,4 @@
-use oc_apprentice_storage::artifact_store::ArtifactStore;
+use agenthandover_storage::artifact_store::ArtifactStore;
 use tempfile::TempDir;
 
 #[test]

@@ -16,8 +16,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from oc_apprentice_worker.knowledge_base import KnowledgeBase
-from oc_apprentice_worker.runtime_validator import RuntimeCheck, RuntimeValidator
+from agenthandover_worker.knowledge_base import KnowledgeBase
+from agenthandover_worker.runtime_validator import RuntimeCheck, RuntimeValidator
 
 
 # ---------------------------------------------------------------------------

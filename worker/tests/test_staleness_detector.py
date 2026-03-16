@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from oc_apprentice_worker.knowledge_base import KnowledgeBase
-from oc_apprentice_worker.procedure_schema import sop_to_procedure
-from oc_apprentice_worker.staleness_detector import StalenessDetector
+from agenthandover_worker.knowledge_base import KnowledgeBase
+from agenthandover_worker.procedure_schema import sop_to_procedure
+from agenthandover_worker.staleness_detector import StalenessDetector
 
 
 @pytest.fixture()

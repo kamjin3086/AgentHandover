@@ -1,4 +1,4 @@
-"""Tests for oc_apprentice_worker.clipboard_linker.
+"""Tests for agenthandover_worker.clipboard_linker.
 
 Covers hash matching, time-window expiry, most-recent-copy selection,
 and edge cases (empty input, copy without paste).
@@ -11,7 +11,7 @@ import json
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from oc_apprentice_worker.clipboard_linker import ClipboardLink, ClipboardLinker
+from agenthandover_worker.clipboard_linker import ClipboardLink, ClipboardLinker
 
 
 def _ts(dt: datetime) -> str:

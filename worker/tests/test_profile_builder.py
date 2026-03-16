@@ -10,8 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from oc_apprentice_worker.knowledge_base import KnowledgeBase
-from oc_apprentice_worker.profile_builder import ProfileBuilder
+from agenthandover_worker.knowledge_base import KnowledgeBase
+from agenthandover_worker.profile_builder import ProfileBuilder
 
 
 # ---------------------------------------------------------------------------

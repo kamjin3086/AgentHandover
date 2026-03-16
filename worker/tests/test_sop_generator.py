@@ -6,7 +6,7 @@ import json
 import pytest
 from unittest.mock import patch, MagicMock
 
-from oc_apprentice_worker.sop_generator import (
+from agenthandover_worker.sop_generator import (
     SOPGenerator,
     SOPGeneratorConfig,
     GeneratedSOP,
@@ -437,7 +437,7 @@ class TestSOPGeneratorFocus:
         generator = SOPGenerator(SOPGeneratorConfig())
 
         with patch(
-            "oc_apprentice_worker.sop_generator._call_ollama",
+            "agenthandover_worker.sop_generator._call_ollama",
             return_value=(json.dumps(vlm_sop), 72.0),
         ):
             result = generator.generate_from_focus(
@@ -469,7 +469,7 @@ class TestSOPGeneratorFocus:
     def test_generate_focus_vlm_connection_error(self):
         generator = SOPGenerator()
         with patch(
-            "oc_apprentice_worker.sop_generator._call_ollama",
+            "agenthandover_worker.sop_generator._call_ollama",
             side_effect=ConnectionError("Ollama not running"),
         ):
             result = generator.generate_from_focus(
@@ -491,7 +491,7 @@ class TestSOPGeneratorFocus:
 
         generator = SOPGenerator()
         with patch(
-            "oc_apprentice_worker.sop_generator._call_ollama",
+            "agenthandover_worker.sop_generator._call_ollama",
             side_effect=mock_call,
         ):
             result = generator.generate_from_focus(
@@ -505,7 +505,7 @@ class TestSOPGeneratorFocus:
     def test_generate_focus_both_attempts_fail(self):
         generator = SOPGenerator()
         with patch(
-            "oc_apprentice_worker.sop_generator._call_ollama",
+            "agenthandover_worker.sop_generator._call_ollama",
             return_value=("garbage output", 5.0),
         ):
             result = generator.generate_from_focus(
@@ -522,7 +522,7 @@ class TestSOPGeneratorPassive:
         demos = [_make_timeline(4), _make_timeline(5)]
 
         with patch(
-            "oc_apprentice_worker.sop_generator._call_ollama",
+            "agenthandover_worker.sop_generator._call_ollama",
             return_value=(json.dumps(vlm_sop), 100.0),
         ):
             result = generator.generate_from_passive(demos, "Expense Report")
@@ -541,13 +541,13 @@ class TestSOPGeneratorPassive:
         demos_3 = [_make_timeline(3)] * 3
 
         with patch(
-            "oc_apprentice_worker.sop_generator._call_ollama",
+            "agenthandover_worker.sop_generator._call_ollama",
             return_value=(json.dumps(vlm_sop), 100.0),
         ):
             result_2 = generator.generate_from_passive(demos_2, "Task2")
 
         with patch(
-            "oc_apprentice_worker.sop_generator._call_ollama",
+            "agenthandover_worker.sop_generator._call_ollama",
             return_value=(json.dumps(vlm_sop), 100.0),
         ):
             result_3 = generator.generate_from_passive(demos_3, "Task3")
@@ -569,7 +569,7 @@ class TestSOPGeneratorPassive:
         generator = SOPGenerator()
         demos = [_make_timeline(3)] * 2
         with patch(
-            "oc_apprentice_worker.sop_generator._call_ollama",
+            "agenthandover_worker.sop_generator._call_ollama",
             side_effect=RuntimeError("out of memory"),
         ):
             result = generator.generate_from_passive(demos, "Task")
@@ -602,7 +602,7 @@ class TestExtractSelectorForStep:
     """Test _extract_selector_for_step with various DOM node shapes."""
 
     def test_returns_none_without_timeline(self) -> None:
-        from oc_apprentice_worker.sop_generator import _extract_selector_for_step
+        from agenthandover_worker.sop_generator import _extract_selector_for_step
 
         result = _extract_selector_for_step(
             {"action": "Click Submit"}, None, 0
@@ -610,7 +610,7 @@ class TestExtractSelectorForStep:
         assert result is None
 
     def test_returns_none_without_dom_nodes(self) -> None:
-        from oc_apprentice_worker.sop_generator import _extract_selector_for_step
+        from agenthandover_worker.sop_generator import _extract_selector_for_step
 
         timeline = [{"annotation": {}, "diff": None, "dom_nodes": None}]
         result = _extract_selector_for_step(
@@ -619,7 +619,7 @@ class TestExtractSelectorForStep:
         assert result is None
 
     def test_extracts_aria_label_selector(self) -> None:
-        from oc_apprentice_worker.sop_generator import _extract_selector_for_step
+        from agenthandover_worker.sop_generator import _extract_selector_for_step
 
         timeline = [{
             "annotation": {},
@@ -636,7 +636,7 @@ class TestExtractSelectorForStep:
         assert "Submit form" in result
 
     def test_extracts_testid_selector(self) -> None:
-        from oc_apprentice_worker.sop_generator import _extract_selector_for_step
+        from agenthandover_worker.sop_generator import _extract_selector_for_step
 
         timeline = [{
             "annotation": {},
@@ -653,7 +653,7 @@ class TestExtractSelectorForStep:
         assert "submit-btn" in result
 
     def test_extracts_id_selector(self) -> None:
-        from oc_apprentice_worker.sop_generator import _extract_selector_for_step
+        from agenthandover_worker.sop_generator import _extract_selector_for_step
 
         timeline = [{
             "annotation": {},
@@ -669,7 +669,7 @@ class TestExtractSelectorForStep:
         assert result == "#search-input"
 
     def test_no_match_returns_none(self) -> None:
-        from oc_apprentice_worker.sop_generator import _extract_selector_for_step
+        from agenthandover_worker.sop_generator import _extract_selector_for_step
 
         timeline = [{
             "annotation": {},
@@ -685,7 +685,7 @@ class TestExtractSelectorForStep:
         assert result is None
 
     def test_step_index_beyond_timeline_uses_last(self) -> None:
-        from oc_apprentice_worker.sop_generator import _extract_selector_for_step
+        from agenthandover_worker.sop_generator import _extract_selector_for_step
 
         timeline = [{
             "annotation": {},
@@ -795,7 +795,7 @@ class TestPassiveRetryOnMalformedJson:
         generator = SOPGenerator()
         demos = [_make_timeline(3), _make_timeline(4)]
         with patch(
-            "oc_apprentice_worker.sop_generator._call_ollama",
+            "agenthandover_worker.sop_generator._call_ollama",
             side_effect=mock_call,
         ):
             result = generator.generate_from_passive(demos, "Retry Passive Task")
@@ -810,7 +810,7 @@ class TestPassiveRetryOnMalformedJson:
         generator = SOPGenerator()
         demos = [_make_timeline(3), _make_timeline(3)]
         with patch(
-            "oc_apprentice_worker.sop_generator._call_ollama",
+            "agenthandover_worker.sop_generator._call_ollama",
             return_value=("not json", 5.0),
         ):
             result = generator.generate_from_passive(demos, "Bad Task")
@@ -833,7 +833,7 @@ class TestPassiveRetryOnMalformedJson:
         generator = SOPGenerator()
         demos = [_make_timeline(3), _make_timeline(3)]
         with patch(
-            "oc_apprentice_worker.sop_generator._call_ollama",
+            "agenthandover_worker.sop_generator._call_ollama",
             side_effect=mock_call,
         ):
             result = generator.generate_from_passive(demos, "Task")

@@ -35,7 +35,7 @@ from __future__ import annotations
 
 import pytest
 
-from oc_apprentice_worker.injection_defense import (
+from agenthandover_worker.injection_defense import (
     INJECTION_PATTERNS,
     InjectionDefense,
     ScanResult,

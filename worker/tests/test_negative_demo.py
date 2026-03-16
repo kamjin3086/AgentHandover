@@ -1,4 +1,4 @@
-"""Tests for oc_apprentice_worker.negative_demo.
+"""Tests for agenthandover_worker.negative_demo.
 
 Covers undo detection, cancel-click detection, discard-changes detection,
 lookback window limiting, case-insensitive patterns, and normal passthrough.
@@ -10,7 +10,7 @@ import json
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from oc_apprentice_worker.negative_demo import NegativeDemoPruner
+from agenthandover_worker.negative_demo import NegativeDemoPruner
 
 
 def _ts(dt: datetime) -> str:

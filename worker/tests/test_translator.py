@@ -1,4 +1,4 @@
-"""Tests for oc_apprentice_worker.translator.
+"""Tests for agenthandover_worker.translator.
 
 Covers intent extraction, UI anchor resolution priority cascade,
 parameter extraction, batch translation with context, and edge cases.
@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import uuid
 
-from oc_apprentice_worker.translator import SemanticTranslator, TranslationResult, UIAnchor
+from agenthandover_worker.translator import SemanticTranslator, TranslationResult, UIAnchor
 
 
 def _make_event(
@@ -119,7 +119,7 @@ class TestAppSwitchTranslation:
             kind="AppSwitch",
             metadata={"app_name": "Visual Studio Code"},
             app_id="com.microsoft.VSCode",
-            window_title="main.py - OpenMimic",
+            window_title="main.py - AgentHandover",
         )
 
         translator = SemanticTranslator()

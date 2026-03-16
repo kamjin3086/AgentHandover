@@ -1,4 +1,4 @@
-from oc_apprentice_worker.config_validator import ConfigValidator, ConfigIssue
+from agenthandover_worker.config_validator import ConfigValidator, ConfigIssue
 
 class TestValidConfig:
     def test_empty_config_no_issues(self):

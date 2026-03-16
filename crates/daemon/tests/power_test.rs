@@ -1,6 +1,6 @@
 #[cfg(target_os = "macos")]
 mod power_tests {
-    use oc_apprentice_daemon::platform::power::{check_power_gates, get_power_state};
+    use agenthandover_daemon::platform::power::{check_power_gates, get_power_state};
 
     #[test]
     fn test_power_state_returns_valid_data() {

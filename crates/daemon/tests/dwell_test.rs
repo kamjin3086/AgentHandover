@@ -1,4 +1,4 @@
-use oc_apprentice_daemon::observer::dwell::DwellTracker;
+use agenthandover_daemon::observer::dwell::DwellTracker;
 use std::time::Duration;
 
 #[test]

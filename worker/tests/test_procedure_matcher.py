@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import pytest
 
-from oc_apprentice_worker.knowledge_base import KnowledgeBase
-from oc_apprentice_worker.procedure_matcher import ProcedureMatcher, _VERB_MAP
-from oc_apprentice_worker.procedure_schema import sop_to_procedure
-from oc_apprentice_worker.task_segmenter import AnnotatedFrame, TaskSegment
+from agenthandover_worker.knowledge_base import KnowledgeBase
+from agenthandover_worker.procedure_matcher import ProcedureMatcher, _VERB_MAP
+from agenthandover_worker.procedure_schema import sop_to_procedure
+from agenthandover_worker.task_segmenter import AnnotatedFrame, TaskSegment
 
 
 # ---------------------------------------------------------------------------
@@ -197,7 +197,7 @@ class TestSpanMatch:
         frame-level locations -> no domains), so we lower the threshold
         to 0.40 which is a realistic configuration for span matching.
         """
-        from oc_apprentice_worker.continuity_tracker import ContinuitySpan
+        from agenthandover_worker.continuity_tracker import ContinuitySpan
 
         proc = _github_pr_procedure()
         kb.save_procedure(proc)

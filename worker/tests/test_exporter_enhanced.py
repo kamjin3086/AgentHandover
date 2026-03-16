@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from oc_apprentice_worker.exporter import IndexGenerator
+from agenthandover_worker.exporter import IndexGenerator
 
 
 def _sample_template_with_vars(

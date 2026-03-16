@@ -9,11 +9,11 @@ use tracing_subscriber::EnvFilter;
 use tracing_appender::rolling;
 use sha2::{Digest, Sha256};
 
-use oc_apprentice_daemon::ipc::native_messaging;
-use oc_apprentice_daemon::observer::event_loop::{
+use agenthandover_daemon::ipc::native_messaging;
+use agenthandover_daemon::observer::event_loop::{
     ObserverConfig, ObserverMessage, run_observer_loop, run_storage_writer,
 };
-use oc_apprentice_daemon::observer::health::HealthWatcher;
+use agenthandover_daemon::observer::health::HealthWatcher;
 
 /// Check if this process was launched by Chrome Native Messaging.
 ///
@@ -55,9 +55,9 @@ async fn main() -> Result<()> {
     let log_dir = {
         let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
         if cfg!(target_os = "macos") {
-            PathBuf::from(&home).join("Library/Application Support/oc-apprentice/logs")
+            PathBuf::from(&home).join("Library/Application Support/agenthandover/logs")
         } else {
-            PathBuf::from(&home).join(".local/share/oc-apprentice/logs")
+            PathBuf::from(&home).join(".local/share/agenthandover/logs")
         }
     };
     std::fs::create_dir_all(&log_dir).ok();
@@ -74,10 +74,10 @@ async fn main() -> Result<()> {
         .with_ansi(false)
         .init();
 
-    info!("oc-apprentice-daemon starting");
+    info!("agenthandover-daemon starting");
 
     // Write PID file
-    let pid_path = oc_apprentice_common::pid::write_pid_file("daemon")
+    let pid_path = agenthandover_common::pid::write_pid_file("daemon")
         .expect("Failed to write daemon PID file");
     info!(path = %pid_path.display(), "PID file written");
 
@@ -87,7 +87,7 @@ async fn main() -> Result<()> {
     // System Settings > Accessibility.
     #[cfg(target_os = "macos")]
     {
-        use oc_apprentice_daemon::platform::accessibility;
+        use agenthandover_daemon::platform::accessibility;
         accessibility::request_accessibility_with_prompt();
     }
 
@@ -102,17 +102,17 @@ async fn main() -> Result<()> {
 
     // Load AppConfig from standard config file location, fall back to defaults
     let app_config = {
-        use oc_apprentice_common::config::AppConfig;
+        use agenthandover_common::config::AppConfig;
 
         let config_path = if cfg!(target_os = "macos") {
             std::env::var("HOME").ok().map(|home| {
                 std::path::PathBuf::from(home)
-                    .join("Library/Application Support/oc-apprentice/config.toml")
+                    .join("Library/Application Support/agenthandover/config.toml")
             })
         } else {
             std::env::var("HOME").ok().map(|home| {
                 std::path::PathBuf::from(home)
-                    .join(".config/oc-apprentice/config.toml")
+                    .join(".config/agenthandover/config.toml")
             })
         };
 
@@ -147,9 +147,9 @@ async fn main() -> Result<()> {
             // Use the same standard path the worker expects so both
             // processes find the database without manual --db-path flags.
             let data_dir = if cfg!(target_os = "macos") {
-                dirs_or_home("Library/Application Support/oc-apprentice")
+                dirs_or_home("Library/Application Support/agenthandover")
             } else {
-                dirs_or_home(".local/share/oc-apprentice")
+                dirs_or_home(".local/share/agenthandover")
             };
             std::fs::create_dir_all(&data_dir).ok();
             data_dir.join("events.db")
@@ -161,9 +161,9 @@ async fn main() -> Result<()> {
         screenshots_dir: {
             // Screenshots dir lives alongside the database
             let data_dir = if cfg!(target_os = "macos") {
-                dirs_or_home("Library/Application Support/oc-apprentice")
+                dirs_or_home("Library/Application Support/agenthandover")
             } else {
-                dirs_or_home(".local/share/oc-apprentice")
+                dirs_or_home(".local/share/agenthandover")
             };
             let dir = data_dir.join("screenshots");
             std::fs::create_dir_all(&dir).ok();
@@ -242,7 +242,7 @@ async fn main() -> Result<()> {
     let health_handle = tokio::spawn(async move {
         let artifact_dir = health_db_path.parent()
             .map(|p| p.join("artifacts"))
-            .unwrap_or_else(|| std::env::temp_dir().join("openmimic-artifacts"));
+            .unwrap_or_else(|| std::env::temp_dir().join("agenthandover-artifacts"));
         let watcher = HealthWatcher::new(5, 512)
             .with_artifact_path(artifact_dir);
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
@@ -274,22 +274,22 @@ async fn main() -> Result<()> {
                         chrono::DateTime::from_timestamp_millis(last_nm_ms)
                     } else {
                         // Fall back to extension heartbeat file (written by NM bridge)
-                        oc_apprentice_common::status::read_extension_heartbeat()
+                        agenthandover_common::status::read_extension_heartbeat()
                     };
 
                     // Read focus session signal for status reporting
                     let focus_session_info = {
-                        let state_dir = oc_apprentice_common::status::data_dir();
-                        oc_apprentice_common::focus_session::read_focus_signal(&state_dir)
+                        let state_dir = agenthandover_common::status::data_dir();
+                        agenthandover_common::focus_session::read_focus_signal(&state_dir)
                             .filter(|s| s.is_recording())
-                            .map(|s| oc_apprentice_common::status::FocusSessionInfo {
+                            .map(|s| agenthandover_common::status::FocusSessionInfo {
                                 session_id: s.session_id,
                                 title: s.title,
                                 started_at: s.started_at,
                             })
                     };
 
-                    let daemon_status = oc_apprentice_common::status::DaemonStatus {
+                    let daemon_status = agenthandover_common::status::DaemonStatus {
                         pid: std::process::id(),
                         version: env!("CARGO_PKG_VERSION").to_string(),
                         started_at: health_start_time,
@@ -305,7 +305,7 @@ async fn main() -> Result<()> {
                         last_extension_message: last_ext_msg,
                         focus_session: focus_session_info,
                     };
-                    if let Err(e) = oc_apprentice_common::status::write_status_file(
+                    if let Err(e) = agenthandover_common::status::write_status_file(
                         "daemon-status.json",
                         &daemon_status,
                     ) {
@@ -390,7 +390,7 @@ async fn main() -> Result<()> {
     // Spawn clipboard monitor (macOS only)
     #[cfg(target_os = "macos")]
     let clipboard_handle = {
-        use oc_apprentice_daemon::platform::clipboard_monitor;
+        use agenthandover_daemon::platform::clipboard_monitor;
         let clip_tx = tx.clone();
         let clip_shutdown_rx = shutdown_tx.subscribe();
         tokio::spawn(async move {
@@ -404,10 +404,10 @@ async fn main() -> Result<()> {
                     match msg {
                         clipboard_monitor::ClipboardMessage::Change(change) => {
                             hash_tracker.record(change.content_hash.clone());
-                            let event = oc_apprentice_common::event::Event {
+                            let event = agenthandover_common::event::Event {
                                 id: uuid::Uuid::new_v4(),
                                 timestamp: change.timestamp,
-                                kind: oc_apprentice_common::event::EventKind::ClipboardChange {
+                                kind: agenthandover_common::event::EventKind::ClipboardChange {
                                     content_types: change.content_types,
                                     byte_size: change.byte_size,
                                     high_entropy: change.high_entropy,
@@ -447,19 +447,22 @@ async fn main() -> Result<()> {
     // Key is derived from machine-specific data so each installation gets
     // a unique encryption key, while remaining deterministic on the same machine.
     let artifact_store = {
-        use oc_apprentice_storage::artifact_store::ArtifactStore;
+        use agenthandover_storage::artifact_store::ArtifactStore;
 
         let artifact_dir = match db_path.parent() {
             Some(parent) => parent.join("artifacts"),
             None => {
-                let fallback = std::env::temp_dir().join("openmimic-artifacts");
+                let fallback = std::env::temp_dir().join("agenthandover-artifacts");
                 error!("db_path has no parent directory, using temp dir: {}", fallback.display());
                 fallback
             }
         };
         let key = derive_machine_key();
+        let legacy_key = derive_legacy_machine_key();
 
-        Some(std::sync::Arc::new(ArtifactStore::new(artifact_dir, key)))
+        Some(std::sync::Arc::new(
+            ArtifactStore::new(artifact_dir, key).with_fallback_key(legacy_key),
+        ))
     };
 
     // Run observer loop (blocks until shutdown)
@@ -476,9 +479,9 @@ async fn main() -> Result<()> {
     storage_handle.await??;
 
     // Remove PID file on clean shutdown
-    oc_apprentice_common::pid::remove_pid_file("daemon");
+    agenthandover_common::pid::remove_pid_file("daemon");
 
-    info!("oc-apprentice-daemon stopped");
+    info!("agenthandover-daemon stopped");
     observer_result
 }
 
@@ -493,9 +496,9 @@ async fn run_native_messaging_bridge() -> Result<()> {
     let log_dir = {
         let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
         if cfg!(target_os = "macos") {
-            PathBuf::from(&home).join("Library/Application Support/oc-apprentice/logs")
+            PathBuf::from(&home).join("Library/Application Support/agenthandover/logs")
         } else {
-            PathBuf::from(&home).join(".local/share/oc-apprentice/logs")
+            PathBuf::from(&home).join(".local/share/agenthandover/logs")
         }
     };
     std::fs::create_dir_all(&log_dir).ok();
@@ -512,14 +515,14 @@ async fn run_native_messaging_bridge() -> Result<()> {
         .with_ansi(false)
         .init();
 
-    info!("oc-apprentice-daemon starting in native-messaging bridge mode");
+    info!("agenthandover-daemon starting in native-messaging bridge mode");
 
     // Open the shared database (created by the full daemon)
     let db_path = {
         let data_dir = if cfg!(target_os = "macos") {
-            dirs_or_home("Library/Application Support/oc-apprentice")
+            dirs_or_home("Library/Application Support/agenthandover")
         } else {
-            dirs_or_home(".local/share/oc-apprentice")
+            dirs_or_home(".local/share/agenthandover")
         };
         data_dir.join("events.db")
     };
@@ -539,14 +542,14 @@ async fn run_native_messaging_bridge() -> Result<()> {
     // Write initial extension heartbeat immediately so CLI/SwiftUI can detect
     // the bridge right away (before any Chrome messages arrive).
     let session_started = chrono::Utc::now();
-    let initial_heartbeat = oc_apprentice_common::status::ExtensionHeartbeat {
+    let initial_heartbeat = agenthandover_common::status::ExtensionHeartbeat {
         pid: std::process::id(),
         last_message: session_started,
         messages_this_session: 0,
         session_started,
     };
-    if let Err(e) = oc_apprentice_common::status::write_status_file(
-        oc_apprentice_common::status::EXTENSION_HEARTBEAT_FILE,
+    if let Err(e) = agenthandover_common::status::write_status_file(
+        agenthandover_common::status::EXTENSION_HEARTBEAT_FILE,
         &initial_heartbeat,
     ) {
         warn!("Failed to write initial extension heartbeat: {}", e);
@@ -554,7 +557,7 @@ async fn run_native_messaging_bridge() -> Result<()> {
 
     // Run native messaging — this blocks until Chrome closes the pipe
     let mut server = native_messaging::stdio_server();
-    let (nm_event_tx, mut nm_event_rx) = mpsc::channel::<oc_apprentice_common::event::Event>(256);
+    let (nm_event_tx, mut nm_event_rx) = mpsc::channel::<agenthandover_common::event::Event>(256);
 
     // Track the last active Chrome tab ID for outbound DOM snapshot requests.
     // Updated by the forwarder task from incoming extension messages.
@@ -579,14 +582,14 @@ async fn run_native_messaging_bridge() -> Result<()> {
 
             // Write extension heartbeat every 5 seconds (throttled)
             if last_heartbeat_write.elapsed() >= std::time::Duration::from_secs(5) {
-                let heartbeat = oc_apprentice_common::status::ExtensionHeartbeat {
+                let heartbeat = agenthandover_common::status::ExtensionHeartbeat {
                     pid: std::process::id(),
                     last_message: chrono::Utc::now(),
                     messages_this_session: message_count,
                     session_started,
                 };
-                if let Err(e) = oc_apprentice_common::status::write_status_file(
-                    oc_apprentice_common::status::EXTENSION_HEARTBEAT_FILE,
+                if let Err(e) = agenthandover_common::status::write_status_file(
+                    agenthandover_common::status::EXTENSION_HEARTBEAT_FILE,
                     &heartbeat,
                 ) {
                     warn!("Failed to write extension heartbeat: {}", e);
@@ -607,14 +610,14 @@ async fn run_native_messaging_bridge() -> Result<()> {
         }
 
         // Write final heartbeat on clean exit so stale detection is accurate
-        let final_heartbeat = oc_apprentice_common::status::ExtensionHeartbeat {
+        let final_heartbeat = agenthandover_common::status::ExtensionHeartbeat {
             pid: std::process::id(),
             last_message: chrono::Utc::now(),
             messages_this_session: message_count,
             session_started,
         };
-        if let Err(e) = oc_apprentice_common::status::write_status_file(
-            oc_apprentice_common::status::EXTENSION_HEARTBEAT_FILE,
+        if let Err(e) = agenthandover_common::status::write_status_file(
+            agenthandover_common::status::EXTENSION_HEARTBEAT_FILE,
             &final_heartbeat,
         ) {
             warn!("Failed to write final extension heartbeat: {}", e);
@@ -626,14 +629,14 @@ async fn run_native_messaging_bridge() -> Result<()> {
     let dom_tab_id = Arc::clone(&last_active_tab_id);
     let dom_cmd_tx = cmd_tx.clone();
     let dom_request_handle = tokio::spawn(async move {
-        let state_dir = oc_apprentice_common::status::data_dir();
+        let state_dir = agenthandover_common::status::data_dir();
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(2));
 
         loop {
             interval.tick().await;
 
             // Only request DOM snapshots during active focus recording
-            let is_focus = oc_apprentice_common::focus_session::read_focus_signal(&state_dir)
+            let is_focus = agenthandover_common::focus_session::read_focus_signal(&state_dir)
                 .map(|s| s.is_recording())
                 .unwrap_or(false);
 
@@ -704,8 +707,19 @@ async fn run_native_messaging_bridge() -> Result<()> {
 ///
 /// On macOS, uses `sysctl -n kern.uuid` (IOPlatformUUID) as seed material.
 /// Falls back to hostname + username if that fails.
-/// Hashes "openmimic-" + machine_id + "-artifact-key-v1" with SHA-256.
+/// Hashes "agenthandover-" + machine_id + "-artifact-key-v1" with SHA-256.
 fn derive_machine_key() -> [u8; 32] {
+    let machine_id = get_machine_id();
+    let mut hasher = Sha256::new();
+    hasher.update(format!("agenthandover-{}-artifact-key-v1", machine_id).as_bytes());
+    hasher.finalize().into()
+}
+
+/// Derive the legacy encryption key (pre-rename "openmimic-" prefix).
+///
+/// Used as a fallback when decrypting artifacts that were encrypted before
+/// the product rename from OpenMimic to AgentHandover.
+fn derive_legacy_machine_key() -> [u8; 32] {
     let machine_id = get_machine_id();
     let mut hasher = Sha256::new();
     hasher.update(format!("openmimic-{}-artifact-key-v1", machine_id).as_bytes());
@@ -736,7 +750,7 @@ fn get_machine_id() -> String {
     format!("{}-{}", hostname, username)
 }
 
-/// Resolve a subpath under $HOME, e.g. `".local/share/oc-apprentice"`.
+/// Resolve a subpath under $HOME, e.g. `".local/share/agenthandover"`.
 fn dirs_or_home(subpath: &str) -> PathBuf {
     std::env::var("HOME")
         .map(|h| PathBuf::from(h).join(subpath))
@@ -746,10 +760,10 @@ fn dirs_or_home(subpath: &str) -> PathBuf {
 /// Run full database maintenance cycle using values from the loaded config.
 fn run_maintenance(
     db_path: &std::path::Path,
-    storage_config: &oc_apprentice_common::config::StorageConfig,
+    storage_config: &agenthandover_common::config::StorageConfig,
     artifact_dir: Option<&std::path::Path>,
-) -> Result<oc_apprentice_storage::maintenance::MaintenanceReport> {
-    use oc_apprentice_storage::maintenance::MaintenanceRunner;
+) -> Result<agenthandover_storage::maintenance::MaintenanceReport> {
+    use agenthandover_storage::maintenance::MaintenanceRunner;
 
     // Default artifact max: 10 GB
     const ARTIFACT_MAX_BYTES: u64 = 10 * 1024 * 1024 * 1024;

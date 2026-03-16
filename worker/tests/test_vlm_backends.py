@@ -19,7 +19,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from oc_apprentice_worker.vlm_worker import VLMConfig, VLMBackend
+from agenthandover_worker.vlm_worker import VLMConfig, VLMBackend
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────
@@ -47,7 +47,7 @@ _GARBAGE = "I cannot process this image properly. No JSON here."
 
 class TestMLXVLMBackend:
     def test_is_available_package_missing(self, monkeypatch) -> None:
-        from oc_apprentice_worker.backends.mlx_vlm import MLXVLMBackend
+        from agenthandover_worker.backends.mlx_vlm import MLXVLMBackend
 
         def _fail_import(name, *args, **kwargs):
             if name == "mlx_vlm":
@@ -61,7 +61,7 @@ class TestMLXVLMBackend:
         assert backend.is_available() is False
 
     def test_is_available_package_present(self, monkeypatch) -> None:
-        from oc_apprentice_worker.backends.mlx_vlm import MLXVLMBackend
+        from agenthandover_worker.backends.mlx_vlm import MLXVLMBackend
 
         # Create a fake mlx_vlm module
         fake_module = types.ModuleType("mlx_vlm")
@@ -70,7 +70,7 @@ class TestMLXVLMBackend:
         assert backend.is_available() is True
 
     def test_infer_text_only(self, monkeypatch) -> None:
-        from oc_apprentice_worker.backends.mlx_vlm import MLXVLMBackend
+        from agenthandover_worker.backends.mlx_vlm import MLXVLMBackend
 
         backend = MLXVLMBackend(_make_config())
         # Pre-set model to skip lazy loading
@@ -90,7 +90,7 @@ class TestMLXVLMBackend:
         assert result["target_description"] == "button"
 
     def test_infer_with_image(self, monkeypatch) -> None:
-        from oc_apprentice_worker.backends.mlx_vlm import MLXVLMBackend
+        from agenthandover_worker.backends.mlx_vlm import MLXVLMBackend
 
         backend = MLXVLMBackend(_make_config())
         backend._model = MagicMock()
@@ -121,7 +121,7 @@ class TestMLXVLMBackend:
         assert call_kwargs.kwargs.get("image") is mock_img or call_kwargs[1].get("image") is mock_img
 
     def test_infer_json_in_code_block(self, monkeypatch) -> None:
-        from oc_apprentice_worker.backends.mlx_vlm import MLXVLMBackend
+        from agenthandover_worker.backends.mlx_vlm import MLXVLMBackend
 
         backend = MLXVLMBackend(_make_config())
         backend._model = MagicMock()
@@ -139,7 +139,7 @@ class TestMLXVLMBackend:
         assert result["target_description"] == "link"
 
     def test_infer_unparseable_output(self, monkeypatch) -> None:
-        from oc_apprentice_worker.backends.mlx_vlm import MLXVLMBackend
+        from agenthandover_worker.backends.mlx_vlm import MLXVLMBackend
 
         backend = MLXVLMBackend(_make_config())
         backend._model = MagicMock()
@@ -157,14 +157,14 @@ class TestMLXVLMBackend:
             backend.infer("test")
 
     def test_lazy_loading(self) -> None:
-        from oc_apprentice_worker.backends.mlx_vlm import MLXVLMBackend
+        from agenthandover_worker.backends.mlx_vlm import MLXVLMBackend
 
         backend = MLXVLMBackend(_make_config())
         assert backend._model is None
         assert backend._processor is None
 
     def test_timeout_exceeded(self, monkeypatch) -> None:
-        from oc_apprentice_worker.backends.mlx_vlm import MLXVLMBackend
+        from agenthandover_worker.backends.mlx_vlm import MLXVLMBackend
         import time
 
         backend = MLXVLMBackend(_make_config(timeout_seconds=0.1))
@@ -193,7 +193,7 @@ class TestMLXVLMBackend:
 
 class TestLlamaCppBackend:
     def test_is_available_package_missing(self, monkeypatch) -> None:
-        from oc_apprentice_worker.backends.llama_cpp import LlamaCppBackend
+        from agenthandover_worker.backends.llama_cpp import LlamaCppBackend
 
         def _fail_import(name, *args, **kwargs):
             if name == "llama_cpp":
@@ -207,14 +207,14 @@ class TestLlamaCppBackend:
         assert backend.is_available() is False
 
     def test_is_available_package_present_no_model(self) -> None:
-        from oc_apprentice_worker.backends.llama_cpp import LlamaCppBackend
+        from agenthandover_worker.backends.llama_cpp import LlamaCppBackend
 
         # No model_path set — should be unavailable
         backend = LlamaCppBackend(_make_config())
         assert backend.is_available() is False
 
     def test_is_available_model_file_missing(self, tmp_path) -> None:
-        from oc_apprentice_worker.backends.llama_cpp import LlamaCppBackend
+        from agenthandover_worker.backends.llama_cpp import LlamaCppBackend
 
         backend = LlamaCppBackend(
             _make_config(model_path=str(tmp_path / "nonexistent.gguf"))
@@ -222,14 +222,14 @@ class TestLlamaCppBackend:
         assert backend.is_available() is False
 
     def test_model_path_validation(self) -> None:
-        from oc_apprentice_worker.backends.llama_cpp import LlamaCppBackend
+        from agenthandover_worker.backends.llama_cpp import LlamaCppBackend
 
         backend = LlamaCppBackend(_make_config())
         with pytest.raises(ValueError, match="model_path"):
             backend._lazy_load()
 
     def test_infer_text_only(self, monkeypatch) -> None:
-        from oc_apprentice_worker.backends.llama_cpp import LlamaCppBackend
+        from agenthandover_worker.backends.llama_cpp import LlamaCppBackend
 
         backend = LlamaCppBackend(_make_config(model_path="/fake/model.gguf"))
         mock_model = MagicMock()
@@ -242,7 +242,7 @@ class TestLlamaCppBackend:
         assert result["target_description"] == "button"
 
     def test_infer_with_image(self, monkeypatch) -> None:
-        from oc_apprentice_worker.backends.llama_cpp import LlamaCppBackend
+        from agenthandover_worker.backends.llama_cpp import LlamaCppBackend
 
         backend = LlamaCppBackend(_make_config(model_path="/fake/model.gguf"))
         mock_model = MagicMock()
@@ -262,7 +262,7 @@ class TestLlamaCppBackend:
         assert content[1]["type"] == "image_url"
 
     def test_infer_json_in_code_block(self) -> None:
-        from oc_apprentice_worker.backends.llama_cpp import LlamaCppBackend
+        from agenthandover_worker.backends.llama_cpp import LlamaCppBackend
 
         backend = LlamaCppBackend(_make_config(model_path="/fake/model.gguf"))
         mock_model = MagicMock()
@@ -275,7 +275,7 @@ class TestLlamaCppBackend:
         assert result["target_description"] == "link"
 
     def test_infer_unparseable_output(self) -> None:
-        from oc_apprentice_worker.backends.llama_cpp import LlamaCppBackend
+        from agenthandover_worker.backends.llama_cpp import LlamaCppBackend
 
         backend = LlamaCppBackend(_make_config(model_path="/fake/model.gguf"))
         mock_model = MagicMock()
@@ -288,13 +288,13 @@ class TestLlamaCppBackend:
             backend.infer("test")
 
     def test_lazy_loading(self) -> None:
-        from oc_apprentice_worker.backends.llama_cpp import LlamaCppBackend
+        from agenthandover_worker.backends.llama_cpp import LlamaCppBackend
 
         backend = LlamaCppBackend(_make_config())
         assert backend._model is None
 
     def test_timeout_exceeded(self) -> None:
-        from oc_apprentice_worker.backends.llama_cpp import LlamaCppBackend
+        from agenthandover_worker.backends.llama_cpp import LlamaCppBackend
         import time
 
         backend = LlamaCppBackend(_make_config(
@@ -320,7 +320,7 @@ class TestLlamaCppBackend:
 
 class TestOllamaBackend:
     def test_is_available_package_missing(self, monkeypatch) -> None:
-        from oc_apprentice_worker.backends.ollama import OllamaBackend
+        from agenthandover_worker.backends.ollama import OllamaBackend
 
         def _fail_import(name, *args, **kwargs):
             if name == "ollama":
@@ -336,7 +336,7 @@ class TestOllamaBackend:
         assert backend.is_available() is False
 
     def test_is_available_server_reachable(self) -> None:
-        from oc_apprentice_worker.backends.ollama import OllamaBackend
+        from agenthandover_worker.backends.ollama import OllamaBackend
 
         backend = OllamaBackend(_make_config())
         mock_client = MagicMock()
@@ -345,7 +345,7 @@ class TestOllamaBackend:
         assert backend.is_available() is True
 
     def test_is_available_server_down(self) -> None:
-        from oc_apprentice_worker.backends.ollama import OllamaBackend
+        from agenthandover_worker.backends.ollama import OllamaBackend
 
         backend = OllamaBackend(_make_config())
         mock_client = MagicMock()
@@ -354,7 +354,7 @@ class TestOllamaBackend:
         assert backend.is_available() is False
 
     def test_infer_text_only(self) -> None:
-        from oc_apprentice_worker.backends.ollama import OllamaBackend
+        from agenthandover_worker.backends.ollama import OllamaBackend
 
         backend = OllamaBackend(_make_config())
         mock_client = MagicMock()
@@ -365,7 +365,7 @@ class TestOllamaBackend:
         assert result["target_description"] == "button"
 
     def test_infer_with_image(self) -> None:
-        from oc_apprentice_worker.backends.ollama import OllamaBackend
+        from agenthandover_worker.backends.ollama import OllamaBackend
 
         backend = OllamaBackend(_make_config())
         mock_client = MagicMock()
@@ -381,7 +381,7 @@ class TestOllamaBackend:
         assert messages[0]["images"] == [img_b64]
 
     def test_infer_json_in_code_block(self) -> None:
-        from oc_apprentice_worker.backends.ollama import OllamaBackend
+        from agenthandover_worker.backends.ollama import OllamaBackend
 
         backend = OllamaBackend(_make_config())
         mock_client = MagicMock()
@@ -392,7 +392,7 @@ class TestOllamaBackend:
         assert result["target_description"] == "link"
 
     def test_infer_unparseable_output(self) -> None:
-        from oc_apprentice_worker.backends.ollama import OllamaBackend
+        from agenthandover_worker.backends.ollama import OllamaBackend
 
         backend = OllamaBackend(_make_config())
         mock_client = MagicMock()
@@ -403,13 +403,13 @@ class TestOllamaBackend:
             backend.infer("test")
 
     def test_lazy_loading(self) -> None:
-        from oc_apprentice_worker.backends.ollama import OllamaBackend
+        from agenthandover_worker.backends.ollama import OllamaBackend
 
         backend = OllamaBackend(_make_config())
         assert backend._client is None
 
     def test_model_name_fallback(self) -> None:
-        from oc_apprentice_worker.backends.ollama import OllamaBackend
+        from agenthandover_worker.backends.ollama import OllamaBackend
 
         # When using the default MLX model name, should substitute llava:7b
         config = _make_config(model_name="mlx-community/llava-1.5-7b-4bit")
@@ -417,14 +417,14 @@ class TestOllamaBackend:
         assert backend._model_name == "llava:7b"
 
     def test_model_name_custom_preserved(self) -> None:
-        from oc_apprentice_worker.backends.ollama import OllamaBackend
+        from agenthandover_worker.backends.ollama import OllamaBackend
 
         config = _make_config(model_name="llava:13b")
         backend = OllamaBackend(config)
         assert backend._model_name == "llava:13b"
 
     def test_timeout_exceeded(self) -> None:
-        from oc_apprentice_worker.backends.ollama import OllamaBackend
+        from agenthandover_worker.backends.ollama import OllamaBackend
         import time
 
         backend = OllamaBackend(_make_config(timeout_seconds=0.1))
@@ -447,7 +447,7 @@ class TestOllamaBackend:
 
 class TestOpenAICompatBackend:
     def test_is_available_package_missing(self, monkeypatch) -> None:
-        from oc_apprentice_worker.backends.openai_compat import OpenAICompatBackend
+        from agenthandover_worker.backends.openai_compat import OpenAICompatBackend
 
         def _fail_import(name, *args, **kwargs):
             if name == "openai":
@@ -461,7 +461,7 @@ class TestOpenAICompatBackend:
         assert backend.is_available() is False
 
     def test_is_available_with_api_key(self, monkeypatch) -> None:
-        from oc_apprentice_worker.backends.openai_compat import OpenAICompatBackend
+        from agenthandover_worker.backends.openai_compat import OpenAICompatBackend
         import sys
 
         # Ensure openai module exists (mock it)
@@ -473,7 +473,7 @@ class TestOpenAICompatBackend:
         assert backend.is_available() is True
 
     def test_is_available_key_from_env(self, monkeypatch) -> None:
-        from oc_apprentice_worker.backends.openai_compat import OpenAICompatBackend
+        from agenthandover_worker.backends.openai_compat import OpenAICompatBackend
         import sys
 
         fake_openai = types.ModuleType("openai")
@@ -484,7 +484,7 @@ class TestOpenAICompatBackend:
         assert backend.is_available() is True
 
     def test_is_available_no_key(self, monkeypatch) -> None:
-        from oc_apprentice_worker.backends.openai_compat import OpenAICompatBackend
+        from agenthandover_worker.backends.openai_compat import OpenAICompatBackend
         import sys
 
         fake_openai = types.ModuleType("openai")
@@ -496,7 +496,7 @@ class TestOpenAICompatBackend:
         assert backend.is_available() is False
 
     def test_is_available_local_provider(self, monkeypatch) -> None:
-        from oc_apprentice_worker.backends.openai_compat import OpenAICompatBackend
+        from agenthandover_worker.backends.openai_compat import OpenAICompatBackend
         import sys
 
         fake_openai = types.ModuleType("openai")
@@ -511,7 +511,7 @@ class TestOpenAICompatBackend:
         assert backend.is_available() is True
 
     def test_infer_text_only(self) -> None:
-        from oc_apprentice_worker.backends.openai_compat import OpenAICompatBackend
+        from agenthandover_worker.backends.openai_compat import OpenAICompatBackend
 
         config = _make_config(api_key="sk-test")
         backend = OpenAICompatBackend(config)
@@ -529,7 +529,7 @@ class TestOpenAICompatBackend:
         assert result["target_description"] == "button"
 
     def test_infer_with_image(self) -> None:
-        from oc_apprentice_worker.backends.openai_compat import OpenAICompatBackend
+        from agenthandover_worker.backends.openai_compat import OpenAICompatBackend
 
         config = _make_config(api_key="sk-test")
         backend = OpenAICompatBackend(config)
@@ -553,7 +553,7 @@ class TestOpenAICompatBackend:
         assert content[1]["type"] == "image_url"
 
     def test_infer_json_in_code_block(self) -> None:
-        from oc_apprentice_worker.backends.openai_compat import OpenAICompatBackend
+        from agenthandover_worker.backends.openai_compat import OpenAICompatBackend
 
         config = _make_config(api_key="sk-test")
         backend = OpenAICompatBackend(config)
@@ -571,7 +571,7 @@ class TestOpenAICompatBackend:
         assert result["target_description"] == "link"
 
     def test_infer_unparseable_output(self) -> None:
-        from oc_apprentice_worker.backends.openai_compat import OpenAICompatBackend
+        from agenthandover_worker.backends.openai_compat import OpenAICompatBackend
 
         config = _make_config(api_key="sk-test")
         backend = OpenAICompatBackend(config)
@@ -589,27 +589,27 @@ class TestOpenAICompatBackend:
             backend.infer("test")
 
     def test_lazy_loading(self) -> None:
-        from oc_apprentice_worker.backends.openai_compat import OpenAICompatBackend
+        from agenthandover_worker.backends.openai_compat import OpenAICompatBackend
 
         backend = OpenAICompatBackend(_make_config())
         assert backend._client is None
 
     def test_model_name_fallback(self) -> None:
-        from oc_apprentice_worker.backends.openai_compat import OpenAICompatBackend
+        from agenthandover_worker.backends.openai_compat import OpenAICompatBackend
 
         config = _make_config(model_name="mlx-community/llava-1.5-7b-4bit")
         backend = OpenAICompatBackend(config)
         assert backend._model_name == "gpt-4o-mini"
 
     def test_model_name_custom_preserved(self) -> None:
-        from oc_apprentice_worker.backends.openai_compat import OpenAICompatBackend
+        from agenthandover_worker.backends.openai_compat import OpenAICompatBackend
 
         config = _make_config(model_name="gpt-4o")
         backend = OpenAICompatBackend(config)
         assert backend._model_name == "gpt-4o"
 
     def test_timeout_exceeded(self) -> None:
-        from oc_apprentice_worker.backends.openai_compat import OpenAICompatBackend
+        from agenthandover_worker.backends.openai_compat import OpenAICompatBackend
         import time
 
         config = _make_config(api_key="sk-test", timeout_seconds=0.1)
@@ -631,7 +631,7 @@ class TestOpenAICompatBackend:
             backend.infer("test")
 
     def test_local_provider_dummy_key(self, monkeypatch) -> None:
-        from oc_apprentice_worker.backends.openai_compat import OpenAICompatBackend
+        from agenthandover_worker.backends.openai_compat import OpenAICompatBackend
 
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         monkeypatch.delenv("OPENMIMIC_API_KEY", raising=False)

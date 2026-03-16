@@ -10,7 +10,7 @@ import json
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from oc_apprentice_worker.episode_builder import Episode, EpisodeBuilder
+from agenthandover_worker.episode_builder import Episode, EpisodeBuilder
 
 
 def _ts(dt: datetime) -> str:

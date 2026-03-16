@@ -13,20 +13,20 @@ from pathlib import Path
 
 import pytest
 
-from oc_apprentice_worker.account_detector import AccountDetector
-from oc_apprentice_worker.branch_extractor import BranchExtractor
-from oc_apprentice_worker.constraint_manager import ConstraintManager, TrustLevel
-from oc_apprentice_worker.daily_processor import DailyBatchProcessor
-from oc_apprentice_worker.decision_extractor import DecisionExtractor
-from oc_apprentice_worker.evidence_tracker import EvidenceTracker, ObservationEvidence
-from oc_apprentice_worker.knowledge_base import KnowledgeBase
-from oc_apprentice_worker.knowledge_export_adapter import KnowledgeBaseExportAdapter
-from oc_apprentice_worker.outcome_tracker import OutcomeTracker
-from oc_apprentice_worker.pattern_detector import PatternDetector
-from oc_apprentice_worker.procedure_schema import sop_to_procedure, validate_procedure
-from oc_apprentice_worker.procedure_writer import ProcedureWriter
-from oc_apprentice_worker.profile_builder import ProfileBuilder
-from oc_apprentice_worker.staleness_detector import StalenessDetector
+from agenthandover_worker.account_detector import AccountDetector
+from agenthandover_worker.branch_extractor import BranchExtractor
+from agenthandover_worker.constraint_manager import ConstraintManager, TrustLevel
+from agenthandover_worker.daily_processor import DailyBatchProcessor
+from agenthandover_worker.decision_extractor import DecisionExtractor
+from agenthandover_worker.evidence_tracker import EvidenceTracker, ObservationEvidence
+from agenthandover_worker.knowledge_base import KnowledgeBase
+from agenthandover_worker.knowledge_export_adapter import KnowledgeBaseExportAdapter
+from agenthandover_worker.outcome_tracker import OutcomeTracker
+from agenthandover_worker.pattern_detector import PatternDetector
+from agenthandover_worker.procedure_schema import sop_to_procedure, validate_procedure
+from agenthandover_worker.procedure_writer import ProcedureWriter
+from agenthandover_worker.profile_builder import ProfileBuilder
+from agenthandover_worker.staleness_detector import StalenessDetector
 
 
 @pytest.fixture()

@@ -4,17 +4,17 @@ use colored::Colorize;
 
 use crate::paths;
 
-/// Detect which install channel produced this OpenMimic installation.
+/// Detect which install channel produced this AgentHandover installation.
 fn detect_install_channel() -> &'static str {
     // Check for pkg install
-    if std::path::Path::new("/usr/local/bin/oc-apprentice-daemon").exists()
-        && std::path::Path::new("/usr/local/lib/openmimic").exists()
+    if std::path::Path::new("/usr/local/bin/agenthandover-daemon").exists()
+        && std::path::Path::new("/usr/local/lib/agenthandover").exists()
     {
         return "pkg";
     }
     // Check for Homebrew
     if let Ok(output) = std::process::Command::new("brew")
-        .args(["--prefix", "openmimic"])
+        .args(["--prefix", "agenthandover"])
         .output()
     {
         if output.status.success() {
@@ -38,9 +38,9 @@ fn detect_install_channel() -> &'static str {
 fn print_install_hint(channel: &str) {
     match channel {
         "pkg" => eprintln!("  Fix: Re-run the .pkg installer to repair."),
-        "homebrew" => eprintln!("  Fix: brew reinstall openmimic"),
+        "homebrew" => eprintln!("  Fix: brew reinstall agenthandover"),
         "source" => eprintln!("  Fix: just build-all"),
-        _ => eprintln!("  Fix: Re-install OpenMimic (.pkg recommended)."),
+        _ => eprintln!("  Fix: Re-install AgentHandover (.pkg recommended)."),
     }
 }
 
@@ -74,7 +74,7 @@ impl CheckCounts {
 }
 
 pub fn run() -> Result<()> {
-    println!("{}", "OpenMimic Doctor".bold());
+    println!("{}", "AgentHandover Doctor".bold());
     println!("{}", "=".repeat(50));
     println!();
 
@@ -83,8 +83,8 @@ pub fn run() -> Result<()> {
 
     // Check 1: Daemon binary exists
     // Search pkg path, PATH, and source build directories.
-    let daemon_found = std::path::Path::new("/usr/local/bin/oc-apprentice-daemon").exists()
-        || which("oc-apprentice-daemon")
+    let daemon_found = std::path::Path::new("/usr/local/bin/agenthandover-daemon").exists()
+        || which("agenthandover-daemon")
         || source_build_daemon_exists();
     if daemon_found {
         check_pass(&mut counts, "Daemon binary");
@@ -97,7 +97,7 @@ pub fn run() -> Result<()> {
     check_pass(&mut counts, "CLI binary");
 
     // Check 3: Data directory exists
-    let data_dir = oc_apprentice_common::status::status_dir();
+    let data_dir = agenthandover_common::status::status_dir();
     if data_dir.exists() {
         check_pass(&mut counts, "Data directory");
     } else {
@@ -159,7 +159,7 @@ pub fn run() -> Result<()> {
             check_skip(
                 &mut counts,
                 "Database",
-                "Run 'openmimic start' to create database",
+                "Run 'agenthandover start' to create database",
             );
         }
     }
@@ -173,13 +173,13 @@ pub fn run() -> Result<()> {
 
     // Check 9: launchd plists installed
     let launch_agents = launch_agents_dir();
-    if launch_agents.join("com.openmimic.daemon.plist").exists() {
+    if launch_agents.join("com.agenthandover.daemon.plist").exists() {
         check_pass(&mut counts, "Daemon launchd plist");
     } else {
         check_fail(&mut counts, "Daemon launchd plist");
         print_install_hint(channel);
     }
-    if launch_agents.join("com.openmimic.worker.plist").exists() {
+    if launch_agents.join("com.agenthandover.worker.plist").exists() {
         check_pass(&mut counts, "Worker launchd plist");
     } else {
         check_fail(&mut counts, "Worker launchd plist");
@@ -203,9 +203,9 @@ pub fn run() -> Result<()> {
     } else {
         let hint = match channel {
             "pkg" => "Re-run .pkg installer to repair",
-            "homebrew" => "brew reinstall openmimic",
+            "homebrew" => "brew reinstall agenthandover",
             "source" => "venv not found — expected for source builds",
-            _ => "Re-install OpenMimic (.pkg recommended)",
+            _ => "Re-install AgentHandover (.pkg recommended)",
         };
         check_skip(&mut counts, "Python virtual environment", hint);
     }
@@ -216,21 +216,21 @@ pub fn run() -> Result<()> {
     } else {
         let hint = match channel {
             "pkg" => "Re-run .pkg installer to repair",
-            "homebrew" => "brew reinstall openmimic",
+            "homebrew" => "brew reinstall agenthandover",
             "source" => "cd extension && npm run build",
-            _ => "Re-install OpenMimic (.pkg recommended)",
+            _ => "Re-install AgentHandover (.pkg recommended)",
         };
         check_skip(&mut counts, "Chrome extension", hint);
     }
 
     // Check 14: Worker process alive (optional — may not be started yet)
-    if oc_apprentice_common::pid::check_pid_file("worker").is_some() {
+    if agenthandover_common::pid::check_pid_file("worker").is_some() {
         check_pass(&mut counts, "Worker process");
     } else {
         check_skip(
             &mut counts,
             "Worker process",
-            "Start with: openmimic start",
+            "Start with: agenthandover start",
         );
     }
 
@@ -281,14 +281,14 @@ fn check_skip(counts: &mut CheckCounts, name: &str, reason: &str) {
 
 /// Advisory heartbeat freshness check for a service status file.
 ///
-/// Reads `~/Library/Application Support/oc-apprentice/<filename>`, parses the
+/// Reads `~/Library/Application Support/agenthandover/<filename>`, parses the
 /// `heartbeat` ISO-8601 timestamp, and prints a WARNING if it is older than 60
 /// seconds.  If the file doesn't exist (first install, service never started),
 /// prints an INFO note.  This check never affects the overall doctor result.
 fn check_heartbeat_freshness(service_name: &str, status_filename: &str) {
     let label = format!("{} heartbeat", service_name);
 
-    let status_dir = oc_apprentice_common::status::status_dir();
+    let status_dir = agenthandover_common::status::status_dir();
     let path = status_dir.join(status_filename);
 
     if !path.exists() {
@@ -370,9 +370,9 @@ fn which(binary: &str) -> bool {
 /// Check common source build output directories for the daemon binary.
 fn source_build_daemon_exists() -> bool {
     let source_paths = [
-        "target/release/oc-apprentice-daemon",
-        "target/debug/oc-apprentice-daemon",
-        "target/universal-release/oc-apprentice-daemon",
+        "target/release/agenthandover-daemon",
+        "target/debug/agenthandover-daemon",
+        "target/universal-release/agenthandover-daemon",
     ];
     for sp in &source_paths {
         if std::path::Path::new(sp).exists() {
@@ -425,7 +425,7 @@ fn native_messaging_manifest_path() -> std::path::PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
     // Chrome's NativeMessagingHosts location on macOS
     std::path::PathBuf::from(home).join(
-        "Library/Application Support/Google/Chrome/NativeMessagingHosts/com.openclaw.apprentice.json",
+        "Library/Application Support/Google/Chrome/NativeMessagingHosts/com.agenthandover.host.json",
     )
 }
 
@@ -464,7 +464,7 @@ fn check_native_messaging_manifest() -> bool {
         );
         println!(
             "    Run {} to install it.",
-            "openmimic setup --extension".cyan()
+            "agenthandover setup --extension".cyan()
         );
         return false;
     }
@@ -488,9 +488,9 @@ fn check_native_messaging_manifest() -> bool {
 
     // Verify name
     let name = parsed.get("name").and_then(|v| v.as_str()).unwrap_or("");
-    if name != "com.openclaw.apprentice" {
+    if name != "com.agenthandover.host" {
         println!(
-            "    {} Wrong host name: expected 'com.openclaw.apprentice', got '{}'",
+            "    {} Wrong host name: expected 'com.agenthandover.host', got '{}'",
             "→".dimmed(),
             name
         );
@@ -512,7 +512,7 @@ fn check_native_messaging_manifest() -> bool {
         );
         println!(
             "    Re-run {} to update.",
-            "openmimic setup --extension".cyan()
+            "agenthandover setup --extension".cyan()
         );
         return false;
     }

@@ -1,5 +1,5 @@
 /**
- * OpenMimic Observer — Content Script
+ * AgentHandover Observer — Content Script
  *
  * Injected at `document_idle` on every page (`<all_urls>`).
  *
@@ -53,7 +53,7 @@ const registeredModules: ContentModule[] = [];
  * call this function during their top-level execution.
  */
 export function registerModule(mod: ContentModule): void {
-  console.log('[OpenMimic:content] Registering module:', mod.name);
+  console.log('[AgentHandover:content] Registering module:', mod.name);
   registeredModules.push(mod);
   mod.init();
 }
@@ -78,13 +78,13 @@ export function sendToBackground(
       // Retry with a 1-second delay to give the service worker time to wake up.
       if (retries > 0) {
         console.warn(
-          '[OpenMimic:content] sendMessage error, retrying in 1s:',
+          '[AgentHandover:content] sendMessage error, retrying in 1s:',
           chrome.runtime.lastError.message,
         );
         setTimeout(() => sendToBackground(type, payload, retries - 1), 1000);
       } else {
         console.warn(
-          '[OpenMimic:content] sendMessage error (retries exhausted):',
+          '[AgentHandover:content] sendMessage error (retries exhausted):',
           chrome.runtime.lastError.message,
         );
       }
@@ -92,7 +92,7 @@ export function sendToBackground(
     }
     if (response && !response.ok) {
       console.warn(
-        '[OpenMimic:content] Background rejected message:',
+        '[AgentHandover:content] Background rejected message:',
         response.error,
       );
     }
@@ -119,7 +119,7 @@ export function isSecureFieldActive(): boolean {
  */
 function guardedSend(type: string, payload: Record<string, unknown>): void {
   if (secureFieldActive) {
-    console.log('[OpenMimic:content] Suppressed', type, '— secure field active');
+    console.log('[AgentHandover:content] Suppressed', type, '— secure field active');
     return;
   }
   sendToBackground(type, payload);
@@ -135,13 +135,13 @@ chrome.runtime.onMessage.addListener(
     _sender: chrome.runtime.MessageSender,
     sendResponse: (response: unknown) => void,
   ) => {
-    console.log('[OpenMimic:content] Received command:', message.type);
+    console.log('[AgentHandover:content] Received command:', message.type);
 
     switch (message.type) {
       case 'request_snapshot': {
-        console.log('[OpenMimic:content] Snapshot requested — capturing viewport DOM');
+        console.log('[AgentHandover:content] Snapshot requested — capturing viewport DOM');
         const nodes = captureViewportDOM();
-        console.log('[OpenMimic:content] Captured', nodes.length, 'top-level nodes');
+        console.log('[AgentHandover:content] Captured', nodes.length, 'top-level nodes');
         sendToBackground('dom_snapshot', {
           nodes,
           url: window.location.href,
@@ -152,7 +152,7 @@ chrome.runtime.onMessage.addListener(
       }
 
       default:
-        console.log('[OpenMimic:content] Unknown command:', message.type);
+        console.log('[AgentHandover:content] Unknown command:', message.type);
         sendResponse({ ok: false, error: 'unknown_command' });
     }
 
@@ -172,9 +172,9 @@ function destroyAllModules(): void {
   for (const mod of registeredModules) {
     try {
       mod.destroy();
-      console.log('[OpenMimic:content] Destroyed module:', mod.name);
+      console.log('[AgentHandover:content] Destroyed module:', mod.name);
     } catch (err) {
-      console.error('[OpenMimic:content] Error destroying module', mod.name, err);
+      console.error('[AgentHandover:content] Error destroying module', mod.name, err);
     }
   }
   registeredModules.length = 0;
@@ -187,7 +187,7 @@ window.addEventListener('beforeunload', destroyAllModules);
 // ---------------------------------------------------------------------------
 
 console.log(
-  '[OpenMimic:content] Content script injected at',
+  '[AgentHandover:content] Content script injected at',
   window.location.href,
   'timestamp:',
   new Date().toISOString(),
@@ -220,7 +220,7 @@ sendToBackground('content_ready', {
         (isSecure: boolean) => {
           secureFieldActive = isSecure;
           console.log(
-            '[OpenMimic:content] Secure field state:',
+            '[AgentHandover:content] Secure field state:',
             isSecure ? 'ACTIVE' : 'inactive',
           );
         },
@@ -265,10 +265,10 @@ sendToBackground('content_ready', {
         dwellConfig,
         () => {
           if (secureFieldActive) {
-            console.log('[OpenMimic:content] Suppressed dwell_snapshot — secure field active');
+            console.log('[AgentHandover:content] Suppressed dwell_snapshot — secure field active');
             return;
           }
-          console.log('[OpenMimic:content] Dwell snapshot triggered');
+          console.log('[AgentHandover:content] Dwell snapshot triggered');
           sendToBackground('dwell_snapshot', {
             url: window.location.href,
             title: document.title,
@@ -277,10 +277,10 @@ sendToBackground('content_ready', {
         },
         () => {
           if (secureFieldActive) {
-            console.log('[OpenMimic:content] Suppressed scroll_snapshot — secure field active');
+            console.log('[AgentHandover:content] Suppressed scroll_snapshot — secure field active');
             return;
           }
-          console.log('[OpenMimic:content] Scroll-read snapshot triggered');
+          console.log('[AgentHandover:content] Scroll-read snapshot triggered');
           sendToBackground('scroll_snapshot', {
             url: window.location.href,
             title: document.title,
@@ -299,7 +299,7 @@ sendToBackground('content_ready', {
 // Runtime assertion: verify secure-field is the first registered module
 if (registeredModules.length > 0 && registeredModules[0].name !== 'secure-field') {
   console.error(
-    '[OpenMimic:content] CRITICAL: secure-field must be the first registered module, but found:',
+    '[AgentHandover:content] CRITICAL: secure-field must be the first registered module, but found:',
     registeredModules[0].name,
   );
 }

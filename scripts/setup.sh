@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# Unified setup script for OpenMimic.
+# Unified setup script for AgentHandover.
 # Installs native messaging host, then offers VLM setup.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Stable extension ID from the RSA key in extension/manifest.json.
-# Override with: OPENMIMIC_EXTENSION_ID=<id> ./scripts/setup.sh
-EXTENSION_ID="${OPENMIMIC_EXTENSION_ID:-knldjmfmopnpolahpmmgbagdohdnhkik}"
+# Override with: AGENTHANDOVER_EXTENSION_ID=<id> ./scripts/setup.sh
+EXTENSION_ID="${AGENTHANDOVER_EXTENSION_ID:-knldjmfmopnpolahpmmgbagdohdnhkik}"
 
-echo "=== OpenMimic Setup ==="
+echo "=== AgentHandover Setup ==="
 echo
 
 # Step 1: Install Chrome native messaging host
@@ -26,9 +26,9 @@ fi
 echo "Step 2/2: VLM setup..."
 WORKER_VENV="$SCRIPT_DIR/../worker/.venv/bin/python"
 if [ -x "$WORKER_VENV" ]; then
-    "$WORKER_VENV" -m oc_apprentice_worker.setup_vlm "$@"
+    "$WORKER_VENV" -m agenthandover_worker.setup_vlm "$@"
 else
-    python3 -m oc_apprentice_worker.setup_vlm "$@"
+    python3 -m agenthandover_worker.setup_vlm "$@"
 fi
 
 echo

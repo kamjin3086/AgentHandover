@@ -249,7 +249,7 @@ impl Default for BrowserConfig {
     fn default() -> Self {
         Self {
             extension_id: "knldjmfmopnpolahpmmgbagdohdnhkik".into(),
-            native_host_name: "com.openclaw.apprentice".into(),
+            native_host_name: "com.agenthandover.host".into(),
             deny_network_egress: true,
         }
     }
@@ -362,7 +362,7 @@ pub struct KnowledgeConfig {
     pub sync_remote: String,
 }
 
-fn default_knowledge_root_dir() -> String { "~/.openmimic/knowledge".to_string() }
+fn default_knowledge_root_dir() -> String { "~/.agenthandover/knowledge".to_string() }
 fn default_daily_batch_time() -> String { "23:30".to_string() }
 fn default_pattern_detection_min_days() -> u32 { 3 }
 fn default_query_api_port() -> u16 { 9477 }

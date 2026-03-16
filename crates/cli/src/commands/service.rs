@@ -1,8 +1,8 @@
 use anyhow::{bail, Result};
 use std::process::Command;
 
-const DAEMON_LABEL: &str = "com.openmimic.daemon";
-const WORKER_LABEL: &str = "com.openmimic.worker";
+const DAEMON_LABEL: &str = "com.agenthandover.daemon";
+const WORKER_LABEL: &str = "com.agenthandover.worker";
 
 fn launch_agents_dir() -> std::path::PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());

@@ -1,4 +1,4 @@
-use oc_apprentice_common::redaction::Redactor;
+use agenthandover_common::redaction::Redactor;
 
 #[test]
 fn test_redacts_aws_access_key() {

@@ -1,5 +1,5 @@
 /**
- * OpenMimic Observer — Dwell + Scroll Snapshot Triggers
+ * AgentHandover Observer — Dwell + Scroll Snapshot Triggers
  *
  * Extension-side dwell and scroll-reading detection that mirrors the
  * daemon's dwell tracker logic.

@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 import pytest
 
-from oc_apprentice_worker.setup_vlm import (
+from agenthandover_worker.setup_vlm import (
     _REMOTE_PROVIDERS,
     _toml_value,
     validate_api_key,
@@ -89,10 +89,10 @@ class TestValidateApiKey:
 class TestWriteRemoteConfig:
     def test_write_creates_config(self):
         """_write_remote_config creates config.toml with correct fields."""
-        from oc_apprentice_worker.setup_vlm import _write_remote_config, _config_path
+        from agenthandover_worker.setup_vlm import _write_remote_config, _config_path
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            with patch("oc_apprentice_worker.setup_vlm._config_path") as mock_path:
+            with patch("agenthandover_worker.setup_vlm._config_path") as mock_path:
                 config_file = Path(tmpdir) / "config.toml"
                 mock_path.return_value = config_file
 

@@ -10,19 +10,19 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from oc_apprentice_worker.focus_processor import FocusProcessor
-from oc_apprentice_worker.scene_annotator import (
+from agenthandover_worker.focus_processor import FocusProcessor
+from agenthandover_worker.scene_annotator import (
     AnnotationConfig,
     AnnotationResult,
     SceneAnnotator,
 )
-from oc_apprentice_worker.frame_differ import DiffConfig, DiffResult, FrameDiffer
-from oc_apprentice_worker.sop_generator import (
+from agenthandover_worker.frame_differ import DiffConfig, DiffResult, FrameDiffer
+from agenthandover_worker.sop_generator import (
     SOPGenerator,
     SOPGeneratorConfig,
     GeneratedSOP,
 )
-from oc_apprentice_worker.db import WorkerDB
+from agenthandover_worker.db import WorkerDB
 
 
 # ---------------------------------------------------------------------------
@@ -644,7 +644,7 @@ class TestDBFocusMethods:
 class TestProcessFocusSessionsV2:
     def test_no_signal_file_returns_zero(self, tmp_path):
         """No focus-session.json → returns 0."""
-        from oc_apprentice_worker.main import _process_focus_sessions_v2
+        from agenthandover_worker.main import _process_focus_sessions_v2
 
         db_path = _create_test_db(tmp_path)
         with WorkerDB(db_path) as db:
@@ -653,7 +653,7 @@ class TestProcessFocusSessionsV2:
             mock_writer.get_sops_dir.return_value = tmp_path / "sops"
 
             with patch(
-                "oc_apprentice_worker.main._status_dir",
+                "agenthandover_worker.main._status_dir",
                 return_value=tmp_path,
             ):
                 result = _process_focus_sessions_v2(
@@ -666,7 +666,7 @@ class TestProcessFocusSessionsV2:
 
     def test_signal_still_recording_returns_zero(self, tmp_path):
         """Signal file with status=recording → returns 0."""
-        from oc_apprentice_worker.main import _process_focus_sessions_v2
+        from agenthandover_worker.main import _process_focus_sessions_v2
 
         signal_path = tmp_path / "focus-session.json"
         signal_path.write_text(json.dumps({
@@ -678,7 +678,7 @@ class TestProcessFocusSessionsV2:
         db_path = _create_test_db(tmp_path)
         with WorkerDB(db_path) as db:
             with patch(
-                "oc_apprentice_worker.main._status_dir",
+                "agenthandover_worker.main._status_dir",
                 return_value=tmp_path,
             ):
                 result = _process_focus_sessions_v2(
@@ -691,7 +691,7 @@ class TestProcessFocusSessionsV2:
 
     def test_stopped_session_processes_and_clears_signal(self, tmp_path):
         """Stopped session → processes → clears signal file."""
-        from oc_apprentice_worker.main import _process_focus_sessions_v2
+        from agenthandover_worker.main import _process_focus_sessions_v2
 
         session_id = "focus-v2-test"
         signal_path = tmp_path / "focus-session.json"
@@ -722,7 +722,7 @@ class TestProcessFocusSessionsV2:
 
         with WorkerDB(db_path) as db:
             with patch(
-                "oc_apprentice_worker.main._status_dir",
+                "agenthandover_worker.main._status_dir",
                 return_value=tmp_path,
             ):
                 result = _process_focus_sessions_v2(
@@ -743,7 +743,7 @@ class TestProcessFocusSessionsV2:
 
     def test_failed_generation_clears_signal(self, tmp_path):
         """Failed SOP generation still clears the signal file."""
-        from oc_apprentice_worker.main import _process_focus_sessions_v2
+        from agenthandover_worker.main import _process_focus_sessions_v2
 
         session_id = "focus-v2-fail"
         signal_path = tmp_path / "focus-session.json"
@@ -763,7 +763,7 @@ class TestProcessFocusSessionsV2:
 
         with WorkerDB(db_path) as db:
             with patch(
-                "oc_apprentice_worker.main._status_dir",
+                "agenthandover_worker.main._status_dir",
                 return_value=tmp_path,
             ):
                 result = _process_focus_sessions_v2(

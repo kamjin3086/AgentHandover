@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sys
 
-from oc_apprentice_worker.setup_vlm import (
+from agenthandover_worker.setup_vlm import (
     check_vlm_available,
     detect_platform,
     install_vlm,
@@ -69,13 +69,13 @@ class TestInstallVLM:
         assert cmd[1] == "-m"
         assert cmd[2] == "pip"
         assert cmd[3] == "install"
-        assert "oc-apprentice-worker[vlm-apple]" in cmd[4]
+        assert "agenthandover-worker[vlm-apple]" in cmd[4]
         captured = capsys.readouterr()
         assert "Would run" in captured.out
 
     def test_cpu_extras_dry_run(self, capsys) -> None:
         cmd = install_vlm("vlm-cpu", dry_run=True)
-        assert "oc-apprentice-worker[vlm-cpu]" in cmd[4]
+        assert "agenthandover-worker[vlm-cpu]" in cmd[4]
 
 
 class TestMain:

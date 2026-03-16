@@ -11,9 +11,9 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from oc_apprentice_worker.knowledge_base import KnowledgeBase
-from oc_apprentice_worker.lifecycle_manager import LifecycleManager, ProcedureLifecycle
-from oc_apprentice_worker.procedure_curator import (
+from agenthandover_worker.knowledge_base import KnowledgeBase
+from agenthandover_worker.lifecycle_manager import LifecycleManager, ProcedureLifecycle
+from agenthandover_worker.procedure_curator import (
     CurationItem,
     CurationSummary,
     DriftReport,
@@ -21,8 +21,8 @@ from oc_apprentice_worker.procedure_curator import (
     ProcedureCurator,
     UpgradeCandidate,
 )
-from oc_apprentice_worker.staleness_detector import StalenessDetector
-from oc_apprentice_worker.trust_advisor import TrustAdvisor
+from agenthandover_worker.staleness_detector import StalenessDetector
+from agenthandover_worker.trust_advisor import TrustAdvisor
 
 
 # ---- Fixtures ----
@@ -47,7 +47,7 @@ def _make_proc(
     **overrides,
 ):
     """Build and return a v3 procedure dict."""
-    from oc_apprentice_worker.procedure_schema import sop_to_procedure
+    from agenthandover_worker.procedure_schema import sop_to_procedure
 
     template = {
         "slug": slug,

@@ -62,17 +62,17 @@ pub struct WorkerStatus {
     pub vlm_provider: Option<String>,
 }
 
-/// Standard data directory for OpenMimic.
+/// Standard data directory for AgentHandover.
 ///
 /// Used by status files, PID files, logs, database, and artifacts.
-/// - macOS: `~/Library/Application Support/oc-apprentice`
-/// - Linux: `~/.local/share/oc-apprentice`
+/// - macOS: `~/Library/Application Support/agenthandover`
+/// - Linux: `~/.local/share/agenthandover`
 pub fn data_dir() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
     if cfg!(target_os = "macos") {
-        PathBuf::from(home).join("Library/Application Support/oc-apprentice")
+        PathBuf::from(home).join("Library/Application Support/agenthandover")
     } else {
-        PathBuf::from(home).join(".local/share/oc-apprentice")
+        PathBuf::from(home).join(".local/share/agenthandover")
     }
 }
 

@@ -1,11 +1,11 @@
 [package]
-name = "oc-apprentice-test-harness"
+name = "agenthandover-test-harness"
 version.workspace = true
 edition.workspace = true
 
 [dependencies]
-oc-apprentice-common = { path = "../common" }
-oc-apprentice-storage = { path = "../storage" }
+agenthandover-common = { path = "../common" }
+agenthandover-storage = { path = "../storage" }
 serde.workspace = true
 serde_json.workspace = true
 anyhow.workspace = true

@@ -14,7 +14,7 @@ import math
 
 import pytest
 
-from oc_apprentice_worker.variant_detector import (
+from agenthandover_worker.variant_detector import (
     AlignedStep,
     ParameterExtraction,
     VariantDetector,

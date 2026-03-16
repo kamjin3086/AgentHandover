@@ -1,6 +1,6 @@
-# OpenMimicBible
+# AgentHandoverBible
 
-> **OpenMimic is a knowledge capture system that turns human expertise into agent capability.** You work normally. OpenMimic watches. Over time, any AI agent that connects to OpenMimic can do your routine work because it has your exact procedures, your preferences, your decision logic, your accounts, your context.
+> **AgentHandover is a knowledge capture system that turns human expertise into agent capability.** You work normally. AgentHandover watches. Over time, any AI agent that connects to AgentHandover can do your routine work because it has your exact procedures, your preferences, your decision logic, your accounts, your context.
 >
 > **The product isn't the SOPs. The product is a portable, growing, machine-readable model of how you work.**
 
@@ -8,7 +8,7 @@
 
 ## 1. The Two Consumers
 
-Everything OpenMimic produces serves two audiences from the same raw data.
+Everything AgentHandover produces serves two audiences from the same raw data.
 
 ### The AI Agent (Primary Consumer)
 

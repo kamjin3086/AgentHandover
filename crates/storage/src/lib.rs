@@ -4,7 +4,7 @@ pub mod artifact_store;
 pub mod maintenance;
 
 use anyhow::Result;
-use oc_apprentice_common::event::*;
+use agenthandover_common::event::*;
 use rusqlite::{params, Connection};
 use std::path::{Path, PathBuf};
 use tracing::info;

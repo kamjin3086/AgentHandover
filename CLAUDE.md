@@ -1,4 +1,4 @@
-## **OpemMimic**
+## **AgentHandover**
 
 **Goal:** Build a local, always‑on “apprentice” subsystem that **silently observes** your normal day‑to‑day laptop work (without taking actions yet), **learns your workflows**, and produces robust, maintainable **semantic SOPs** that agents like OpenClaw can later execute safely.
 

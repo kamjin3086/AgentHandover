@@ -1,5 +1,5 @@
 use chrono::Utc;
-use oc_apprentice_common::status::{DaemonStatus, ExtensionHeartbeat, WorkerStatus};
+use agenthandover_common::status::{DaemonStatus, ExtensionHeartbeat, WorkerStatus};
 use std::sync::Mutex;
 
 /// Mutex to serialize tests that modify the HOME env var (process-global state).
@@ -97,11 +97,11 @@ fn write_and_read_daemon_status_file() {
     std::env::set_var("HOME", tmp.path());
 
     let status = sample_daemon_status();
-    oc_apprentice_common::status::write_status_file("daemon-status.json", &status)
+    agenthandover_common::status::write_status_file("daemon-status.json", &status)
         .expect("write status file");
 
     let read_back: DaemonStatus =
-        oc_apprentice_common::status::read_status_file("daemon-status.json")
+        agenthandover_common::status::read_status_file("daemon-status.json")
             .expect("read status file");
 
     // Restore HOME before assertions (so panics don't leave it wrong)
@@ -123,11 +123,11 @@ fn write_and_read_worker_status_file() {
     std::env::set_var("HOME", tmp.path());
 
     let status = sample_worker_status();
-    oc_apprentice_common::status::write_status_file("worker-status.json", &status)
+    agenthandover_common::status::write_status_file("worker-status.json", &status)
         .expect("write status file");
 
     let read_back: WorkerStatus =
-        oc_apprentice_common::status::read_status_file("worker-status.json")
+        agenthandover_common::status::read_status_file("worker-status.json")
             .expect("read status file");
 
     if let Some(home) = original_home {
@@ -146,7 +146,7 @@ fn read_nonexistent_status_file_returns_error() {
     let original_home = std::env::var("HOME").ok();
     std::env::set_var("HOME", tmp.path());
 
-    let result = oc_apprentice_common::status::read_status_file::<DaemonStatus>("nonexistent.json");
+    let result = agenthandover_common::status::read_status_file::<DaemonStatus>("nonexistent.json");
 
     if let Some(home) = original_home {
         std::env::set_var("HOME", home);
@@ -163,14 +163,14 @@ fn write_status_creates_directory_if_missing() {
     std::env::set_var("HOME", tmp.path());
 
     let expected_dir = if cfg!(target_os = "macos") {
-        tmp.path().join("Library/Application Support/oc-apprentice")
+        tmp.path().join("Library/Application Support/agenthandover")
     } else {
-        tmp.path().join(".local/share/oc-apprentice")
+        tmp.path().join(".local/share/agenthandover")
     };
     assert!(!expected_dir.exists());
 
     let status = sample_daemon_status();
-    oc_apprentice_common::status::write_status_file("daemon-status.json", &status)
+    agenthandover_common::status::write_status_file("daemon-status.json", &status)
         .expect("write status file");
 
     let dir_exists = expected_dir.exists();
@@ -191,16 +191,16 @@ fn atomic_write_overwrites_previous_status() {
 
     let mut status = sample_daemon_status();
     status.events_today = 10;
-    oc_apprentice_common::status::write_status_file("daemon-status.json", &status)
+    agenthandover_common::status::write_status_file("daemon-status.json", &status)
         .expect("write first");
 
     status.events_today = 99;
     status.heartbeat = Utc::now();
-    oc_apprentice_common::status::write_status_file("daemon-status.json", &status)
+    agenthandover_common::status::write_status_file("daemon-status.json", &status)
         .expect("write second");
 
     let read_back: DaemonStatus =
-        oc_apprentice_common::status::read_status_file("daemon-status.json")
+        agenthandover_common::status::read_status_file("daemon-status.json")
             .expect("read back");
 
     if let Some(home) = original_home {
@@ -296,14 +296,14 @@ fn write_and_read_extension_heartbeat_file() {
     std::env::set_var("HOME", tmp.path());
 
     let heartbeat = sample_extension_heartbeat();
-    oc_apprentice_common::status::write_status_file(
-        oc_apprentice_common::status::EXTENSION_HEARTBEAT_FILE,
+    agenthandover_common::status::write_status_file(
+        agenthandover_common::status::EXTENSION_HEARTBEAT_FILE,
         &heartbeat,
     )
     .expect("write heartbeat file");
 
-    let read_back: ExtensionHeartbeat = oc_apprentice_common::status::read_status_file(
-        oc_apprentice_common::status::EXTENSION_HEARTBEAT_FILE,
+    let read_back: ExtensionHeartbeat = agenthandover_common::status::read_status_file(
+        agenthandover_common::status::EXTENSION_HEARTBEAT_FILE,
     )
     .expect("read heartbeat file");
 
@@ -324,13 +324,13 @@ fn read_extension_heartbeat_fresh_returns_some() {
 
     // Write a heartbeat with a recent timestamp
     let heartbeat = sample_extension_heartbeat();
-    oc_apprentice_common::status::write_status_file(
-        oc_apprentice_common::status::EXTENSION_HEARTBEAT_FILE,
+    agenthandover_common::status::write_status_file(
+        agenthandover_common::status::EXTENSION_HEARTBEAT_FILE,
         &heartbeat,
     )
     .expect("write");
 
-    let result = oc_apprentice_common::status::read_extension_heartbeat();
+    let result = agenthandover_common::status::read_extension_heartbeat();
 
     if let Some(home) = original_home {
         std::env::set_var("HOME", home);
@@ -353,13 +353,13 @@ fn read_extension_heartbeat_stale_returns_none() {
         messages_this_session: 10,
         session_started: Utc::now() - chrono::Duration::minutes(10),
     };
-    oc_apprentice_common::status::write_status_file(
-        oc_apprentice_common::status::EXTENSION_HEARTBEAT_FILE,
+    agenthandover_common::status::write_status_file(
+        agenthandover_common::status::EXTENSION_HEARTBEAT_FILE,
         &stale_heartbeat,
     )
     .expect("write");
 
-    let result = oc_apprentice_common::status::read_extension_heartbeat();
+    let result = agenthandover_common::status::read_extension_heartbeat();
 
     if let Some(home) = original_home {
         std::env::set_var("HOME", home);
@@ -376,7 +376,7 @@ fn read_extension_heartbeat_missing_file_returns_none() {
     std::env::set_var("HOME", tmp.path());
 
     // Don't write any heartbeat file
-    let result = oc_apprentice_common::status::read_extension_heartbeat();
+    let result = agenthandover_common::status::read_extension_heartbeat();
 
     if let Some(home) = original_home {
         std::env::set_var("HOME", home);
@@ -455,7 +455,7 @@ fn worker_status_deserialize_with_extra_vlm_fields() {
 
 #[test]
 fn vlm_config_defaults() {
-    let config = oc_apprentice_common::config::AppConfig::default();
+    let config = agenthandover_common::config::AppConfig::default();
     assert_eq!(config.vlm.mode, "local");
     assert!(config.vlm.provider.is_none());
     assert!(config.vlm.model.is_none());
@@ -477,7 +477,7 @@ max_queue_size = 500
 job_ttl_days = 7
 max_compute_minutes_per_day = 20
 "#;
-    let config = oc_apprentice_common::config::AppConfig::from_toml_str(toml_str)
+    let config = agenthandover_common::config::AppConfig::from_toml_str(toml_str)
         .expect("parse config");
     assert_eq!(config.vlm.mode, "remote");
     assert_eq!(config.vlm.provider, Some("openai".to_string()));
@@ -487,7 +487,7 @@ max_compute_minutes_per_day = 20
 
 #[test]
 fn llm_config_defaults() {
-    let config = oc_apprentice_common::config::AppConfig::default();
+    let config = agenthandover_common::config::AppConfig::default();
     assert!(config.llm.enhance_sops);
     assert_eq!(config.llm.max_enhancements_per_day, 20);
     assert_eq!(config.llm.model, "");
@@ -507,7 +507,7 @@ timeout_seconds = 30
 temperature = 0.5
 max_tokens = 400
 "#;
-    let config = oc_apprentice_common::config::AppConfig::from_toml_str(toml_str)
+    let config = agenthandover_common::config::AppConfig::from_toml_str(toml_str)
         .expect("parse config");
     assert!(!config.llm.enhance_sops);
     assert_eq!(config.llm.max_enhancements_per_day, 5);

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from oc_apprentice_worker.account_detector import AccountContext, AccountDetector
+from agenthandover_worker.account_detector import AccountContext, AccountDetector
 
 
 @pytest.fixture()

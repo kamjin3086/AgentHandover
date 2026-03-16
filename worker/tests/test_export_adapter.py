@@ -4,10 +4,10 @@ import json
 import pytest
 from pathlib import Path
 
-from oc_apprentice_worker.export_adapter import SOPExportAdapter
-from oc_apprentice_worker.openclaw_writer import OpenClawWriter
-from oc_apprentice_worker.generic_writer import GenericWriter
-from oc_apprentice_worker.sop_schema import sop_to_json, validate_sop_json, SOP_SCHEMA_VERSION
+from agenthandover_worker.export_adapter import SOPExportAdapter
+from agenthandover_worker.openclaw_writer import OpenClawWriter
+from agenthandover_worker.generic_writer import GenericWriter
+from agenthandover_worker.sop_schema import sop_to_json, validate_sop_json, SOP_SCHEMA_VERSION
 
 
 class TestSOPExportAdapterInterface:

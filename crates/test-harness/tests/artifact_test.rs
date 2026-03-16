@@ -1,4 +1,4 @@
-use oc_apprentice_test_harness::artifact::{ArtifactRecorder, ArtifactReplayer};
+use agenthandover_test_harness::artifact::{ArtifactRecorder, ArtifactReplayer};
 use tempfile::TempDir;
 use uuid::Uuid;
 

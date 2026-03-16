@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from oc_apprentice_worker.knowledge_base import KnowledgeBase
-from oc_apprentice_worker.knowledge_export_adapter import KnowledgeBaseExportAdapter
+from agenthandover_worker.knowledge_base import KnowledgeBase
+from agenthandover_worker.knowledge_export_adapter import KnowledgeBaseExportAdapter
 
 
 @pytest.fixture()

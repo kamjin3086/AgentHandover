@@ -1,4 +1,4 @@
-//! Interactive setup wizard for OpenMimic.
+//! Interactive setup wizard for AgentHandover.
 //!
 //! Walks through permissions, services, Chrome extension, and VLM setup.
 //! Supports `--check` (dry-run), `--extension` (extension only), and
@@ -6,26 +6,26 @@
 
 use anyhow::Result;
 use colored::Colorize;
-use oc_apprentice_common::{config::AppConfig, pid, status};
+use agenthandover_common::{config::AppConfig, pid, status};
 
 use crate::paths;
 
 /// Chrome Native Messaging host name -- must match `crates/daemon/src/ipc/native_messaging.rs:26`
-const NM_HOST_NAME: &str = "com.openclaw.apprentice";
+const NM_HOST_NAME: &str = "com.agenthandover.host";
 /// Chrome extension ID derived from the RSA key in `extension/manifest.json`.
 const EXTENSION_ID: &str = "knldjmfmopnpolahpmmgbagdohdnhkik";
 
-/// Detect which install channel produced this OpenMimic installation.
+/// Detect which install channel produced this AgentHandover installation.
 fn detect_install_channel() -> &'static str {
     // Check for pkg install
-    if std::path::Path::new("/usr/local/bin/oc-apprentice-daemon").exists()
-        && std::path::Path::new("/usr/local/lib/openmimic").exists()
+    if std::path::Path::new("/usr/local/bin/agenthandover-daemon").exists()
+        && std::path::Path::new("/usr/local/lib/agenthandover").exists()
     {
         return "pkg";
     }
     // Check for Homebrew
     if let Ok(output) = std::process::Command::new("brew")
-        .args(["--prefix", "openmimic"])
+        .args(["--prefix", "agenthandover"])
         .output()
     {
         if output.status.success() {
@@ -50,9 +50,9 @@ fn load_config() -> Result<AppConfig> {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
     let path = if cfg!(target_os = "macos") {
         std::path::PathBuf::from(&home)
-            .join("Library/Application Support/oc-apprentice/config.toml")
+            .join("Library/Application Support/agenthandover/config.toml")
     } else {
-        std::path::PathBuf::from(&home).join(".config/oc-apprentice/config.toml")
+        std::path::PathBuf::from(&home).join(".config/agenthandover/config.toml")
     };
     if path.exists() {
         Ok(AppConfig::from_file(&path)?)
@@ -66,7 +66,7 @@ fn load_config() -> Result<AppConfig> {
 /// `check_only`: just report status, don't modify anything.
 /// `extension_only` / `vlm_only`: run only that step.
 pub fn run(check_only: bool, extension_only: bool, vlm_only: bool) -> Result<()> {
-    println!("{}", "OpenMimic Setup".bold());
+    println!("{}", "AgentHandover Setup".bold());
     println!("{}", "=".repeat(50));
     println!();
 
@@ -105,7 +105,7 @@ pub fn run(check_only: bool, extension_only: bool, vlm_only: bool) -> Result<()>
     }
     println!(
         "Run {} to verify everything is working.",
-        "openmimic status".cyan()
+        "agenthandover status".cyan()
     );
 
     Ok(())
@@ -131,7 +131,7 @@ fn step_permissions(check_only: bool) -> Result<()> {
             open_accessibility_settings();
             println!(
                 "    {}",
-                "Add OpenMimic (or Terminal) and toggle ON.".dimmed()
+                "Add AgentHandover (or Terminal) and toggle ON.".dimmed()
             );
         }
     }
@@ -234,7 +234,7 @@ fn step_services(check_only: bool) -> Result<()> {
         println!("  {} Daemon {}", "✗".red(), "not running".red());
         if !check_only {
             println!("    Starting daemon...");
-            if !start_service("com.openmimic.daemon") {
+            if !start_service("com.agenthandover.daemon") {
                 failures.push("daemon failed to start".to_string());
             }
         }
@@ -246,7 +246,7 @@ fn step_services(check_only: bool) -> Result<()> {
         println!("  {} Worker {}", "✗".red(), "not running".red());
         if !check_only {
             println!("    Starting worker...");
-            if !start_service("com.openmimic.worker") {
+            if !start_service("com.agenthandover.worker") {
                 failures.push("worker failed to start".to_string());
             }
         }
@@ -277,12 +277,12 @@ fn start_service(label: &str) -> bool {
         let channel = detect_install_channel();
         match channel {
             "pkg" => println!("    Re-run the .pkg installer to repair."),
-            "homebrew" => println!("    Run {} to install plists.", "brew reinstall openmimic".cyan()),
+            "homebrew" => println!("    Run {} to install plists.", "brew reinstall agenthandover".cyan()),
             "source" => println!(
                 "    Run: {} and copy plists to ~/Library/LaunchAgents/",
                 "just build-all".cyan()
             ),
-            _ => println!("    Re-install OpenMimic ({} recommended).", ".pkg".cyan()),
+            _ => println!("    Re-install AgentHandover ({} recommended).", ".pkg".cyan()),
         }
         return false;
     }
@@ -312,7 +312,7 @@ fn start_service(label: &str) -> bool {
             "⚠".yellow(),
             label,
             if stderr.is_empty() {
-                String::from(". Verify with: openmimic status")
+                String::from(". Verify with: agenthandover status")
             } else {
                 format!(": {}", stderr)
             }
@@ -327,7 +327,7 @@ fn start_service(label: &str) -> bool {
 
 /// Install the Native Messaging host manifest for all detected Chromium browsers.
 ///
-/// Writes `com.openclaw.apprentice.json` containing the daemon path and
+/// Writes `com.agenthandover.host.json` containing the daemon path and
 /// allowed_origins so the extension can connect.
 fn install_native_messaging_manifest() -> Result<bool> {
     let daemon_path = match paths::find_daemon_binary() {
@@ -336,11 +336,11 @@ fn install_native_messaging_manifest() -> Result<bool> {
             println!(
                 "  {} Could not find {} binary",
                 "⚠".yellow(),
-                "oc-apprentice-daemon".bold()
+                "agenthandover-daemon".bold()
             );
             println!(
                 "    Build with: {} or {}",
-                "cargo build --release -p oc-apprentice-daemon".cyan(),
+                "cargo build --release -p agenthandover-daemon".cyan(),
                 "just build-all".cyan()
             );
             return Ok(false);
@@ -355,7 +355,7 @@ fn install_native_messaging_manifest() -> Result<bool> {
 
     let manifest = serde_json::json!({
         "name": NM_HOST_NAME,
-        "description": "OpenMimic Observer Bridge",
+        "description": "AgentHandover Observer Bridge",
         "path": daemon_path.display().to_string(),
         "type": "stdio",
         "allowed_origins": [format!("chrome-extension://{}/", EXTENSION_ID)]
@@ -520,7 +520,7 @@ fn step_chrome_extension(check_only: bool) -> Result<()> {
             );
             println!(
                 "    The extension may still work — check {} later.",
-                "openmimic status".cyan()
+                "agenthandover status".cyan()
             );
         }
         None => {
@@ -532,12 +532,12 @@ fn step_chrome_extension(check_only: bool) -> Result<()> {
             let channel = detect_install_channel();
             match channel {
                 "pkg" => println!("    Re-run the .pkg installer to repair."),
-                "homebrew" => println!("    Run: {}", "brew reinstall openmimic".cyan()),
+                "homebrew" => println!("    Run: {}", "brew reinstall agenthandover".cyan()),
                 "source" => println!(
                     "    Build from source: {}",
                     "cd extension && npm install && npm run build".cyan()
                 ),
-                _ => println!("    Re-install OpenMimic ({} recommended).", ".pkg".cyan()),
+                _ => println!("    Re-install AgentHandover ({} recommended).", ".pkg".cyan()),
             }
         }
     }
@@ -654,7 +654,7 @@ fn step_vlm(check_only: bool) -> Result<()> {
             );
 
             if check_only {
-                println!("    Run {} to pull a model.", "openmimic setup --vlm".cyan());
+                println!("    Run {} to pull a model.", "agenthandover setup --vlm".cyan());
                 return Ok(());
             }
 
@@ -682,7 +682,7 @@ fn step_vlm(check_only: bool) -> Result<()> {
                     );
                     println!(
                         "    Restart the worker to activate: {}",
-                        "openmimic restart worker".cyan()
+                        "agenthandover restart worker".cyan()
                     );
                 }
                 Ok(exit) => {
@@ -716,7 +716,7 @@ fn step_vlm(check_only: bool) -> Result<()> {
                 );
                 println!(
                     "    Then run {} again.",
-                    "openmimic setup --vlm".cyan()
+                    "agenthandover setup --vlm".cyan()
                 );
             }
         }
