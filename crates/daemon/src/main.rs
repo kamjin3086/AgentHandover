@@ -458,10 +458,9 @@ async fn main() -> Result<()> {
             }
         };
         let key = derive_machine_key();
-        let legacy_key = derive_legacy_machine_key();
 
         Some(std::sync::Arc::new(
-            ArtifactStore::new(artifact_dir, key).with_fallback_key(legacy_key),
+            ArtifactStore::new(artifact_dir, key),
         ))
     };
 
@@ -712,17 +711,6 @@ fn derive_machine_key() -> [u8; 32] {
     let machine_id = get_machine_id();
     let mut hasher = Sha256::new();
     hasher.update(format!("agenthandover-{}-artifact-key-v1", machine_id).as_bytes());
-    hasher.finalize().into()
-}
-
-/// Derive the legacy encryption key (pre-rename "openmimic-" prefix).
-///
-/// Used as a fallback when decrypting artifacts that were encrypted before
-/// the product rename from OpenMimic to AgentHandover.
-fn derive_legacy_machine_key() -> [u8; 32] {
-    let machine_id = get_machine_id();
-    let mut hasher = Sha256::new();
-    hasher.update(format!("openmimic-{}-artifact-key-v1", machine_id).as_bytes());
     hasher.finalize().into()
 }
 

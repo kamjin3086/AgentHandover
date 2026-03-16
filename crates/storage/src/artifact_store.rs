@@ -36,9 +36,6 @@ pub struct ArtifactMeta {
 pub struct ArtifactStore {
     base_path: PathBuf,
     key: [u8; 32],
-    /// Optional legacy key for backward-compatible decryption of artifacts
-    /// encrypted before the product rename (openmimic -> agenthandover).
-    fallback_key: Option<[u8; 32]>,
     /// Cache of artifact_id -> file path to avoid repeated recursive directory scans.
     path_cache: RwLock<HashMap<String, PathBuf>>,
 }
@@ -48,20 +45,8 @@ impl ArtifactStore {
         Self {
             base_path,
             key,
-            fallback_key: None,
             path_cache: RwLock::new(HashMap::new()),
         }
-    }
-
-    /// Set a legacy fallback key for backward-compatible decryption.
-    ///
-    /// When `retrieve()` fails to decrypt with the primary key, it will
-    /// retry with this fallback key before returning an error.  This
-    /// supports reading artifacts encrypted with the old "openmimic-"
-    /// key prefix after the rename to "agenthandover-".
-    pub fn with_fallback_key(mut self, fallback_key: [u8; 32]) -> Self {
-        self.fallback_key = Some(fallback_key);
-        self
     }
 
     /// Store: capture -> compress -> encrypt -> write (spec order from §6.2)
@@ -173,28 +158,12 @@ impl ArtifactStore {
         );
         let encrypted = &raw[header_size..];
 
-        // Decrypt — try primary key first, then fall back to legacy key
+        // Decrypt
         let nonce = XNonce::from_slice(nonce_bytes);
         let cipher = XChaCha20Poly1305::new((&self.key).into());
-        let compressed = match cipher.decrypt(nonce, encrypted) {
-            Ok(data) => data,
-            Err(primary_err) => {
-                // If a fallback key is configured, try it before failing.
-                // This supports reading artifacts encrypted with the old
-                // "openmimic-" key prefix after the rename to "agenthandover-".
-                if let Some(ref fallback) = self.fallback_key {
-                    let fallback_cipher = XChaCha20Poly1305::new(fallback.into());
-                    fallback_cipher
-                        .decrypt(nonce, encrypted)
-                        .map_err(|_| anyhow::anyhow!(
-                            "Decryption failed with both primary and fallback keys: {}",
-                            primary_err
-                        ))?
-                } else {
-                    return Err(anyhow::anyhow!("Decryption failed: {}", primary_err));
-                }
-            }
-        };
+        let compressed = cipher
+            .decrypt(nonce, encrypted)
+            .map_err(|e| anyhow::anyhow!("Decryption failed: {}", e))?;
 
         // Decompress
         let data = zstd::decode_all(compressed.as_slice())?;
