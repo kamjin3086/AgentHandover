@@ -36,9 +36,9 @@ struct OnboardingView: View {
 
         var defaultModel: String {
             switch self {
-            case .openai: return "gpt-4o-mini"
-            case .anthropic: return "claude-sonnet-4-20250514"
-            case .google: return "gemini-2.0-flash"
+            case .openai: return "gpt-4.1-mini"
+            case .anthropic: return "claude-sonnet-4-6-20260320"
+            case .google: return "gemini-2.5-flash"
             }
         }
 
@@ -54,6 +54,7 @@ struct OnboardingView: View {
     @State private var vlmMode: VLMMode = .local
     @State private var selectedProvider: RemoteProvider = .openai
     @State private var apiKeyInput: String = ""
+    @State private var customModelName: String = ""
     @State private var apiKeyValidating = false
     @State private var apiKeyValid: Bool? = nil
     @State private var remoteConsentGiven = false
@@ -411,7 +412,7 @@ struct OnboardingView: View {
                         ProgressView()
                             .progressViewStyle(.circular)
                             .controlSize(.small)
-                        Text("Pulling required models...")
+                        Text("Pulling models...")
                             .font(.caption)
                             .foregroundColor(.secondary)
                         if !vlmPullOutput.isEmpty {
@@ -423,10 +424,28 @@ struct OnboardingView: View {
                         }
                     }
                 } else {
-                    Button("Pull Recommended Models (qwen3.5:2b + 4b)") {
-                        pullOllamaModel()
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Recommended models (~6 GB total):")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            modelRow("qwen3.5:2b", "2.7 GB", "Screen annotation — reads your screen and describes what you're doing")
+                            modelRow("qwen3.5:4b", "3.4 GB", "SOP generation — writes step-by-step procedures from observations")
+                            modelRow("all-minilm:l6-v2", "45 MB", "Task matching — groups similar work together")
+                        }
+
+                        Button("Pull All Recommended Models") {
+                            pullOllamaModel()
+                        }
+                        .buttonStyle(.borderedProminent)
+
+                        Text("Or use any Ollama-compatible model — edit annotation_model and sop_model in config.toml after setup.")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                            .frame(maxWidth: 380)
                     }
-                    .buttonStyle(.bordered)
+                    .frame(maxWidth: 400)
                 }
             } else {
                 Text("Ollama not installed")
@@ -481,8 +500,21 @@ struct OnboardingView: View {
                 }
                 .pickerStyle(.menu)
                 .frame(maxWidth: 280)
+                .onChange(of: selectedProvider) { _ in
+                    customModelName = ""
+                }
 
-                Text("Default model: \(selectedProvider.defaultModel)")
+                // Model selection
+                HStack(spacing: 8) {
+                    Text("Model:")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    TextField("Model name", text: $customModelName)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(maxWidth: 220)
+                }
+
+                Text("Default: \(selectedProvider.defaultModel)")
                     .font(.caption2)
                     .foregroundColor(.secondary)
 
@@ -491,7 +523,7 @@ struct OnboardingView: View {
                     .textFieldStyle(.roundedBorder)
                     .frame(maxWidth: 300)
 
-                Text("Key will be stored in env var: \(selectedProvider.envVar)")
+                Text("Stored securely in macOS Keychain")
                     .font(.caption2)
                     .foregroundColor(.secondary)
 
@@ -536,7 +568,7 @@ struct OnboardingView: View {
             if stored {
                 writeRemoteVLMConfig(
                     provider: selectedProvider.rawValue,
-                    model: selectedProvider.defaultModel,
+                    model: customModelName.isEmpty ? selectedProvider.defaultModel : customModelName,
                     apiKeyEnv: selectedProvider.envVar
                 )
             }
@@ -732,6 +764,28 @@ struct OnboardingView: View {
             "/opt/homebrew/bin/ollama",
         ]
         return paths.first { FileManager.default.fileExists(atPath: $0) }
+    }
+
+    private func modelRow(_ name: String, _ size: String, _ description: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Text("•")
+                .foregroundColor(.orange)
+                .font(.caption)
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 6) {
+                    Text(name)
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .fontDesign(.monospaced)
+                    Text(size)
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+                Text(description)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+        }
     }
 
     private func pullOllamaModel() {
