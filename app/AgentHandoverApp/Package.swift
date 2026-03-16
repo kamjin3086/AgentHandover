@@ -10,7 +10,10 @@ let package = Package(
         .executableTarget(
             name: "AgentHandoverApp",
             path: "Sources/AgentHandoverApp",
-            exclude: ["Info.plist"]
+            exclude: ["Info.plist"],
+            resources: [
+                .process("Resources/Assets.xcassets"),
+            ]
         ),
     ]
 )

@@ -163,15 +163,21 @@ struct OnboardingView: View {
 
     private var welcomeStep: some View {
         VStack(spacing: 16) {
-            Image(systemName: "eye.circle.fill")
+            Image(systemName: "briefcase.fill")
                 .font(.system(size: 48))
-                .foregroundColor(.accentColor)
+                .foregroundColor(.orange)
 
             Text("Welcome to AgentHandover")
                 .font(.title2)
                 .fontWeight(.semibold)
 
-            Text("AgentHandover silently observes your workflows and generates semantic SOPs that AI agents can execute.")
+            Text("Watch your screen. Learn your workflows. Hand them to agents.")
+                .font(.headline)
+                .foregroundColor(.primary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 400)
+
+            Text("AgentHandover silently observes your work, learns repeatable patterns, and produces procedure files that AI agents like Claude Code and OpenClaw can follow.")
                 .font(.body)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
@@ -585,7 +591,7 @@ struct OnboardingView: View {
                 .font(.title2)
                 .fontWeight(.semibold)
 
-            Text("AgentHandover will now observe your workflows in the background. Check the menu bar icon for status. SOPs appear once enough patterns are detected.")
+            Text("AgentHandover will now observe your workflows in the background. Look for the briefcase icon in your menu bar. Procedures appear once repeated patterns are detected.")
                 .font(.body)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)

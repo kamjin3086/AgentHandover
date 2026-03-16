@@ -115,10 +115,10 @@ final class AppState: ObservableObject {
 
     var menuBarIcon: String {
         switch health {
-        case .healthy: return "eye.circle.fill"
-        case .warning: return "exclamationmark.triangle.fill"
-        case .down:    return "eye.slash.circle.fill"
-        case .stopped: return "pause.circle.fill"
+        case .healthy: return "briefcase.fill"
+        case .warning: return "briefcase.badge.clock"
+        case .down:    return "briefcase"
+        case .stopped: return "briefcase"
         }
     }
 

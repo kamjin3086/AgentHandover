@@ -25,8 +25,11 @@ struct AgentHandoverApp: App {
             Label {
                 Text("AgentHandover")
             } icon: {
-                Image(systemName: appState.menuBarIcon)
-                    .symbolRenderingMode(.palette)
+                if let nsImage = NSImage(named: "MenuBarIcon") {
+                    Image(nsImage: nsImage)
+                } else {
+                    Image(systemName: appState.menuBarIcon)
+                }
             }
         }
         .menuBarExtraStyle(.window)
