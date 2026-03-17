@@ -9,7 +9,7 @@ Key features:
 - 3-frame sliding window context (time-bounded to 10 minutes)
 - Stale-frame skipping: 3+ consecutive same-app non-workflow → skip
 - JSON validation with markdown-fence stripping and one retry
-- Screenshot lifecycle: delete JPEG only after successful annotation
+- Screenshot lifecycle: delete JPEG after VLM processes it (success or failure)
 """
 
 from __future__ import annotations
@@ -50,7 +50,7 @@ class AnnotationConfig:
     stale_skip_count: int = 3
     sliding_window_size: int = 3
     sliding_window_max_age_sec: int = 600
-    delete_screenshot_on_success: bool = True
+    delete_screenshot_after_processing: bool = True
 
 
 @dataclass
@@ -449,6 +449,7 @@ class SceneAnnotator:
             )
         except ConnectionError as exc:
             self._stats["failed"] += 1
+            self._delete_screenshot(screenshot_path)
             return AnnotationResult(
                 event_id=event_id,
                 status="failed",
@@ -456,6 +457,7 @@ class SceneAnnotator:
             )
         except Exception as exc:
             self._stats["failed"] += 1
+            self._delete_screenshot(screenshot_path)
             return AnnotationResult(
                 event_id=event_id,
                 status="failed",
@@ -486,6 +488,12 @@ class SceneAnnotator:
             except Exception:
                 pass
 
+        # --- Delete screenshot after VLM processing (success or failure) ---
+        # The raw JPEG has no further value — only the structured annotation
+        # matters. Leaving unencrypted JPEGs on disk after failed annotations
+        # is a privacy risk that maintenance.rs cannot clean up.
+        self._delete_screenshot(screenshot_path)
+
         if annotation is None:
             self._stats["failed"] += 1
             return AnnotationResult(
@@ -498,14 +506,6 @@ class SceneAnnotator:
         # --- Update stale tracker ---
         self._stale.update(annotation)
 
-        # --- Delete screenshot on success ---
-        if self.config.delete_screenshot_on_success and screenshot_path:
-            try:
-                Path(screenshot_path).unlink(missing_ok=True)
-                logger.debug("Deleted screenshot after annotation: %s", screenshot_path)
-            except OSError:
-                logger.debug("Failed to delete screenshot %s", screenshot_path, exc_info=True)
-
         self._stats["annotated"] += 1
         return AnnotationResult(
             event_id=event_id,
@@ -513,6 +513,25 @@ class SceneAnnotator:
             annotation=annotation,
             inference_time_seconds=inference_time,
         )
+
+    # ------------------------------------------------------------------
+    # Screenshot cleanup
+    # ------------------------------------------------------------------
+
+    def _delete_screenshot(self, screenshot_path: str | None) -> None:
+        """Delete a screenshot file if configured to do so.
+
+        Called after the VLM has processed the image, regardless of whether
+        the annotation succeeded or failed.  The annotation JSON is what
+        matters — the raw JPEG has no further value.
+        """
+        if not self.config.delete_screenshot_after_processing or not screenshot_path:
+            return
+        try:
+            Path(screenshot_path).unlink(missing_ok=True)
+            logger.debug("Deleted screenshot after processing: %s", screenshot_path)
+        except OSError:
+            logger.debug("Failed to delete screenshot %s", screenshot_path, exc_info=True)
 
     # ------------------------------------------------------------------
     # Screenshot location

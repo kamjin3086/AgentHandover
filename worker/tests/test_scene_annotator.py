@@ -359,7 +359,7 @@ class TestSceneAnnotator:
         img = tmp_path / "screenshot.jpg"
         img.write_bytes(b"\xff\xd8\xff\xe0" + b"\x00" * 100)
 
-        config = AnnotationConfig(delete_screenshot_on_success=False)
+        config = AnnotationConfig(delete_screenshot_after_processing=False)
         annotator = SceneAnnotator(config)
 
         event = {
@@ -411,7 +411,7 @@ class TestSceneAnnotator:
                 return "not json", 0.5
             return _canned_vlm_response(), 1.0
 
-        config = AnnotationConfig(delete_screenshot_on_success=False)
+        config = AnnotationConfig(delete_screenshot_after_processing=False)
         annotator = SceneAnnotator(config)
 
         event = {
@@ -437,7 +437,7 @@ class TestSceneAnnotator:
         img = tmp_path / "screenshot.jpg"
         img.write_bytes(b"\xff\xd8\xff\xe0" + b"\x00" * 100)
 
-        config = AnnotationConfig(delete_screenshot_on_success=False)
+        config = AnnotationConfig(delete_screenshot_after_processing=False)
         annotator = SceneAnnotator(config)
 
         event = {
@@ -463,7 +463,7 @@ class TestSceneAnnotator:
         img = tmp_path / "screenshot.jpg"
         img.write_bytes(b"\xff\xd8\xff\xe0" + b"\x00" * 100)
 
-        config = AnnotationConfig(delete_screenshot_on_success=False)
+        config = AnnotationConfig(delete_screenshot_after_processing=False)
         annotator = SceneAnnotator(config)
 
         event = {
@@ -488,7 +488,7 @@ class TestSceneAnnotator:
         img = tmp_path / "screenshot.jpg"
         img.write_bytes(b"\xff\xd8\xff\xe0" + b"\x00" * 100)
 
-        config = AnnotationConfig(delete_screenshot_on_success=False)
+        config = AnnotationConfig(delete_screenshot_after_processing=False)
         annotator = SceneAnnotator(config)
 
         event = {
@@ -542,7 +542,7 @@ class TestSceneAnnotator:
         img = tmp_path / "screenshot.jpg"
         img.write_bytes(b"\xff\xd8\xff\xe0" + b"\x00" * 100)
 
-        config = AnnotationConfig(delete_screenshot_on_success=True)
+        config = AnnotationConfig(delete_screenshot_after_processing=True)
         annotator = SceneAnnotator(config)
 
         event = {
@@ -563,12 +563,12 @@ class TestSceneAnnotator:
         assert result.status == "completed"
         assert not img.exists(), "Screenshot should be deleted after success"
 
-    def test_screenshot_kept_on_failure(self, tmp_path):
-        """Screenshot is NOT deleted when annotation fails."""
+    def test_screenshot_deleted_on_failure(self, tmp_path):
+        """Screenshot is deleted even when annotation fails (privacy fix)."""
         img = tmp_path / "screenshot.jpg"
         img.write_bytes(b"\xff\xd8\xff\xe0" + b"\x00" * 100)
 
-        config = AnnotationConfig(delete_screenshot_on_success=True)
+        config = AnnotationConfig(delete_screenshot_after_processing=True)
         annotator = SceneAnnotator(config)
 
         event = {
@@ -587,14 +587,69 @@ class TestSceneAnnotator:
             result = annotator.annotate_event(event)
 
         assert result.status == "failed"
-        assert img.exists(), "Screenshot should be kept on failure"
+        assert not img.exists(), "Screenshot should be deleted even on failure"
+
+    def test_screenshot_deleted_on_connection_error(self, tmp_path):
+        """Screenshot is deleted when VLM connection fails."""
+        img = tmp_path / "screenshot.jpg"
+        img.write_bytes(b"\xff\xd8\xff\xe0" + b"\x00" * 100)
+
+        config = AnnotationConfig(delete_screenshot_after_processing=True)
+        annotator = SceneAnnotator(config)
+
+        event = {
+            "id": "evt-009b",
+            "timestamp": "2026-03-03T09:14:50.000Z",
+            "artifact_ids_json": '["screenshot"]',
+            "metadata_json": json.dumps({"screenshot_path": str(img)}),
+            "window_json": "{}",
+            "annotation_status": "pending",
+        }
+
+        def _raise_conn(*args, **kwargs):
+            raise ConnectionError("Ollama not reachable")
+
+        with patch(
+            "agenthandover_worker.scene_annotator._call_ollama_vlm",
+            side_effect=_raise_conn,
+        ):
+            result = annotator.annotate_event(event)
+
+        assert result.status == "failed"
+        assert not img.exists(), "Screenshot should be deleted even on connection error"
+
+    def test_screenshot_kept_when_deletion_disabled(self, tmp_path):
+        """Screenshot is kept when delete_screenshot_after_processing is False."""
+        img = tmp_path / "screenshot.jpg"
+        img.write_bytes(b"\xff\xd8\xff\xe0" + b"\x00" * 100)
+
+        config = AnnotationConfig(delete_screenshot_after_processing=False)
+        annotator = SceneAnnotator(config)
+
+        event = {
+            "id": "evt-009c",
+            "timestamp": "2026-03-03T09:14:50.000Z",
+            "artifact_ids_json": '["screenshot"]',
+            "metadata_json": json.dumps({"screenshot_path": str(img)}),
+            "window_json": "{}",
+            "annotation_status": "pending",
+        }
+
+        with patch(
+            "agenthandover_worker.scene_annotator._call_ollama_vlm",
+            side_effect=_canned_vlm_call,
+        ):
+            result = annotator.annotate_event(event)
+
+        assert result.status == "completed"
+        assert img.exists(), "Screenshot should be kept when deletion is disabled"
 
     def test_stats_tracking(self, tmp_path):
         """Stats counters increment correctly."""
         img = tmp_path / "screenshot.jpg"
         img.write_bytes(b"\xff\xd8\xff\xe0" + b"\x00" * 100)
 
-        config = AnnotationConfig(delete_screenshot_on_success=False)
+        config = AnnotationConfig(delete_screenshot_after_processing=False)
         annotator = SceneAnnotator(config)
 
         event = {

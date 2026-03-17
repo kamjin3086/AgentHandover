@@ -96,7 +96,7 @@ struct OnboardingView: View {
 
                 if currentStep < totalSteps - 1 {
                     let vlmStep = 4
-                    let vlmBlocked = currentStep == vlmStep && !appState.vlmAvailable && !remoteConsentGiven
+                    let vlmBlocked = currentStep == vlmStep && !appState.vlmAvailable
 
                     VStack(spacing: 2) {
                         Button("Next") {
@@ -123,7 +123,7 @@ struct OnboardingView: View {
                             }
                         }
                         .buttonStyle(.borderedProminent)
-                        .disabled(!appState.accessibilityGranted)
+                        .disabled(!appState.accessibilityGranted || !appState.vlmAvailable)
 
                         if serviceStartFailed {
                             Text("Services may not have started. Check agenthandover status in Terminal.")
@@ -131,6 +131,10 @@ struct OnboardingView: View {
                                 .foregroundColor(.red)
                         } else if !appState.accessibilityGranted {
                             Text("Accessibility permission is required to start observing")
+                                .font(.caption2)
+                                .foregroundColor(.orange)
+                        } else if !appState.vlmAvailable {
+                            Text("An AI model must be configured before observing (go back to step 5)")
                                 .font(.caption2)
                                 .foregroundColor(.orange)
                         } else if appState.extensionConnected {
@@ -576,6 +580,9 @@ struct OnboardingView: View {
             DispatchQueue.main.async {
                 apiKeyValidating = false
                 apiKeyValid = stored
+                if stored && !apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    appState.vlmAvailable = true
+                }
             }
         }
     }
@@ -852,6 +859,7 @@ struct OnboardingView: View {
             DispatchQueue.main.async {
                 vlmPullInProgress = false
                 vlmPullOutput = "All models downloaded successfully!"
+                appState.vlmAvailable = true
             }
         }
     }

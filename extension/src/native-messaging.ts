@@ -188,24 +188,20 @@ export function sendToNative(type: string, payload: Record<string, unknown> = {}
 }
 
 /**
- * Re-sends messages from the sent buffer that were sent within
- * RESEND_WINDOW_MS before disconnect. Called after a successful reconnect
- * to recover potentially lost messages.
+ * Clears the sent message buffer after a successful reconnect.
+ *
+ * Previously this replayed buffered messages, but the daemon deduplicates
+ * within a single bridge session — not across reconnects.  Replaying caused
+ * duplicate browser events (DOM snapshots, click intents) on every reconnect.
+ *
+ * For a passive observation system, losing a few seconds of events during
+ * a disconnect is acceptable and far preferable to duplicating them.
  */
-export function resendBufferedMessages(): void {
-  if (port === null) {
-    console.warn('[AgentHandover:native] Cannot resend: not connected');
-    return;
-  }
-
-  const cutoff = Date.now() - RESEND_WINDOW_MS;
-  const toResend = sentBuffer.filter((entry) => entry.timestamp >= cutoff);
-
-  if (toResend.length > 0) {
-    console.log('[AgentHandover:native] Resending', toResend.length, 'buffered messages after reconnect');
-    for (const entry of toResend) {
-      port.postMessage(entry.msg);
-    }
+export function clearReconnectBuffer(): void {
+  const dropped = sentBuffer.length;
+  sentBuffer.length = 0;
+  if (dropped > 0) {
+    console.log('[AgentHandover:native] Cleared', dropped, 'buffered messages on reconnect (not replaying to avoid duplicates)');
   }
 }
 

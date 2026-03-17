@@ -1,5 +1,5 @@
 #!/bin/bash
-# OpenMimic pre-install script — stops existing services if upgrading
+# AgentHandover pre-install script — stops existing services if upgrading
 
 # Resolve the real user's home — installer runs as root so $USER may be "root".
 CONSOLE_USER=$(stat -f '%Su' /dev/console 2>/dev/null || echo "$USER")
@@ -9,12 +9,22 @@ if [ -z "$USER_HOME" ] || [ ! -d "$USER_HOME" ]; then
 fi
 LAUNCH_AGENTS="${USER_HOME}/Library/LaunchAgents"
 
-# Stop existing services if they're running
+# Stop existing services if they're running (current names)
+if [ -f "${LAUNCH_AGENTS}/com.agenthandover.daemon.plist" ]; then
+    launchctl unload "${LAUNCH_AGENTS}/com.agenthandover.daemon.plist" 2>/dev/null || true
+fi
+if [ -f "${LAUNCH_AGENTS}/com.agenthandover.worker.plist" ]; then
+    launchctl unload "${LAUNCH_AGENTS}/com.agenthandover.worker.plist" 2>/dev/null || true
+fi
+
+# Also unload legacy openmimic services from pre-rename installs
 if [ -f "${LAUNCH_AGENTS}/com.openmimic.daemon.plist" ]; then
     launchctl unload "${LAUNCH_AGENTS}/com.openmimic.daemon.plist" 2>/dev/null || true
+    rm -f "${LAUNCH_AGENTS}/com.openmimic.daemon.plist"
 fi
 if [ -f "${LAUNCH_AGENTS}/com.openmimic.worker.plist" ]; then
     launchctl unload "${LAUNCH_AGENTS}/com.openmimic.worker.plist" 2>/dev/null || true
+    rm -f "${LAUNCH_AGENTS}/com.openmimic.worker.plist"
 fi
 
 echo "Pre-install complete."

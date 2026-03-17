@@ -4287,7 +4287,8 @@ def main(argv: list[str] | None = None) -> None:
         if _cfg_path.is_file():
             with open(_cfg_path, "rb") as _cf:
                 _knowledge_cfg = _tomllib.load(_cf).get("knowledge", {})
-        if _knowledge_cfg.get("query_api_enabled", True):
+        _api_enabled = _knowledge_cfg.get("query_api_enabled", True)
+        if _api_enabled:
             from agenthandover_worker.query_api import QueryAPIServer
             from agenthandover_worker.procedure_verifier import ProcedureVerifier
             procedure_verifier = ProcedureVerifier(knowledge_base, runtime_validator=runtime_validator)
@@ -4310,7 +4311,13 @@ def main(argv: list[str] | None = None) -> None:
                 ops_telemetry=ops_telemetry,
             )
             query_api_server.start()
-            logger.info("Query API server started on port %d", _api_port)
+            logger.info(
+                "Query API server started on 127.0.0.1:%d (localhost-only, no auth). "
+                "Set knowledge.query_api_enabled = false in config.toml to disable.",
+                _api_port,
+            )
+        else:
+            logger.info("Query API server disabled (knowledge.query_api_enabled = false)")
     except Exception:
         logger.debug("Query API server not started", exc_info=True)
 

@@ -78,7 +78,7 @@ AgentHandover runs four layers of intelligence on every screen capture:
 
 ### Screenshots are temporary
 
-Screenshots are captured as half-resolution JPEGs (~270 KB each), deduplicated via perceptual hashing (70% of frames are duplicates and get dropped immediately), and **deleted the moment the vision model finishes annotating them**. Only the structured JSON annotation (~500 bytes) is kept. Your screen content never accumulates on disk.
+Screenshots are captured as half-resolution JPEGs (~270 KB each), deduplicated via perceptual hashing (70% of frames are duplicates and get dropped immediately), and **deleted after the vision model processes them, whether the annotation succeeds or fails**. Only the structured JSON annotation (~500 bytes) is kept. Your screen content never accumulates on disk.
 
 ### Two observation modes
 

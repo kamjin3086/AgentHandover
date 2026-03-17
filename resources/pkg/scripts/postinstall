@@ -80,15 +80,41 @@ cat > "${NM_DIR}/com.agenthandover.host.json" << JSON
 }
 JSON
 
-# Set up Python virtual environment for worker (non-fatal: worker is optional
-# on first install — user can run `agenthandover setup --vlm` later).
+# Set up Python virtual environment for worker.
+# The worker is required for VLM annotation and SOP generation — without it,
+# AgentHandover cannot function. Treat failure as fatal.
 if [ ! -d "${LIB_DIR}/venv" ]; then
-    if python3 -m venv "${LIB_DIR}/venv" 2>/dev/null && \
-       "${LIB_DIR}/venv/bin/pip" install --quiet "${LIB_DIR}/worker/" 2>/dev/null; then
-        echo "  Python virtual environment created."
-    else
-        warn "Python venv creation failed. Run: python3 -m venv ${LIB_DIR}/venv && ${LIB_DIR}/venv/bin/pip install ${LIB_DIR}/worker/"
+    # Verify Python 3.11+ is available
+    if ! command -v python3 >/dev/null 2>&1; then
+        echo "ERROR: python3 not found. AgentHandover requires Python 3.11 or later."
+        echo "Install Python from https://www.python.org/downloads/ or via: brew install python@3.13"
+        exit 1
     fi
+
+    PYTHON_VERSION=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null)
+    PYTHON_MAJOR=$(echo "$PYTHON_VERSION" | cut -d. -f1)
+    PYTHON_MINOR=$(echo "$PYTHON_VERSION" | cut -d. -f2)
+    if [ -z "$PYTHON_MAJOR" ] || [ "$PYTHON_MAJOR" -lt 3 ] || { [ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" -lt 11 ]; }; then
+        echo "ERROR: Python 3.11+ is required, but found Python ${PYTHON_VERSION:-unknown}."
+        echo "Install a newer Python from https://www.python.org/downloads/ or via: brew install python@3.13"
+        exit 1
+    fi
+
+    if ! python3 -m venv "${LIB_DIR}/venv"; then
+        echo "ERROR: Failed to create Python virtual environment at ${LIB_DIR}/venv."
+        echo "Try manually: python3 -m venv ${LIB_DIR}/venv"
+        exit 1
+    fi
+
+    if ! "${LIB_DIR}/venv/bin/pip" install --quiet "${LIB_DIR}/worker/"; then
+        echo "ERROR: Failed to install AgentHandover worker Python package."
+        echo "Try manually: ${LIB_DIR}/venv/bin/pip install ${LIB_DIR}/worker/"
+        # Clean up the broken venv so a re-install retries
+        rm -rf "${LIB_DIR}/venv"
+        exit 1
+    fi
+
+    echo "  Python virtual environment created."
 fi
 
 # Set proper permissions

@@ -17,7 +17,7 @@ import {
   onNativeMessage,
   onNativeDisconnect,
   isConnected,
-  resendBufferedMessages,
+  clearReconnectBuffer,
   type NativeInboundMessage,
 } from './native-messaging';
 
@@ -101,9 +101,10 @@ function initNativeConnection(): void {
       );
       setTimeout(() => {
         initNativeConnection();
-        // Resend buffered messages after reconnecting, then drain disconnect queue
+        // Clear the buffer (do NOT replay — daemon cannot deduplicate across
+        // reconnects, so replaying causes duplicate browser events).
         if (isConnected()) {
-          resendBufferedMessages();
+          clearReconnectBuffer();
           drainDisconnectQueue();
         }
       }, delay + jitter);
