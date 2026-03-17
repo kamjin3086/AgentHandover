@@ -574,3 +574,129 @@ class TestEdgeCases:
         result = classifier.classify(_ann(what_doing="debugging and researching"))
         # WORK table is iterated first, so 'debugging' matches first.
         assert result.activity_type == ActivityType.WORK
+
+
+# ===================================================================
+# TestLLMClassification — 5 tests
+# ===================================================================
+
+class TestLLMClassification:
+    """Tests for LLM-based classification refinement (Stage 2.5)."""
+
+    def _make_llm_classifier(self, mock_ollama_fn):
+        """Create a classifier with a mocked LLM reasoner."""
+        from unittest.mock import patch
+        from agenthandover_worker.llm_reasoning import LLMReasoner
+
+        reasoner = LLMReasoner()
+        with patch.object(LLMReasoner, "_call_ollama", side_effect=mock_ollama_fn):
+            c = ActivityClassifier(llm_reasoner=reasoner)
+            yield c
+
+    def test_llm_called_when_low_confidence(self):
+        """LLM is called when heuristic confidence is below 0.6."""
+        from unittest.mock import patch
+        from agenthandover_worker.llm_reasoning import LLMReasoner
+
+        reasoner = LLMReasoner()
+        call_count = 0
+
+        def mock_ollama(prompt, system, num_predict=None, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return ("research", 0.5)
+
+        with patch.object(LLMReasoner, "_call_ollama", side_effect=mock_ollama):
+            c = ActivityClassifier(llm_reasoner=reasoner)
+            # No keyword match, is_workflow=True -> WORK at 0.5 confidence
+            result = c.classify(_ann(is_workflow=True))
+
+        assert call_count == 1
+        assert result.source == "llm"
+        assert result.activity_type == ActivityType.RESEARCH
+
+    def test_llm_not_called_high_confidence(self):
+        """LLM is NOT called when heuristic confidence is >= 0.6."""
+        from unittest.mock import patch
+        from agenthandover_worker.llm_reasoning import LLMReasoner
+
+        reasoner = LLMReasoner()
+        call_count = 0
+
+        def mock_ollama(prompt, system, num_predict=None, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return ("entertainment", 0.5)
+
+        with patch.object(LLMReasoner, "_call_ollama", side_effect=mock_ollama):
+            c = ActivityClassifier(llm_reasoner=reasoner)
+            # 'coding' keyword -> WORK at 0.8 confidence
+            result = c.classify(_ann(what_doing="coding a feature"))
+
+        assert call_count == 0
+        assert result.activity_type == ActivityType.WORK
+        assert result.source == "heuristic"
+
+    def test_llm_overrides_ambiguous(self):
+        """LLM result replaces ambiguous heuristic classification."""
+        from unittest.mock import patch
+        from agenthandover_worker.llm_reasoning import LLMReasoner
+
+        reasoner = LLMReasoner()
+
+        def mock_ollama(prompt, system, num_predict=None, **kwargs):
+            return ("work", 0.5)
+
+        with patch.object(LLMReasoner, "_call_ollama", side_effect=mock_ollama):
+            c = ActivityClassifier(llm_reasoner=reasoner)
+            # No keyword match, is_workflow=False -> ENTERTAINMENT at 0.5
+            # LLM overrides to WORK at 0.75
+            result = c.classify(_ann(what_doing="analyzing data in notebook"))
+
+        assert result.activity_type == ActivityType.WORK
+        assert result.confidence == 0.75
+        assert result.source == "llm"
+
+    def test_llm_failure_keeps_heuristic(self):
+        """When LLM fails, heuristic result is preserved."""
+        from unittest.mock import patch
+        from agenthandover_worker.llm_reasoning import LLMReasoner
+
+        reasoner = LLMReasoner()
+
+        def mock_ollama(prompt, system, num_predict=None, **kwargs):
+            raise ConnectionError("Ollama not reachable")
+
+        with patch.object(LLMReasoner, "_call_ollama", side_effect=mock_ollama):
+            c = ActivityClassifier(llm_reasoner=reasoner)
+            # No keyword, is_workflow=True -> WORK at 0.5
+            result = c.classify(_ann(is_workflow=True))
+
+        assert result.activity_type == ActivityType.WORK
+        assert result.confidence == 0.5
+        assert result.source == "heuristic"
+
+    def test_policy_overrides_llm(self, kb):
+        """Stage 3 policy still overrides an LLM classification."""
+        from unittest.mock import patch
+        from agenthandover_worker.llm_reasoning import LLMReasoner
+
+        reasoner = LLMReasoner()
+
+        def mock_ollama(prompt, system, num_predict=None, **kwargs):
+            return ("work", 0.5)
+
+        policy = UserPolicy(kb)
+        policy.add_rule(PolicyRule(
+            rule_type="app", pattern="*",
+            action=PolicyAction.CLASSIFY_AS,
+            value="entertainment",
+        ))
+
+        with patch.object(LLMReasoner, "_call_ollama", side_effect=mock_ollama):
+            c = ActivityClassifier(llm_reasoner=reasoner, policy=policy)
+            result = c.classify(_ann(is_workflow=True, active_app="SomeApp"))
+
+        # Policy overrides everything to ENTERTAINMENT
+        assert result.activity_type == ActivityType.ENTERTAINMENT
+        assert result.source == "policy"

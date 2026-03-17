@@ -54,6 +54,15 @@ _V3_SECTIONS = {
     "variant_family": lambda: None,
     "variants": list,
     "parameters_extracted": list,
+    # Behavioral synthesis fields (Phase D)
+    "strategy": lambda: None,
+    "selection_criteria": list,
+    "content_templates": list,
+    "workflow_rhythm": dict,
+    "behavioral_confidence": lambda: None,
+    "last_synthesized": lambda: None,
+    "execution_hints": dict,
+    "evidence_summary": lambda: None,
 }
 
 
@@ -204,6 +213,15 @@ def sop_to_procedure(sop_template: dict) -> dict:
         "variants": sop_template.get("variants", []),
         "parameters_extracted": sop_template.get("parameters_extracted", []),
 
+        # Behavioral synthesis (Phase D)
+        "strategy": sop_template.get("strategy", None),
+        "selection_criteria": sop_template.get("selection_criteria", []),
+        "content_templates": sop_template.get("content_templates", []),
+        "workflow_rhythm": sop_template.get("workflow_rhythm", {}),
+        "behavioral_confidence": sop_template.get("behavioral_confidence", None),
+        "last_synthesized": sop_template.get("last_synthesized", None),
+        "execution_hints": sop_template.get("execution_hints", {}),
+
         # Metadata
         "preconditions": sop_template.get("preconditions", []),
         "postconditions": sop_template.get("postconditions", []),
@@ -229,6 +247,29 @@ def sop_to_procedure(sop_template: dict) -> dict:
         procedure["prerequisites"] = sop_template["prerequisites"]
     if sop_template.get("confidence_breakdown"):
         procedure["confidence_breakdown"] = sop_template["confidence_breakdown"]
+
+    # Carry over enriched v3 fields from variant detection (Phase A)
+    if sop_template.get("branches"):
+        procedure["branches"] = sop_template["branches"]
+
+    # Map continuity span metadata onto procedure fields
+    span_meta = sop_template.get("_span_metadata")
+    if span_meta and isinstance(span_meta, dict):
+        total_secs = span_meta.get("total_duration_seconds", 0)
+        if total_secs > 0:
+            procedure["recurrence"]["avg_duration_minutes"] = round(
+                total_secs / 60.0, 1
+            )
+        interruptions = span_meta.get("interruption_count", 0)
+        if interruptions > 0:
+            procedure.setdefault("metadata", {})["interruption_count"] = interruptions
+        candidates = span_meta.get("matched_procedure_candidates", [])
+        if candidates:
+            chain = procedure["chain"]
+            for cand in candidates:
+                slug = cand if isinstance(cand, str) else cand.get("slug", "")
+                if slug and slug not in chain["depends_on"]:
+                    chain["followed_by"].append(slug)
 
     return procedure
 
@@ -290,6 +331,9 @@ def validate_procedure(data: dict) -> list[str]:
                     errors.append(f"inputs[{i}] missing required field: name")
                 if "type" not in inp:
                     errors.append(f"inputs[{i}] missing required field: type")
+                # credential field is optional, must be bool if present
+                if "credential" in inp and not isinstance(inp["credential"], bool):
+                    errors.append(f"inputs[{i}].credential must be a boolean")
 
     # Outputs must be a list of dicts
     if "outputs" in data:
@@ -392,6 +436,30 @@ def validate_procedure(data: dict) -> list[str]:
     if "parameters_extracted" in data:
         if not isinstance(data["parameters_extracted"], list):
             errors.append("Field 'parameters_extracted' must be a list")
+
+    # Behavioral synthesis fields
+    if "strategy" in data:
+        if data["strategy"] is not None and not isinstance(data["strategy"], str):
+            errors.append("strategy must be a string or null")
+    if "selection_criteria" in data:
+        if not isinstance(data["selection_criteria"], list):
+            errors.append("Field 'selection_criteria' must be a list")
+    if "content_templates" in data:
+        if not isinstance(data["content_templates"], list):
+            errors.append("Field 'content_templates' must be a list")
+    if "workflow_rhythm" in data:
+        if not isinstance(data["workflow_rhythm"], dict):
+            errors.append("Field 'workflow_rhythm' must be a dict")
+    if "behavioral_confidence" in data:
+        val = data["behavioral_confidence"]
+        if val is not None and not isinstance(val, (int, float)):
+            errors.append("behavioral_confidence must be a number or null")
+    if "last_synthesized" in data:
+        if data["last_synthesized"] is not None and not isinstance(data["last_synthesized"], str):
+            errors.append("last_synthesized must be a string or null")
+    if "execution_hints" in data:
+        if not isinstance(data["execution_hints"], dict):
+            errors.append("Field 'execution_hints' must be a dict")
 
     # List fields
     for list_field in (
@@ -526,6 +594,14 @@ def upgrade_v2_to_v3(sop_json: dict) -> dict:
         "variant_family": sop_json.get("variant_family", None),
         "variants": sop_json.get("variants", []),
         "parameters_extracted": sop_json.get("parameters_extracted", []),
+        # Behavioral synthesis (empty on upgrade — populated by synthesizer)
+        "strategy": None,
+        "selection_criteria": [],
+        "content_templates": [],
+        "workflow_rhythm": {},
+        "behavioral_confidence": None,
+        "last_synthesized": None,
+        "execution_hints": {},
         "preconditions": sop_json.get("preconditions", []),
         "postconditions": sop_json.get("postconditions", []),
         "exceptions_seen": sop_json.get("exceptions_seen", []),

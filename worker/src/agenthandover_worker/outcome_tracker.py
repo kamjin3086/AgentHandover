@@ -4,6 +4,9 @@ Analyzes events within a task boundary to determine what the task
 accomplished (e.g. file created, data transferred, message sent).
 Uses heuristic pattern matching on event metadata and VLM annotations
 without requiring VLM access at detection time.
+
+When an ``LLMReasoner`` is provided, the LLM supplements heuristic
+detection when heuristics find nothing or only low-confidence outcomes.
 """
 
 from __future__ import annotations
@@ -11,11 +14,15 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from agenthandover_worker.event_helpers import (
     extract_app_from_event as _event_app,
     parse_annotation as _event_annotation,
 )
+
+if TYPE_CHECKING:
+    from agenthandover_worker.llm_reasoning import LLMReasoner
 
 logger = logging.getLogger(__name__)
 
@@ -37,8 +44,11 @@ class OutcomeTracker:
     the task accomplished.
     """
 
-    def __init__(self) -> None:
-        pass
+    def __init__(
+        self,
+        llm_reasoner: "LLMReasoner | None" = None,
+    ) -> None:
+        self._llm_reasoner = llm_reasoner
 
     def detect_outcomes(self, task_events: list[dict]) -> list[DetectedOutcome]:
         """Detect outcomes from a list of events in a task boundary.
@@ -75,7 +85,99 @@ class OutcomeTracker:
         if data_entry is not None:
             outcomes.append(data_entry)
 
+        # LLM supplementation: when heuristics found nothing or only
+        # low-confidence outcomes, ask the LLM for additional insight.
+        if self._llm_reasoner is not None:
+            all_low = all(o.confidence < 0.6 for o in outcomes)
+            if not outcomes or all_low:
+                llm_outcomes = self._detect_outcomes_with_llm(task_events)
+                existing_types = {o.type for o in outcomes}
+                for lo in llm_outcomes:
+                    if lo.type not in existing_types:
+                        outcomes.append(lo)
+
         return outcomes
+
+    def _detect_outcomes_with_llm(
+        self,
+        task_events: list[dict],
+    ) -> list[DetectedOutcome]:
+        """Use LLM to detect outcomes when heuristics are insufficient.
+
+        Takes the last 3-5 events, formats their annotations, and asks
+        the LLM what the user accomplished.
+        """
+        if self._llm_reasoner is None:
+            return []
+
+        last_events = task_events[-5:] if len(task_events) >= 5 else task_events[-3:] if len(task_events) >= 3 else task_events
+        if not last_events:
+            return []
+
+        # Build context from event annotations
+        event_summaries: list[str] = []
+        for event in last_events:
+            ann = _event_annotation(event)
+            if ann is None:
+                continue
+            app = ann.get("visual_context", {}).get("active_app", "")
+            location = ann.get("visual_context", {}).get("location", "")
+            what_doing = ann.get("task_context", {}).get("what_doing", "")
+            parts = []
+            if app:
+                parts.append(f"app={app}")
+            if location:
+                parts.append(f"location={location}")
+            if what_doing:
+                parts.append(f"doing={what_doing}")
+            if parts:
+                event_summaries.append(", ".join(parts))
+
+        if not event_summaries:
+            return []
+
+        context = "; ".join(event_summaries)
+        prompt = (
+            f"What did the user accomplish in this workflow? "
+            f"What changed as a result? Events: {context}. "
+            f'Respond with JSON: {{"outcomes": [{{"type": "...", '
+            f'"description": "...", "verification": "..."}}]}}. '
+            f"If insufficient context, respond with INSUFFICIENT_EVIDENCE."
+        )
+
+        try:
+            result = self._llm_reasoner.reason_json(
+                prompt=prompt,
+                caller="outcome_tracker._detect_outcomes_with_llm",
+            )
+            if not result.success or result.abstained or not result.value:
+                return []
+
+            raw_outcomes = result.value.get("outcomes", [])
+            detected: list[DetectedOutcome] = []
+            for raw in raw_outcomes:
+                if not isinstance(raw, dict):
+                    continue
+                outcome_type = raw.get("type", "")
+                description = raw.get("description", "")
+                verification = raw.get("verification", "")
+                if not outcome_type or not description:
+                    continue
+                # Confidence: higher if verification is provided
+                confidence = 0.6 if verification else 0.4
+                detected.append(DetectedOutcome(
+                    type=outcome_type,
+                    description=description,
+                    verification={"check": verification} if isinstance(verification, str) else verification,
+                    confidence=confidence,
+                ))
+            return detected
+        except Exception:
+            logger.debug(
+                "LLM outcome detection failed",
+                exc_info=True,
+            )
+            return []
 
     def detect_outcomes_with_evidence(
         self, task_events_list: list[list[dict]],
@@ -88,10 +190,12 @@ class OutcomeTracker:
         if not task_events_list:
             return []
 
-        # Run detection on each observation
+        # Run detection on each observation (cache results to avoid double LLM calls)
+        all_detected: list[list[DetectedOutcome]] = []
         all_outcomes: dict[str, list[bool]] = {}
         for events in task_events_list:
             detected = self.detect_outcomes(events)
+            all_detected.append(detected)
             for o in detected:
                 all_outcomes.setdefault(o.type, []).append(True)
 
@@ -100,9 +204,10 @@ class OutcomeTracker:
         results = []
         for outcome_type, occurrences in all_outcomes.items():
             confidence = len(occurrences) / total
-            # Find a representative outcome for description etc.
-            for events in task_events_list:
-                for o in self.detect_outcomes(events):
+            # Find a representative outcome from cached results
+            found = False
+            for detected in all_detected:
+                for o in detected:
                     if o.type == outcome_type:
                         results.append(DetectedOutcome(
                             type=o.type,
@@ -110,10 +215,10 @@ class OutcomeTracker:
                             confidence=round(confidence, 4),
                             verification=o.verification,
                         ))
+                        found = True
                         break
-                else:
-                    continue
-                break
+                if found:
+                    break
         return results
 
     def detect_postconditions(self, task_events: list[dict]) -> list[dict]:

@@ -23,6 +23,7 @@ from agenthandover_worker.daily_processor import (
     _extract_location,
     _extract_what_doing,
     _minutes_between,
+    _normalize_intent,
     _parse_iso,
 )
 from agenthandover_worker.knowledge_base import KnowledgeBase
@@ -961,3 +962,24 @@ class TestEdgeCases:
         ]
         summary = processor.process_day("2026-03-10", events)
         assert summary.tasks[0].account_context is None
+
+
+# ---------------------------------------------------------------------------
+# Tests: Intent normalization
+# ---------------------------------------------------------------------------
+
+class TestNormalizeIntent:
+
+    def test_normalize_intent_sorts_words(self) -> None:
+        """'debugging code' and 'code debugging' should normalize to the same string."""
+        assert _normalize_intent("debugging code") == _normalize_intent("code debugging")
+
+    def test_normalize_intent_strips_stops(self) -> None:
+        """Stop words are removed, remaining words sorted alphabetically."""
+        result = _normalize_intent("deploy the API server")
+        assert result == "api deploy server"
+
+    def test_normalize_intent_strips_punctuation(self) -> None:
+        """Punctuation is removed, remaining words sorted."""
+        result = _normalize_intent("review PR #123")
+        assert result == "123 pr review"

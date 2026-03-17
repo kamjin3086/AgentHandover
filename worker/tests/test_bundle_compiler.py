@@ -283,7 +283,7 @@ class TestCompiledOutputsStored:
     """Compiled outputs should be persisted back onto the procedure."""
 
     def test_compiled_outputs_written_to_procedure(self, kb, compiler_with_adapters):
-        _save_procedure(kb, "stored1", lifecycle_state="draft", trust_level="draft")
+        _save_procedure(kb, "stored1", lifecycle_state="agent_ready", trust_level="autonomous")
         compiler_with_adapters.compile("stored1")
         proc = kb.get_procedure("stored1")
         assert "compiled_outputs" in proc
@@ -291,7 +291,7 @@ class TestCompiledOutputsStored:
         assert len(proc["compiled_outputs"]) == 4
 
     def test_compiled_output_has_sha256_in_procedure(self, kb, compiler_with_adapters):
-        _save_procedure(kb, "stored2", lifecycle_state="draft", trust_level="draft")
+        _save_procedure(kb, "stored2", lifecycle_state="agent_ready", trust_level="autonomous")
         compiler_with_adapters.compile("stored2")
         proc = kb.get_procedure("stored2")
         for name, info in proc["compiled_outputs"].items():

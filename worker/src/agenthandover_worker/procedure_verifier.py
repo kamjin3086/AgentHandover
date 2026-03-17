@@ -196,8 +196,14 @@ class ProcedureVerifier:
             ))
 
         # 5. Constraints check
+        # blocked_domains can be at the top level (legacy/test path) or
+        # nested under "global" (the canonical schema used by ConstraintManager).
+        # Check both locations for backward compatibility.
         global_constraints = self._kb.get_constraints()
         blocked_domains = global_constraints.get("blocked_domains", [])
+        if not blocked_domains:
+            global_section = global_constraints.get("global", {})
+            blocked_domains = global_section.get("blocked_domains", [])
         procedure_urls = set()
         for step in proc.get("steps", []):
             location = step.get("location", "")

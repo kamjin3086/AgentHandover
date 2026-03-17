@@ -908,3 +908,175 @@ class TestProcessPassiveDiscovery:
         finally:
             conn.close()
             db_path.unlink(missing_ok=True)
+
+
+# ---------------------------------------------------------------------------
+# LLM-based task labeling
+# ---------------------------------------------------------------------------
+
+class TestLLMTaskLabeling:
+    """Tests for LLM-based cluster labeling in TaskSegmenter."""
+
+    @patch("agenthandover_worker.task_segmenter._compute_embeddings", side_effect=_mock_embeddings)
+    def test_segment_with_llm_labeling(self, mock_embed):
+        """When LLM reasoner returns a label, all segments in the cluster get it."""
+        from agenthandover_worker.llm_reasoning import LLMReasoner, ReasoningResult
+
+        reasoner = LLMReasoner()
+
+        def mock_ollama(prompt, system, num_predict=None, **kwargs):
+            return ("Expense Report Submission Workflow", 0.5)
+
+        events = [
+            _make_event("e1", "2026-03-04T10:00:00Z", what_doing="Filing expense report"),
+            _make_event("e2", "2026-03-04T10:01:00Z", what_doing="Submitting expense form"),
+        ]
+
+        with patch.object(LLMReasoner, "_call_ollama", side_effect=mock_ollama):
+            seg = TaskSegmenter(llm_reasoner=reasoner)
+            result = seg.segment(events)
+
+        assert len(result.segments) >= 1
+        for s in result.segments:
+            assert s.task_label == "Expense Report Submission Workflow"
+
+    @patch("agenthandover_worker.task_segmenter._compute_embeddings", side_effect=_mock_embeddings)
+    def test_segment_llm_none_keeps_heuristic(self, mock_embed):
+        """When LLM returns None (failure), heuristic label is preserved."""
+        from agenthandover_worker.llm_reasoning import LLMReasoner
+
+        reasoner = LLMReasoner()
+
+        def mock_ollama(prompt, system, num_predict=None, **kwargs):
+            raise ConnectionError("Ollama not reachable")
+
+        events = [
+            _make_event("e1", "2026-03-04T10:00:00Z", what_doing="Filing expense report"),
+            _make_event("e2", "2026-03-04T10:01:00Z", what_doing="Filing expense report"),
+        ]
+
+        with patch.object(LLMReasoner, "_call_ollama", side_effect=mock_ollama):
+            seg = TaskSegmenter(llm_reasoner=reasoner)
+            result = seg.segment(events)
+
+        assert len(result.segments) >= 1
+        # Heuristic label should be the most common what_doing
+        for s in result.segments:
+            assert s.task_label == "Filing expense report"
+
+    @patch("agenthandover_worker.task_segmenter._compute_embeddings", side_effect=_mock_embeddings)
+    def test_segment_no_reasoner_uses_heuristic(self, mock_embed):
+        """Without a reasoner, original heuristic labeling is used."""
+        events = [
+            _make_event("e1", "2026-03-04T10:00:00Z", what_doing="Filing expense report"),
+            _make_event("e2", "2026-03-04T10:01:00Z", what_doing="Filing expense report"),
+        ]
+
+        seg = TaskSegmenter()  # No llm_reasoner
+        result = seg.segment(events)
+
+        assert len(result.segments) >= 1
+        for s in result.segments:
+            assert s.task_label == "Filing expense report"
+
+
+# ---------------------------------------------------------------------------
+# Stable cluster label cache
+# ---------------------------------------------------------------------------
+
+class TestStableClusterLabels:
+    """Tests for the persistent cluster label cache."""
+
+    @patch("agenthandover_worker.task_segmenter._compute_embeddings", side_effect=_mock_embeddings)
+    def test_cluster_label_cache_persists(self, mock_embed, tmp_path):
+        """Label saved by one TaskSegmenter instance is reloaded by another."""
+        from agenthandover_worker.llm_reasoning import LLMReasoner
+
+        cache_path = tmp_path / "cluster_labels.json"
+
+        reasoner = LLMReasoner()
+
+        def mock_ollama(prompt, system, num_predict=None, **kwargs):
+            return ("Daily Expense Report Workflow", 0.5)
+
+        events = [
+            _make_event("e1", "2026-03-04T10:00:00Z", what_doing="Filing expense report"),
+            _make_event("e2", "2026-03-04T10:01:00Z", what_doing="Submitting expense form"),
+        ]
+
+        with patch.object(LLMReasoner, "_call_ollama", side_effect=mock_ollama):
+            seg1 = TaskSegmenter(
+                llm_reasoner=reasoner,
+                cluster_label_store=cache_path,
+            )
+            seg1.segment(events)
+
+        # Cache file should exist now
+        assert cache_path.exists()
+
+        # Second instance should load from cache without calling LLM
+        call_count = 0
+
+        def mock_ollama2(prompt, system, num_predict=None, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return ("Should Not Be Called", 0.5)
+
+        with patch.object(LLMReasoner, "_call_ollama", side_effect=mock_ollama2):
+            seg2 = TaskSegmenter(
+                llm_reasoner=reasoner,
+                cluster_label_store=cache_path,
+            )
+            result = seg2.segment(events)
+
+        # LLM should not have been called (label loaded from cache)
+        assert call_count == 0
+        for s in result.segments:
+            assert s.task_label == "Daily Expense Report Workflow"
+
+    @patch("agenthandover_worker.task_segmenter._compute_embeddings", side_effect=_mock_embeddings)
+    def test_cluster_label_reused_similar_centroid(self, mock_embed, tmp_path):
+        """A cluster with cosine similarity > 0.9 reuses the cached label."""
+        from agenthandover_worker.llm_reasoning import LLMReasoner
+
+        cache_path = tmp_path / "cluster_labels.json"
+
+        reasoner = LLMReasoner()
+        call_count = 0
+
+        def mock_ollama(prompt, system, num_predict=None, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return ("Expense Report Workflow", 0.5)
+
+        events1 = [
+            _make_event("e1", "2026-03-04T10:00:00Z", what_doing="Filing expense report"),
+            _make_event("e2", "2026-03-04T10:01:00Z", what_doing="Filing expense report"),
+        ]
+
+        with patch.object(LLMReasoner, "_call_ollama", side_effect=mock_ollama):
+            seg = TaskSegmenter(
+                llm_reasoner=reasoner,
+                cluster_label_store=cache_path,
+            )
+            seg.segment(events1)
+
+        assert call_count == 1  # LLM was called once
+
+        # Very similar events (same cluster embedding) should reuse cached label
+        events2 = [
+            _make_event("e3", "2026-03-04T11:00:00Z", what_doing="Filing expense report"),
+            _make_event("e4", "2026-03-04T11:01:00Z", what_doing="Filing expense form"),
+        ]
+
+        with patch.object(LLMReasoner, "_call_ollama", side_effect=mock_ollama):
+            seg2 = TaskSegmenter(
+                llm_reasoner=reasoner,
+                cluster_label_store=cache_path,
+            )
+            result = seg2.segment(events2)
+
+        # Either exact hash match or similarity match should prevent a new LLM call
+        # call_count may be 1 (no new call) or at most 2 if hash differed
+        for s in result.segments:
+            assert s.task_label == "Expense Report Workflow"

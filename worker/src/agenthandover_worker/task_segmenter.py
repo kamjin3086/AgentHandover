@@ -28,6 +28,11 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from agenthandover_worker.llm_reasoning import LLMReasoner
 
 logger = logging.getLogger(__name__)
 
@@ -57,8 +62,8 @@ class SegmenterConfig:
     # Minimum demonstrations for SOP generation
     min_demonstrations: int = 2
 
-    # Time window for annotation loading
-    default_window_hours: int = 4
+    # Time window for annotation loading (24h gives full-day visibility)
+    default_window_hours: int = 24
 
     # Interruption parameters
     brief_interrupt_max_seconds: int = 60      # absorb interrupts shorter than this
@@ -544,8 +549,180 @@ class TaskSegmenter:
     as Thread 3 in the worker process.  CPU-only (no GPU access needed).
     """
 
-    def __init__(self, config: SegmenterConfig | None = None) -> None:
+    def __init__(
+        self,
+        config: SegmenterConfig | None = None,
+        llm_reasoner: "LLMReasoner | None" = None,
+        cluster_label_store: Path | None = None,
+    ) -> None:
         self.config = config or SegmenterConfig()
+        self._llm_reasoner = llm_reasoner
+        self._cluster_label_store = cluster_label_store
+        self._label_cache: dict = {}
+        self._load_label_cache()
+
+    def _label_cluster_with_llm(self, frames: list[AnnotatedFrame]) -> str | None:
+        """Use LLM to generate a concise workflow name for a cluster.
+
+        Collects unique what_doing strings, apps, and locations from
+        the cluster's frames and asks the LLM for a 3-8 word label.
+
+        Returns the label string, or None on failure/budget/abstention.
+        """
+        if self._llm_reasoner is None:
+            return None
+
+        what_doings = sorted({f.what_doing for f in frames if f.what_doing})
+        apps = sorted({f.app for f in frames if f.app})
+        locations = sorted({f.location for f in frames if f.location})
+
+        if not what_doings:
+            return None
+
+        prompt = (
+            "Given these observations from a user's workflow session, "
+            "provide a concise workflow name (3-8 words).\n\n"
+            f"Activities observed: {', '.join(what_doings)}\n"
+            f"Applications used: {', '.join(apps) if apps else 'unknown'}\n"
+            f"Locations: {', '.join(locations) if locations else 'unknown'}\n\n"
+            "Respond with ONLY the workflow name, nothing else."
+        )
+
+        try:
+            result = self._llm_reasoner.reason_text(
+                prompt, caller="task_segmenter.label_cluster",
+            )
+            if result.success and not result.abstained and result.value:
+                label = str(result.value).strip()
+                if label:
+                    return label
+        except Exception:
+            logger.debug("LLM cluster labeling failed", exc_info=True)
+
+        return None
+
+    # ------------------------------------------------------------------
+    # Stable cluster label cache
+    # ------------------------------------------------------------------
+
+    def _compute_centroid_hash(self, frames: list[AnnotatedFrame]) -> str:
+        """Compute a stable hash from the average embedding of frames."""
+        embedded = [f for f in frames if f.embedding]
+        if not embedded:
+            return ""
+        dim = len(embedded[0].embedding)
+        avg = [0.0] * dim
+        for f in embedded:
+            for j in range(min(dim, len(f.embedding))):
+                avg[j] += f.embedding[j]
+        n = len(embedded)
+        avg = [round(v / n, 4) for v in avg]
+        digest = hashlib.sha256(str(avg).encode()).hexdigest()[:16]
+        return digest
+
+    def _get_centroid_vector(self, frames: list[AnnotatedFrame]) -> list[float]:
+        """Compute average embedding vector from frames."""
+        embedded = [f for f in frames if f.embedding]
+        if not embedded:
+            return []
+        dim = len(embedded[0].embedding)
+        avg = [0.0] * dim
+        for f in embedded:
+            for j in range(min(dim, len(f.embedding))):
+                avg[j] += f.embedding[j]
+        n = len(embedded)
+        return [round(v / n, 4) for v in avg]
+
+    def _get_or_create_cluster_label(
+        self, frames: list[AnnotatedFrame],
+    ) -> str | None:
+        """Get a cached label or create a new one for a cluster.
+
+        1. Compute centroid hash, check exact match in cache.
+        2. If no exact match, check cosine similarity > 0.9 against cached centroids.
+        3. If no match, call _label_cluster_with_llm(), cache the result.
+        """
+        centroid_hash = self._compute_centroid_hash(frames)
+        if not centroid_hash:
+            return self._label_cluster_with_llm(frames)
+
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+        # Exact hash match
+        if centroid_hash in self._label_cache:
+            entry = self._label_cache[centroid_hash]
+            entry["last_used"] = today
+            entry["use_count"] = entry.get("use_count", 0) + 1
+            self._save_label_cache()
+            return entry.get("label")
+
+        # Cosine similarity check against cached centroids
+        centroid_vec = self._get_centroid_vector(frames)
+        if centroid_vec:
+            for cached_hash, entry in self._label_cache.items():
+                cached_centroid = entry.get("centroid")
+                if not cached_centroid:
+                    continue
+                sim = _cosine_similarity(centroid_vec, cached_centroid)
+                if sim > 0.9:
+                    entry["last_used"] = today
+                    entry["use_count"] = entry.get("use_count", 0) + 1
+                    self._save_label_cache()
+                    return entry.get("label")
+
+        # No match — generate new label
+        label = self._label_cluster_with_llm(frames)
+        if label is not None:
+            self._label_cache[centroid_hash] = {
+                "label": label,
+                "centroid": centroid_vec,
+                "first_seen": today,
+                "last_used": today,
+                "use_count": 1,
+            }
+            self._save_label_cache()
+
+        return label
+
+    def _load_label_cache(self) -> None:
+        """Load the cluster label cache from disk."""
+        if self._cluster_label_store is None or not self._cluster_label_store.is_file():
+            self._label_cache = {}
+            return
+        try:
+            with open(self._cluster_label_store) as f:
+                self._label_cache = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            self._label_cache = {}
+
+    def _save_label_cache(self) -> None:
+        """Save the cluster label cache to disk with atomic write and 30-day pruning."""
+        if self._cluster_label_store is None:
+            return
+
+        # Prune entries not used in 30+ days
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        pruned: dict = {}
+        for k, v in self._label_cache.items():
+            last_used = v.get("last_used", today)
+            try:
+                last_dt = datetime.strptime(last_used, "%Y-%m-%d")
+                today_dt = datetime.strptime(today, "%Y-%m-%d")
+                if (today_dt - last_dt).days <= 30:
+                    pruned[k] = v
+            except ValueError:
+                pruned[k] = v
+        self._label_cache = pruned
+
+        # Atomic write: write to tmp then rename
+        self._cluster_label_store.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = self._cluster_label_store.with_suffix(".tmp")
+        try:
+            with open(tmp_path, "w") as f:
+                json.dump(self._label_cache, f, indent=2)
+            tmp_path.replace(self._cluster_label_store)
+        except OSError:
+            logger.debug("Failed to save cluster label cache", exc_info=True)
 
     def segment(
         self,
@@ -641,6 +818,22 @@ class TaskSegmenter:
         result.segments = stitched
         for seg in stitched:
             result.clusters.setdefault(seg.cluster_id, []).append(seg)
+
+        # Step 7: Cluster labeling (with persistent cache when available)
+        if self._llm_reasoner is not None:
+            for cluster_id, cluster_segs in result.clusters.items():
+                # Collect all frames from this cluster
+                all_cluster_frames: list[AnnotatedFrame] = []
+                for seg in cluster_segs:
+                    all_cluster_frames.extend(seg.frames)
+
+                if self._cluster_label_store is not None:
+                    label = self._get_or_create_cluster_label(all_cluster_frames)
+                else:
+                    label = self._label_cluster_with_llm(all_cluster_frames)
+                if label is not None:
+                    for seg in cluster_segs:
+                        seg.task_label = label
 
         logger.info(
             "Segmentation: %d frames → %d clusters, %d segments, "

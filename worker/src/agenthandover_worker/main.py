@@ -1809,6 +1809,8 @@ def _process_passive_discovery(
     procedure_writer: "ProcedureWriter | None" = None,
     kb_export_adapter: "KnowledgeBaseExportAdapter | None" = None,
     continuity_tracker: "ContinuityTracker | None" = None,
+    variant_detector: "VariantDetector | None" = None,
+    evidence_normalizer: "EvidenceNormalizer | None" = None,
 ) -> int:
     """Run passive discovery: segment annotations → generate SOPs.
 
@@ -1963,14 +1965,102 @@ def _process_passive_discovery(
         if len(demonstrations) < segmenter.config.min_demonstrations:
             continue
 
+        # --- Semantic alignment + variant detection + parameter extraction ---
+        _variant_results: dict = {}
+        if variant_detector is not None and len(demonstrations) >= 2:
+            try:
+                from dataclasses import asdict as _asdict
+
+                # Build step lists from demonstration annotations
+                _demo_steps: list[list[dict]] = []
+                for demo_tl in demonstrations:
+                    steps = []
+                    for frame in demo_tl:
+                        ann = frame.get("annotation", {})
+                        if not isinstance(ann, dict):
+                            continue
+                        steps.append({
+                            "action": ann.get("task_context", {}).get("what_doing", ""),
+                            "app": ann.get("app", ""),
+                            "location": ann.get("location", ""),
+                            "target": ann.get("visible_content", {}).get("headings", [""])[0]
+                                if isinstance(ann.get("visible_content"), dict)
+                                and ann.get("visible_content", {}).get("headings")
+                                else "",
+                            "input": "",
+                        })
+                    if steps:
+                        _demo_steps.append(steps)
+
+                if len(_demo_steps) >= 2:
+                    # Pairwise alignment against first demo
+                    _alignments = []
+                    for i in range(1, len(_demo_steps)):
+                        aligned = variant_detector.semantic_align(
+                            _demo_steps[0], _demo_steps[i],
+                        )
+                        _alignments.append(aligned)
+
+                    _variants = variant_detector.detect_variants(
+                        task_label or str(cluster_id), _demo_steps,
+                    )
+                    _parameters = variant_detector.extract_parameters(
+                        _demo_steps, _alignments,
+                    )
+                    _normalized = variant_detector.normalize_workflow(
+                        _demo_steps, _variants,
+                    )
+
+                    _variant_results = {
+                        "alignments": _alignments,
+                        "variants": _variants,
+                        "parameters": _parameters,
+                        "normalized": _normalized,
+                        "demo_steps": _demo_steps,
+                    }
+                    logger.info(
+                        "Variant detection for '%s': %d variants, %d params",
+                        task_label[:60],
+                        len(_variants),
+                        len(_parameters),
+                    )
+            except Exception:
+                logger.debug(
+                    "Variant detection failed for '%s'",
+                    task_label[:60], exc_info=True,
+                )
+
         logger.info(
             "Passive discovery: generating SOP for '%s' (%d demos)",
             task_label[:60], len(demonstrations),
         )
 
-        result = sop_generator.generate_from_passive(
-            demonstrations, task_label=task_label,
-        )
+        # Load evidence from prior procedure if it exists
+        _prior_evidence: dict | None = None
+        try:
+            from agenthandover_worker.sop_format import slugify
+            _candidate_slug = slugify(task_label) if task_label else ""
+            if _candidate_slug:
+                _prior_proc = knowledge_base.get_procedure(_candidate_slug)
+                if _prior_proc is not None:
+                    _prior_evidence = _prior_proc.get("extracted_evidence")
+        except Exception:
+            logger.debug("Failed to load prior evidence for '%s'", task_label[:60], exc_info=True)
+
+        # Use enriched generation if variant data available
+        if _variant_results and hasattr(sop_generator, "generate_from_passive_enriched"):
+            result = sop_generator.generate_from_passive_enriched(
+                demonstrations,
+                task_label=task_label,
+                canonical_steps=_variant_results["normalized"].get("canonical_steps", []),
+                parameters=_variant_results["parameters"],
+                branches=_variant_results["normalized"].get("branches", []),
+                evidence_context=_prior_evidence,
+            )
+        else:
+            result = sop_generator.generate_from_passive(
+                demonstrations, task_label=task_label,
+            )
 
         if not result.success or not result.sop:
             # Record failure for retry tracking
@@ -1995,6 +2085,11 @@ def _process_passive_discovery(
 
         sop_templates = [result.sop]
         slug = result.sop.get("slug", "")
+
+        # Attach evidence context to template for downstream consumers
+        if _prior_evidence:
+            for tpl in sop_templates:
+                tpl["_extracted_evidence"] = _prior_evidence
 
         # Lint / validate before save+export
         if not _lint_and_log(result.sop, "passive"):
@@ -2034,9 +2129,79 @@ def _process_passive_discovery(
 
         # Only export if auto_approve is enabled
         if sop_auto_approve:
-            # Deduplicate against known SOPs
+            # Deduplicate against known SOPs (with evidence-based merge)
             from agenthandover_worker.sop_dedup import deduplicate_templates
-            sop_templates = deduplicate_templates(sop_templates, _status_dir())
+            sop_templates = deduplicate_templates(
+                sop_templates, _status_dir(),
+                evidence_normalizer=evidence_normalizer,
+            )
+
+            # --- Enrich SOP templates with variant/evidence data ---
+            if _variant_results:
+                from dataclasses import asdict as _asdict
+                for tpl in sop_templates:
+                    try:
+                        _vr_variants = _variant_results.get("variants", [])
+                        _vr_params = _variant_results.get("parameters", [])
+                        _vr_normalized = _variant_results.get("normalized", {})
+
+                        if _vr_variants:
+                            tpl["variants"] = [_asdict(v) for v in _vr_variants]
+                        if _vr_params:
+                            tpl["parameters_extracted"] = [
+                                _asdict(p) for p in _vr_params
+                            ]
+                        if _vr_normalized and _vr_normalized.get("branches"):
+                            tpl["branches"] = _vr_normalized["branches"]
+                        if _vr_normalized and _vr_normalized.get("canonical_steps"):
+                            tpl["_canonical_steps"] = _vr_normalized["canonical_steps"]
+                    except Exception:
+                        logger.debug(
+                            "Failed to enrich template with variant data",
+                            exc_info=True,
+                        )
+
+            # --- Enrich with continuity span metadata ---
+            if seg_result.spans:
+                for tpl in sop_templates:
+                    try:
+                        # Match spans that contain any of our segment_ids.
+                        # ContinuitySpan.segments is a list of objects with
+                        # segment_id attribute, or dicts with "segment_id".
+                        _matching_spans = []
+                        _seg_id_set = set(segment_ids)
+                        for _span in seg_result.spans:
+                            span_segs = getattr(_span, "segments", [])
+                            for _sseg in span_segs:
+                                _sid = getattr(_sseg, "segment_id", None)
+                                if _sid is None and isinstance(_sseg, dict):
+                                    _sid = _sseg.get("segment_id")
+                                if _sid in _seg_id_set:
+                                    _matching_spans.append(_span)
+                                    break
+
+                        if _matching_spans:
+                            best_span = max(
+                                _matching_spans,
+                                key=lambda s: getattr(s, "total_duration_seconds", 0),
+                            )
+                            # Map span metadata onto procedure fields
+                            tpl.setdefault("_span_metadata", {
+                                "interruption_count": getattr(
+                                    best_span, "interruption_count", 0
+                                ),
+                                "total_duration_seconds": getattr(
+                                    best_span, "total_duration_seconds", 0
+                                ),
+                                "matched_procedure_candidates": getattr(
+                                    best_span, "matched_procedure_candidates", []
+                                ),
+                            })
+                    except Exception:
+                        logger.debug(
+                            "Failed to enrich template with span data",
+                            exc_info=True,
+                        )
 
             # Write v3 procedures to the knowledge base first so
             # all adapters (including OpenClaw) can use the richer v3 format.
@@ -3744,7 +3909,18 @@ def main(argv: list[str] | None = None) -> None:
         )
     pattern_detector = PatternDetector(knowledge_base)
     constraint_manager = ConstraintManager(knowledge_base)
-    decision_extractor = DecisionExtractor(knowledge_base)
+
+    # Shared LLM reasoning utility — must be created before modules that use it
+    from agenthandover_worker.vlm_queue import VLMFallbackQueue
+    vlm_queue = VLMFallbackQueue()
+    from agenthandover_worker.llm_reasoning import LLMReasoner, ReasoningConfig
+    llm_reasoner = LLMReasoner(config=ReasoningConfig(), vlm_queue=vlm_queue)
+
+    # Wire LLM reasoner into activity classifier (created before reasoner)
+    if activity_classifier is not None:
+        activity_classifier._llm_reasoner = llm_reasoner
+
+    decision_extractor = DecisionExtractor(knowledge_base, llm_reasoner=llm_reasoner)
 
     # Phase 4: Execution monitoring, correction detection, trust advisor
     runtime_validator = None
@@ -3753,9 +3929,9 @@ def main(argv: list[str] | None = None) -> None:
         runtime_validator = RuntimeValidator(knowledge_base)
         escalation_handler = EscalationHandler(kb=knowledge_base, lifecycle_manager=lifecycle_manager)
     execution_monitor = ExecutionMonitor(knowledge_base, escalation_handler=escalation_handler)
-    correction_detector = CorrectionDetector(knowledge_base)
+    correction_detector = CorrectionDetector(knowledge_base, llm_reasoner=llm_reasoner)
     trust_advisor = TrustAdvisor(knowledge_base)
-    session_linker = SessionLinker(knowledge_base)
+    session_linker = SessionLinker(knowledge_base, llm_reasoner=llm_reasoner)
     digest_generator = DigestGenerator(knowledge_base)
     continuity_tracker = None
     if feature_flags["continuity_tracking"]:
@@ -3772,15 +3948,26 @@ def main(argv: list[str] | None = None) -> None:
     variant_detector = VariantDetector()
     evidence_normalizer = EvidenceNormalizer(variant_detector=variant_detector)
 
+    # Behavioral synthesis + evidence extraction
+    from agenthandover_worker.behavioral_synthesizer import BehavioralSynthesizer
+    behavioral_synthesizer = BehavioralSynthesizer(vlm_queue=vlm_queue)
+
+    evidence_extractor = None  # Initialized after DB is available
+
     # Phase 5: Curation orchestrator
     procedure_curator = None
+    quality_judge = None
     if feature_flags["curation"]:
+        from agenthandover_worker.quality_judge import QualityJudge
+        quality_judge = QualityJudge(llm_reasoner)
         procedure_curator = ProcedureCurator(
             kb=knowledge_base,
             staleness_detector=staleness_detector,
             trust_advisor=trust_advisor,
             lifecycle_manager=lifecycle_manager,
             evidence_normalizer=evidence_normalizer,
+            quality_judge=quality_judge,
+            llm_reasoner=llm_reasoner,
         )
 
     logger.info("Knowledge base initialized: %s", args.knowledge_dir)
@@ -3791,7 +3978,7 @@ def main(argv: list[str] | None = None) -> None:
     pruner = NegativeDemoPruner()
     translator = SemanticTranslator()
     scorer = ConfidenceScorer()
-    vlm_queue = VLMFallbackQueue()
+    # vlm_queue + llm_reasoner already created above (before decision_extractor)
     index_generator = IndexGenerator()
     # Create export adapter based on config
     skill_md_writer = None
@@ -4051,7 +4238,11 @@ def main(argv: list[str] | None = None) -> None:
         seg_config = SegmenterConfig(
             ollama_host=v2_cfg["ollama_host"],
         )
-        task_segmenter = TaskSegmenter(config=seg_config)
+        task_segmenter = TaskSegmenter(
+            config=seg_config,
+            llm_reasoner=llm_reasoner,
+            cluster_label_store=knowledge_base.root / "observations" / "cluster_labels.json",
+        )
 
         logger.info(
             "v2 scene annotation pipeline enabled "
@@ -4183,6 +4374,10 @@ def main(argv: list[str] | None = None) -> None:
 
     with WorkerDB(args.db_path) as db:
         logger.info("Connected to database, entering main loop")
+
+        # Initialize evidence extractor now that DB is available
+        from agenthandover_worker.evidence_extractor import EvidenceExtractor
+        evidence_extractor = EvidenceExtractor(kb=knowledge_base, db=db)
 
         # Check v2 schema ONCE before the main loop so focus session
         # dispatch can use the v2 path on the very first iteration.
@@ -4548,6 +4743,8 @@ def main(argv: list[str] | None = None) -> None:
                                 procedure_writer=procedure_writer,
                                 kb_export_adapter=kb_export_adapter,
                                 continuity_tracker=continuity_tracker,
+                                variant_detector=variant_detector,
+                                evidence_normalizer=evidence_normalizer,
                             )
                             if pd_sops > 0:
                                 total_passive_sops += pd_sops
@@ -4663,8 +4860,10 @@ def main(argv: list[str] | None = None) -> None:
                                             {"steps": proc_steps, "context": rec}
                                             for rec in obs_records
                                         ]
+                                        proc_evidence = proc.get("extracted_evidence")
                                         dsets = decision_extractor.extract_decisions(
-                                            slug, observations
+                                            slug, observations,
+                                            evidence=proc_evidence,
                                         )
                                         if dsets:
                                             decision_extractor.save_decisions(dsets)
@@ -4677,6 +4876,29 @@ def main(argv: list[str] | None = None) -> None:
                                 except Exception:
                                     logger.debug(
                                         "Decision extraction failed", exc_info=True
+                                    )
+                                # Correction-to-guardrail learning
+                                try:
+                                    guardrail_count = 0
+                                    for proc in all_procs:
+                                        _cs = proc.get("id", proc.get("slug", ""))
+                                        if not _cs:
+                                            continue
+                                        _guardrails = correction_detector.analyze_correction_patterns(_cs)
+                                        if _guardrails:
+                                            correction_detector.apply_guardrails_to_procedure(
+                                                _cs, _guardrails,
+                                            )
+                                            guardrail_count += len(_guardrails)
+                                    if guardrail_count:
+                                        logger.info(
+                                            "Correction learning: %d guardrail(s) applied",
+                                            guardrail_count,
+                                        )
+                                except Exception:
+                                    logger.debug(
+                                        "Correction-to-guardrail learning failed",
+                                        exc_info=True,
                                     )
                                 # Phase 4: Session linking + trust evaluation + digest
                                 try:
@@ -4692,6 +4914,118 @@ def main(argv: list[str] | None = None) -> None:
                                         )
                                 except Exception:
                                     logger.debug("Trust evaluation failed", exc_info=True)
+
+                                # --- Behavioral re-synthesis trigger ---
+                                try:
+                                    all_procs_for_synth = knowledge_base.list_procedures()
+                                    synth_count = 0
+                                    # Pre-load daily summaries once for all procedures
+                                    _synth_daily = [
+                                        knowledge_base.get_daily_summary(d)
+                                        for d in knowledge_base.list_daily_summaries(limit=7)
+                                    ]
+                                    _synth_daily = [s for s in _synth_daily if s is not None]
+
+                                    for proc_info in all_procs_for_synth:
+                                        p_slug = proc_info.get("id", proc_info.get("slug", ""))
+                                        if not p_slug:
+                                            continue
+                                        proc = knowledge_base.get_procedure(p_slug)
+                                        if proc is None:
+                                            continue
+                                        if proc.get("lifecycle_state") == "archived":
+                                            continue
+                                        if not behavioral_synthesizer.should_synthesize(proc):
+                                            continue
+
+                                        # Build observations from procedure evidence
+                                        _synth_obs: list[list[dict]] = []
+                                        evidence = proc.get("evidence", {})
+                                        obs_records = evidence.get("observations", [])
+                                        proc_steps = proc.get("steps", [])
+                                        if proc_steps:
+                                            # Each observation record represents
+                                            # one demonstration; reconstruct as
+                                            # a list of step dicts per observation.
+                                            for _rec in obs_records:
+                                                _synth_obs.append(proc_steps)
+
+                                        insights = behavioral_synthesizer.synthesize(
+                                            p_slug, proc, _synth_obs,
+                                            daily_summaries=_synth_daily,
+                                        )
+                                        if insights.strategy or insights.guardrails:
+                                            updated = behavioral_synthesizer.merge_insights_into_procedure(
+                                                proc, insights,
+                                            )
+                                            knowledge_base.save_procedure(updated)
+                                            synth_count += 1
+                                    if synth_count:
+                                        logger.info(
+                                            "Behavioral synthesis: %d procedure(s) updated",
+                                            synth_count,
+                                        )
+                                except Exception:
+                                    logger.debug(
+                                        "Behavioral re-synthesis failed", exc_info=True,
+                                    )
+
+                                # --- Pre-expiry evidence extraction ---
+                                try:
+                                    extracted = evidence_extractor.extract_all_pending()
+                                    if extracted:
+                                        logger.info(
+                                            "Evidence extraction: %d procedure(s) processed",
+                                            extracted,
+                                        )
+                                except Exception:
+                                    logger.debug(
+                                        "Pre-expiry evidence extraction failed",
+                                        exc_info=True,
+                                    )
+
+                                # --- Session linker feedback into recurrence ---
+                                try:
+                                    active_links = session_linker.get_active_links()
+                                    link_updates = 0
+                                    for link in active_links:
+                                        matched = link.matched_procedure if hasattr(link, "matched_procedure") else link.get("matched_procedure")
+                                        if not matched:
+                                            continue
+                                        proc = knowledge_base.get_procedure(matched)
+                                        if proc is None:
+                                            continue
+                                        sessions = link.sessions if hasattr(link, "sessions") else link.get("sessions", [])
+                                        total_dur = link.total_duration_minutes if hasattr(link, "total_duration_minutes") else link.get("total_duration_minutes", 0)
+                                        recurrence = proc.get("recurrence", {})
+                                        if sessions and len(sessions) >= 2:
+                                            recurrence["observations"] = len(sessions)
+                                            if total_dur > 0:
+                                                recurrence["avg_duration_minutes"] = round(
+                                                    total_dur / len(sessions), 1,
+                                                )
+                                            # Detect daily/weekly pattern
+                                            span_days = link.span_days if hasattr(link, "span_days") else link.get("span_days", 0)
+                                            if span_days > 0 and len(sessions) >= 3:
+                                                avg_gap = span_days / (len(sessions) - 1)
+                                                if avg_gap <= 1.5:
+                                                    recurrence["pattern"] = "daily"
+                                                elif 6 <= avg_gap <= 8:
+                                                    recurrence["pattern"] = "weekly"
+                                            proc["recurrence"] = recurrence
+                                            knowledge_base.save_procedure(proc)
+                                            link_updates += 1
+                                    if link_updates:
+                                        logger.info(
+                                            "Session linker: updated recurrence for %d procedure(s)",
+                                            link_updates,
+                                        )
+                                except Exception:
+                                    logger.debug(
+                                        "Session linker recurrence feedback failed",
+                                        exc_info=True,
+                                    )
+
                             # Seed default constraints if constraints file is empty.
                             # Runs on every daily batch (outside the summaries >= 3
                             # gate) so constraints are available from day one.  The

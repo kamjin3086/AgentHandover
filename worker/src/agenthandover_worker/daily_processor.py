@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from collections import Counter
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
@@ -41,6 +42,26 @@ _ACTIVITY_GAP_SECONDS = 300  # 5 minutes
 
 # Number of days to keep in the rolling recent context.
 _RECENT_CONTEXT_DAYS = 7
+
+# Stop words for intent normalization.
+_INTENT_STOP_WORDS = {
+    "the", "a", "an", "in", "on", "at", "to", "for", "of", "with",
+    "and", "or", "is", "it", "was", "be",
+}
+
+
+def _normalize_intent(intent: str) -> str:
+    """Normalize an intent string for comparison.
+
+    Lowercases, strips punctuation, removes stop words, sorts remaining
+    words alphabetically.  This ensures "debugging code" and "code debugging"
+    compare as equal.
+    """
+    text = intent.lower()
+    text = re.sub(r"[^\w\s]", "", text)
+    words = [w for w in text.split() if w not in _INTENT_STOP_WORDS]
+    words.sort()
+    return " ".join(words)
 
 
 # ---------------------------------------------------------------------------
@@ -270,11 +291,11 @@ class DailyBatchProcessor:
                 and prev["app"] != ""
             )
 
-            # Check for intent change
+            # Check for intent change (normalized comparison)
             intent_changed = (
-                curr["what_doing"] != prev["what_doing"]
-                and curr["what_doing"] != ""
+                curr["what_doing"] != ""
                 and prev["what_doing"] != ""
+                and _normalize_intent(curr["what_doing"]) != _normalize_intent(prev["what_doing"])
             )
 
             if time_gap or app_changed or intent_changed:
@@ -308,11 +329,19 @@ class DailyBatchProcessor:
         end_dt: datetime = group[-1]["dt"]
         duration = _minutes_between(start_dt, end_dt)
 
-        # Most common intent
+        # Most common intent (normalize before counting so word-order
+        # variants like "debugging code" and "code debugging" collapse)
         intents = [a["what_doing"] for a in group if a["what_doing"]]
         if intents:
-            counter = Counter(intents)
-            intent = counter.most_common(1)[0][0]
+            # Map normalized form -> list of original strings
+            norm_to_originals: dict[str, list[str]] = {}
+            for raw in intents:
+                norm = _normalize_intent(raw)
+                norm_to_originals.setdefault(norm, []).append(raw)
+            # Find normalized form with most occurrences
+            best_norm = max(norm_to_originals, key=lambda n: len(norm_to_originals[n]))
+            # Use the first original string as the intent (preserves casing)
+            intent = norm_to_originals[best_norm][0]
         else:
             intent = ""
 

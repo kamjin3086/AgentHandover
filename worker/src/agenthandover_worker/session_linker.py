@@ -16,8 +16,12 @@ import json
 import logging
 import re
 import uuid
+from typing import TYPE_CHECKING
 
 from agenthandover_worker.knowledge_base import KnowledgeBase
+
+if TYPE_CHECKING:
+    from agenthandover_worker.llm_reasoning import LLMReasoner
 
 logger = logging.getLogger(__name__)
 
@@ -52,8 +56,13 @@ class LinkedTask:
 class SessionLinker:
     """Links related tasks across daily summaries."""
 
-    def __init__(self, knowledge_base: KnowledgeBase) -> None:
+    def __init__(
+        self,
+        knowledge_base: KnowledgeBase,
+        llm_reasoner: "LLMReasoner | None" = None,
+    ) -> None:
         self._kb = knowledge_base
+        self._llm_reasoner = llm_reasoner
         self._links: list[LinkedTask] = []
         self._load_links()
 
@@ -136,7 +145,23 @@ class SessionLinker:
                     task_a["matched_procedure"] is not None
                     and task_a["matched_procedure"] == task_b["matched_procedure"]
                 )
-                if similarity >= _SIMILARITY_THRESHOLD or proc_match:
+
+                # Ambiguous range: use LLM semantic check to break ties.
+                # Wider range (0.15-0.6) catches both "below threshold but
+                # might be same" AND "above threshold but might be different".
+                is_match = similarity >= _SIMILARITY_THRESHOLD
+                if (
+                    not proc_match
+                    and self._llm_reasoner is not None
+                    and 0.15 <= similarity <= 0.6
+                ):
+                    llm_verdict = self._semantic_check(
+                        task_a["intent"], task_b["intent"],
+                    )
+                    if llm_verdict is True:
+                        is_match = True
+
+                if is_match or proc_match:
                     group.append(task_b)
                     used_indices.add(j)
 
@@ -227,6 +252,32 @@ class SessionLinker:
         union = tokens_a | tokens_b
         return len(intersection) / len(union)
 
+    def _semantic_check(self, intent_a: str, intent_b: str) -> bool | None:
+        """Use LLM to determine if two intents describe the same workflow.
+
+        Returns True if the LLM says YES, False if NO, None on
+        failure/ambiguity/abstention.
+        """
+        if self._llm_reasoner is None:
+            return None
+
+        prompt = (
+            "Are these two task descriptions the same recurring workflow? "
+            f"Task A: '{intent_a}' Task B: '{intent_b}'. "
+            "Answer YES or NO."
+        )
+
+        try:
+            result = self._llm_reasoner.reason_yesno(
+                prompt, caller="session_linker.semantic_check",
+            )
+            if result.success and not result.abstained:
+                return result.value  # True, False, or None (ambiguous)
+        except Exception:
+            logger.debug("LLM semantic check failed", exc_info=True)
+
+        return None
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
@@ -248,14 +299,25 @@ class SessionLinker:
 
             # Check procedure match
             if (
-                task["matched_procedure"] is not None
+                task.get("matched_procedure") is not None
                 and link.matched_procedure == task["matched_procedure"]
             ):
                 return link
 
-            # Check intent similarity
-            if self._intent_similarity(link.intent, task["intent"]) >= _SIMILARITY_THRESHOLD:
+            # Check intent similarity (with LLM for ambiguous range)
+            similarity = self._intent_similarity(link.intent, task.get("intent", ""))
+            if similarity >= _SIMILARITY_THRESHOLD:
                 return link
+
+            # LLM semantic check for ambiguous similarity — same logic
+            # as the new-group path so existing links don't fragment
+            if (
+                self._llm_reasoner is not None
+                and 0.15 <= similarity < _SIMILARITY_THRESHOLD
+            ):
+                is_same = self._semantic_check(link.intent, task.get("intent", ""))
+                if is_same is True:
+                    return link
 
         return None
 

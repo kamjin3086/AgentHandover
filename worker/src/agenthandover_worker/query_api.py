@@ -99,6 +99,8 @@ class QueryAPIHandler(http.server.BaseHTTPRequestHandler):
                 self._handle_bundle(slug)
             elif path == "/ready":
                 self._handle_ready()
+            elif path == "/available":
+                self._handle_available()
             elif path == "/curation/queue":
                 self._handle_curation_queue()
             elif path == "/curation/merges":
@@ -281,18 +283,48 @@ class QueryAPIHandler(http.server.BaseHTTPRequestHandler):
                 if bundle is None:
                     self._send_error(404, f"Procedure not found: {slug}")
                     return
+
+                # Load the full procedure for the response body
+                kb: KnowledgeBase = self.server.knowledge_base  # type: ignore[attr-defined]
+                procedure = kb.get_procedure(slug) or {}
+
+                # Run preflight if verifier is available
+                preflight = None
+                verifier = getattr(self.server, "procedure_verifier", None)
+                if verifier is not None:
+                    try:
+                        pf_result = verifier.preflight(slug)
+                        preflight = {
+                            "can_execute": pf_result.can_execute,
+                            "can_draft": pf_result.can_draft,
+                            "errors": [{"name": c.name, "detail": c.detail} for c in pf_result.errors],
+                            "warnings": [{"name": c.name, "detail": c.detail} for c in pf_result.warnings],
+                        }
+                    except Exception:
+                        pass
+
+                # Execution stats
+                execution_stats = None
+                exec_monitor = getattr(self.server, "execution_monitor", None)
+                if exec_monitor is not None:
+                    try:
+                        execution_stats = exec_monitor.get_success_rate(slug)
+                    except Exception:
+                        pass
+
                 self._send_json({
                     "slug": bundle.slug,
-                    "procedure": bundle.readiness.lifecycle_state,
+                    "executable": bundle.readiness.can_execute,
+                    "procedure": procedure,
                     "lifecycle_state": bundle.readiness.lifecycle_state,
                     "trust_level": bundle.readiness.trust_level,
                     "freshness_score": bundle.readiness.freshness,
                     "readiness": _asdict(bundle.readiness),
                     "compiled_outputs": [_asdict(co) for co in bundle.compiled_outputs],
-                    "preflight": None,
-                    "execution_stats": None,
-                    "chain": {},
-                    "recurrence": {},
+                    "preflight": preflight,
+                    "execution_stats": execution_stats,
+                    "chain": procedure.get("chain", {}),
+                    "recurrence": procedure.get("recurrence", {}),
                 })
                 return
             except Exception:
@@ -362,8 +394,16 @@ class QueryAPIHandler(http.server.BaseHTTPRequestHandler):
             except Exception:
                 pass
 
+        # Determine executability for the fallback path
+        _executable = False
+        if preflight is not None and preflight.get("can_execute"):
+            _lifecycle = procedure.get("lifecycle_state", "observed")
+            if _lifecycle == "agent_ready" and trust_level in ("execute_with_approval", "autonomous"):
+                _executable = True
+
         bundle = {
             "slug": slug,
+            "executable": _executable,
             "procedure": procedure,
             "trust_level": trust_level,
             "freshness_score": freshness,
@@ -556,73 +596,130 @@ class QueryAPIHandler(http.server.BaseHTTPRequestHandler):
         self._send_json({"success": True, "slug": slug, "drift_type": drift_type})
 
     def _handle_ready(self) -> None:
-        """Return procedures that are ready for agent execution.
+        """Return ONLY procedures that are ready for agent execution.
 
-        Two tiers:
-        - ``executable``: trust_level in (execute_with_approval, autonomous)
-        - ``draftable``: trust_level == draft (agent can draft, human approves)
+        Strict endpoint: every procedure in the response has passed all
+        readiness gates (lifecycle=agent_ready, trust=execute+, freshness,
+        preflight).  If it's in this response, an agent can execute it.
 
-        Both require freshness_score >= 0.3.
+        For discovery of all procedures including drafts, use ``/available``.
         """
         kb: KnowledgeBase = self.server.knowledge_base  # type: ignore[attr-defined]
         from agenthandover_worker.staleness_detector import procedure_freshness
+        from agenthandover_worker.bundle_compiler import BundleCompiler
+        from agenthandover_worker.lifecycle_manager import ProcedureLifecycle
 
+        verifier = getattr(self.server, "procedure_verifier", None)
         procedures = kb.list_procedures()
         ready = []
 
-        _EXECUTABLE_TRUST_LEVELS = frozenset({
-            "execute_with_approval", "autonomous",
-        })
-        _DRAFTABLE_TRUST_LEVELS = frozenset({
-            "draft", "execute_with_approval", "autonomous",
-        })
-        _MIN_FRESHNESS = 0.3
-
         for proc in procedures:
+            slug = proc.get("id", proc.get("slug", ""))
+            if not slug:
+                continue
+
+            # Use the canonical readiness computation
+            lifecycle_str = proc.get("lifecycle_state", "observed")
+            try:
+                lifecycle = ProcedureLifecycle(lifecycle_str)
+            except ValueError:
+                continue
+
             constraints = proc.get("constraints", {})
             trust_level = constraints.get("trust_level", "observe")
-
-            # Must be at least draftable
-            if trust_level not in _DRAFTABLE_TRUST_LEVELS:
-                continue
-
             freshness = procedure_freshness(proc)
-            if freshness < _MIN_FRESHNESS:
+
+            # Run preflight if verifier available
+            preflight = None
+            if verifier is not None:
+                try:
+                    preflight = verifier.preflight(slug)
+                except Exception:
+                    pass
+
+            readiness = BundleCompiler.compute_readiness(
+                lifecycle_state=lifecycle,
+                trust_level=trust_level,
+                freshness=freshness,
+                preflight=preflight,
+            )
+
+            # STRICT: only include if can_execute is True
+            if not readiness.can_execute:
                 continue
-
-            can_execute = trust_level in _EXECUTABLE_TRUST_LEVELS
-
-            # Lifecycle gate (only when field is present)
-            lifecycle_state = proc.get("lifecycle_state")
-            if lifecycle_state is not None:
-                if can_execute and lifecycle_state != "agent_ready":
-                    can_execute = False
-                draft_eligible = {"draft", "reviewed", "verified", "agent_ready"}
-                if lifecycle_state not in draft_eligible:
-                    continue  # skip entirely — not even draftable
 
             ready.append({
-                "id": proc.get("id", proc.get("slug", "")),
+                "id": slug,
                 "title": proc.get("title", ""),
                 "trust_level": trust_level,
-                "can_execute": can_execute,
-                "can_draft": True,  # all entries here are at least draftable
+                "executable": True,
                 "freshness_score": freshness,
                 "confidence": proc.get("confidence_avg", 0.0),
                 "last_observed": proc.get("staleness", {}).get("last_observed"),
                 "apps": proc.get("apps_involved", []),
                 "chain": proc.get("chain", {}),
-                "lifecycle_state": proc.get("lifecycle_state", "observed"),
+                "lifecycle_state": lifecycle_str,
             })
 
         self._send_json({
             "ready_procedures": ready,
             "count": len(ready),
-            "filters": {
-                "executable_trust_levels": sorted(_EXECUTABLE_TRUST_LEVELS),
-                "draftable_trust_levels": sorted(_DRAFTABLE_TRUST_LEVELS),
-                "min_freshness": _MIN_FRESHNESS,
-            },
+        })
+
+    def _handle_available(self) -> None:
+        """Return ALL procedures with readiness info for discovery.
+
+        Unlike ``/ready`` which only returns executable procedures,
+        this endpoint returns every procedure with its full readiness
+        assessment, including ``blocked_by`` reasons.  Use this for
+        browsing, dashboards, and agent discovery of draft work.
+        """
+        kb: KnowledgeBase = self.server.knowledge_base  # type: ignore[attr-defined]
+        from agenthandover_worker.staleness_detector import procedure_freshness
+        from agenthandover_worker.bundle_compiler import BundleCompiler
+        from agenthandover_worker.lifecycle_manager import ProcedureLifecycle
+
+        procedures = kb.list_procedures()
+        available = []
+
+        for proc in procedures:
+            slug = proc.get("id", proc.get("slug", ""))
+            if not slug:
+                continue
+
+            lifecycle_str = proc.get("lifecycle_state", "observed")
+            try:
+                lifecycle = ProcedureLifecycle(lifecycle_str)
+            except ValueError:
+                lifecycle = ProcedureLifecycle.OBSERVED
+
+            constraints = proc.get("constraints", {})
+            trust_level = constraints.get("trust_level", "observe")
+            freshness = procedure_freshness(proc)
+
+            readiness = BundleCompiler.compute_readiness(
+                lifecycle_state=lifecycle,
+                trust_level=trust_level,
+                freshness=freshness,
+            )
+
+            available.append({
+                "id": slug,
+                "title": proc.get("title", ""),
+                "trust_level": trust_level,
+                "can_execute": readiness.can_execute,
+                "can_draft": readiness.can_draft,
+                "freshness_score": freshness,
+                "confidence": proc.get("confidence_avg", 0.0),
+                "last_observed": proc.get("staleness", {}).get("last_observed"),
+                "apps": proc.get("apps_involved", []),
+                "lifecycle_state": lifecycle_str,
+                "blocked_by": readiness.reasons if readiness.reasons else [],
+            })
+
+        self._send_json({
+            "available_procedures": available,
+            "count": len(available),
         })
 
     # ------------------------------------------------------------------

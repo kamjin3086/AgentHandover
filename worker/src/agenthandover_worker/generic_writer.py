@@ -71,9 +71,44 @@ class GenericWriter(SOPExportAdapter):
         sop_template = procedure_to_sop_template(procedure)
         md_content = self.formatter.format_sop(sop_template)
 
-        # Append v3-only sections
+        # Append v3-only sections (including behavioral fields)
         extra_lines: list[str] = []
 
+        # Strategy
+        strategy = procedure.get("strategy")
+        if strategy:
+            extra_lines.append("## Strategy")
+            extra_lines.append(strategy)
+            extra_lines.append("")
+
+        # Evidence summary (pre-synthesis fallback)
+        evidence_summary = procedure.get("evidence_summary")
+        if evidence_summary and not strategy:
+            extra_lines.append("## Observed Patterns")
+            extra_lines.append(evidence_summary)
+            extra_lines.append("")
+
+        # Selection criteria
+        selection = procedure.get("selection_criteria", [])
+        if selection:
+            extra_lines.append("## Selection Criteria")
+            for sc in selection:
+                criterion = sc.get("criterion", "")
+                if criterion:
+                    extra_lines.append(f"- {criterion}")
+            extra_lines.append("")
+
+        # Content templates
+        templates = procedure.get("content_templates", [])
+        if templates:
+            extra_lines.append("## Content Templates")
+            for ct in templates:
+                template = ct.get("template", "")
+                if template:
+                    extra_lines.append(f"- {template}")
+            extra_lines.append("")
+
+        # Environment
         env = procedure.get("environment", {})
         if env.get("required_apps") or env.get("accounts") or env.get("setup_actions"):
             extra_lines.append("## Environment")
@@ -87,6 +122,7 @@ class GenericWriter(SOPExportAdapter):
                 extra_lines.append(f"- Setup: {action}")
             extra_lines.append("")
 
+        # Constraints / guardrails
         constraints = procedure.get("constraints", {})
         trust_level = constraints.get("trust_level", "")
         guardrails = constraints.get("guardrails", [])
@@ -98,6 +134,7 @@ class GenericWriter(SOPExportAdapter):
                 extra_lines.append(f"- {g}")
             extra_lines.append("")
 
+        # Expected outcomes
         outcomes = procedure.get("expected_outcomes", [])
         if outcomes:
             extra_lines.append("## Expected Outcomes")
@@ -107,6 +144,19 @@ class GenericWriter(SOPExportAdapter):
                     extra_lines.append(f"- {desc}")
                 else:
                     extra_lines.append(f"- {o}")
+            extra_lines.append("")
+
+        # Workflow rhythm
+        rhythm = procedure.get("workflow_rhythm", {})
+        if rhythm and rhythm.get("phases"):
+            extra_lines.append("## Workflow Rhythm")
+            avg_dur = rhythm.get("avg_duration_minutes")
+            if avg_dur:
+                extra_lines.append(f"- Duration: ~{avg_dur:.0f} min")
+            for phase in rhythm.get("phases", []):
+                name = phase.get("name", "")
+                dur = phase.get("typical_duration_minutes", 0)
+                extra_lines.append(f"- {name}: ~{dur} min")
             extra_lines.append("")
 
         if extra_lines:

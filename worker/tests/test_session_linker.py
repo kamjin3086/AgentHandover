@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -380,4 +381,182 @@ class TestEdgeCases:
         ])
         linker = SessionLinker(kb)
         links = linker.analyze_daily_summaries()
+        assert len(links) == 1
+
+
+# ---------------------------------------------------------------------------
+# Tests: LLM-based session linking
+# ---------------------------------------------------------------------------
+
+
+class TestLLMSessionLinking:
+    """Tests for LLM semantic check in ambiguous similarity range."""
+
+    def test_ambiguous_similarity_llm_yes_links(self, kb: KnowledgeBase) -> None:
+        """Ambiguous similarity (0.2-0.5) + LLM YES = tasks linked."""
+        from agenthandover_worker.llm_reasoning import LLMReasoner
+
+        # "Deploy staging server" vs "Push staging build"
+        # Jaccard: {"deploy","staging","server"} vs {"push","staging","build"}
+        # intersection=1, union=5 -> 0.2 (ambiguous range)
+        _save_daily(kb, "2025-03-01", [
+            {"intent": "Deploy staging server", "duration_minutes": 30, "apps": ["Terminal"]},
+        ])
+        _save_daily(kb, "2025-03-02", [
+            {"intent": "Push staging build", "duration_minutes": 20, "apps": ["Terminal"]},
+        ])
+
+        reasoner = LLMReasoner()
+
+        def mock_ollama(prompt, system, num_predict=None, **kwargs):
+            return ("Yes, these describe the same workflow", 0.3)
+
+        with patch.object(LLMReasoner, "_call_ollama", side_effect=mock_ollama):
+            linker = SessionLinker(kb, llm_reasoner=reasoner)
+            links = linker.analyze_daily_summaries()
+
+        assert len(links) == 1
+
+    def test_ambiguous_similarity_llm_no_skips(self, kb: KnowledgeBase) -> None:
+        """Ambiguous similarity + LLM NO = tasks not linked."""
+        from agenthandover_worker.llm_reasoning import LLMReasoner
+
+        _save_daily(kb, "2025-03-01", [
+            {"intent": "Deploy staging server", "duration_minutes": 30, "apps": ["Terminal"]},
+        ])
+        _save_daily(kb, "2025-03-02", [
+            {"intent": "Push staging build", "duration_minutes": 20, "apps": ["Terminal"]},
+        ])
+
+        reasoner = LLMReasoner()
+
+        def mock_ollama(prompt, system, num_predict=None, **kwargs):
+            return ("No, these are different workflows", 0.3)
+
+        with patch.object(LLMReasoner, "_call_ollama", side_effect=mock_ollama):
+            linker = SessionLinker(kb, llm_reasoner=reasoner)
+            links = linker.analyze_daily_summaries()
+
+        assert len(links) == 0
+
+    def test_high_similarity_skips_llm(self, kb: KnowledgeBase) -> None:
+        """High similarity (>0.5) should not call LLM, just use heuristic."""
+        from agenthandover_worker.llm_reasoning import LLMReasoner
+
+        # Identical intents -> similarity 1.0, well above threshold
+        _save_daily(kb, "2025-03-01", [
+            {"intent": "Deploy API server", "duration_minutes": 30, "apps": ["Terminal"]},
+        ])
+        _save_daily(kb, "2025-03-02", [
+            {"intent": "Deploy API server", "duration_minutes": 20, "apps": ["Terminal"]},
+        ])
+
+        reasoner = LLMReasoner()
+        call_count = 0
+
+        def mock_ollama(prompt, system, num_predict=None, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return ("Yes", 0.3)
+
+        with patch.object(LLMReasoner, "_call_ollama", side_effect=mock_ollama):
+            linker = SessionLinker(kb, llm_reasoner=reasoner)
+            links = linker.analyze_daily_summaries()
+
+        assert len(links) == 1
+        # LLM should not have been called (similarity > 0.5)
+        assert call_count == 0
+
+    def test_low_similarity_skips_llm(self, kb: KnowledgeBase) -> None:
+        """Low similarity (<0.2) should not call LLM."""
+        from agenthandover_worker.llm_reasoning import LLMReasoner
+
+        # Completely different intents -> similarity 0.0
+        _save_daily(kb, "2025-03-01", [
+            {"intent": "Deploy API server", "duration_minutes": 30, "apps": ["Terminal"]},
+        ])
+        _save_daily(kb, "2025-03-02", [
+            {"intent": "Cook dinner tonight", "duration_minutes": 60, "apps": ["Safari"]},
+        ])
+
+        reasoner = LLMReasoner()
+        call_count = 0
+
+        def mock_ollama(prompt, system, num_predict=None, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return ("Yes", 0.3)
+
+        with patch.object(LLMReasoner, "_call_ollama", side_effect=mock_ollama):
+            linker = SessionLinker(kb, llm_reasoner=reasoner)
+            links = linker.analyze_daily_summaries()
+
+        assert len(links) == 0
+        # LLM should not have been called (similarity < 0.2)
+        assert call_count == 0
+
+    def test_llm_failure_uses_threshold(self, kb: KnowledgeBase) -> None:
+        """When LLM fails, fall back to heuristic threshold."""
+        from agenthandover_worker.llm_reasoning import LLMReasoner
+
+        # Ambiguous similarity — LLM fails, should fall through to heuristic
+        _save_daily(kb, "2025-03-01", [
+            {"intent": "Deploy staging server", "duration_minutes": 30, "apps": ["Terminal"]},
+        ])
+        _save_daily(kb, "2025-03-02", [
+            {"intent": "Push staging build", "duration_minutes": 20, "apps": ["Terminal"]},
+        ])
+
+        reasoner = LLMReasoner()
+
+        def mock_ollama(prompt, system, num_predict=None, **kwargs):
+            raise ConnectionError("Ollama not reachable")
+
+        with patch.object(LLMReasoner, "_call_ollama", side_effect=mock_ollama):
+            linker = SessionLinker(kb, llm_reasoner=reasoner)
+            links = linker.analyze_daily_summaries()
+
+        # Similarity ~0.2, below _SIMILARITY_THRESHOLD (0.4), LLM failed -> no link
+        assert len(links) == 0
+
+    def test_llm_called_for_wider_range(self, kb: KnowledgeBase) -> None:
+        """LLM fires for similarity 0.18 (was 0.2+ before the wider range)."""
+        from agenthandover_worker.llm_reasoning import LLMReasoner
+
+        # "Update staging backend" vs "Patch production frontend"
+        # Jaccard: {"update","staging","backend"} vs {"patch","production","frontend"}
+        # intersection=0, union=6 -> 0.0
+        # That's too low. Let's pick something ~0.18:
+        # "Deploy staging server" vs "Rebuild staging cache"
+        # {"deploy","staging","server"} vs {"rebuild","staging","cache"}
+        # intersection=1 ("staging"), union=5 -> 0.2
+        # Need ~0.18. Tricky to get exact. Let's use a slightly different pair:
+        # "Deploy staging API server" vs "Rebuild staging cache service"
+        # {"deploy","staging","api","server"} vs {"rebuild","staging","cache","service"}
+        # intersection=1, union=7 -> ~0.143 -- too low
+        # "Deploy staging build server" vs "Rebuild staging cache"
+        # {"deploy","staging","build","server"} vs {"rebuild","staging","cache"}
+        # intersection=1, union=6 -> ~0.167 -- slightly above 0.15, in new range
+        _save_daily(kb, "2025-03-01", [
+            {"intent": "Deploy staging build server", "duration_minutes": 30, "apps": ["Terminal"]},
+        ])
+        _save_daily(kb, "2025-03-02", [
+            {"intent": "Rebuild staging cache", "duration_minutes": 20, "apps": ["Terminal"]},
+        ])
+
+        reasoner = LLMReasoner()
+        call_count = 0
+
+        def mock_ollama(prompt, system, num_predict=None, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return ("Yes, same workflow", 0.3)
+
+        with patch.object(LLMReasoner, "_call_ollama", side_effect=mock_ollama):
+            linker = SessionLinker(kb, llm_reasoner=reasoner)
+            links = linker.analyze_daily_summaries()
+
+        # LLM should have been called (similarity ~0.167, in the 0.15-0.6 range)
+        assert call_count >= 1
+        # LLM said YES, so tasks should be linked
         assert len(links) == 1

@@ -866,6 +866,39 @@ class WorkerDB:
         )
         return self._rows_to_dicts(cur.fetchall())
 
+    def get_events_for_procedure_window(
+        self,
+        start_iso: str,
+        end_iso: str,
+        *,
+        limit: int = 500,
+    ) -> list[dict]:
+        """Return annotated events within a time window.
+
+        Used by the evidence extractor to collect raw events that
+        overlap with known observations of a procedure before the
+        raw annotations expire at 14 days.
+
+        Args:
+            start_iso: Start timestamp (ISO 8601).
+            end_iso: End timestamp (ISO 8601).
+            limit: Maximum number of events to return.
+
+        Returns:
+            List of event dicts with annotations, ordered by timestamp.
+        """
+        self._refresh_read_snapshot()
+        cur = self._conn.execute(
+            "SELECT * FROM events "
+            "WHERE annotation_status = 'completed' "
+            "  AND scene_annotation_json IS NOT NULL "
+            "  AND timestamp >= ? AND timestamp <= ? "
+            "ORDER BY timestamp ASC "
+            "LIMIT ?",
+            (start_iso, end_iso, limit),
+        )
+        return self._rows_to_dicts(cur.fetchall())
+
     def get_workflow_annotated_events(
         self,
         *,

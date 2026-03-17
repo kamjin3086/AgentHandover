@@ -6,6 +6,10 @@ domains, action verbs) with Jaccard similarity to detect when a newly
 generated SOP matches an existing one, and merges them instead of
 creating a duplicate.
 
+When an ``LLMReasoner`` is provided, step-level merge conflicts (where
+two versions of a step differ textually) are resolved by the LLM
+instead of the simple "keep more steps" heuristic.
+
 Design:
 - **Deterministic**: no embedding model needed — pure set operations
 - **Conservative**: threshold 0.7 avoids false merges on similar-but-different tasks
@@ -23,7 +27,11 @@ import json
 import logging
 import re
 from pathlib import Path
+from typing import TYPE_CHECKING
 from urllib.parse import urlparse
+
+if TYPE_CHECKING:
+    from agenthandover_worker.llm_reasoning import LLMReasoner
 
 logger = logging.getLogger(__name__)
 
@@ -293,7 +301,62 @@ def find_matching_sop(
 # ------------------------------------------------------------------
 
 
-def merge_sops(existing: dict, new_sop: dict, evidence_normalizer=None) -> dict:
+def _resolve_conflict_with_llm(
+    reasoner: "LLMReasoner",
+    step_a: dict,
+    step_b: dict,
+) -> dict | None:
+    """Ask the LLM to resolve a conflict between two step versions.
+
+    Returns:
+    - ``step_a`` if the LLM says keep A
+    - ``step_b`` if the LLM says keep B
+    - ``step_a`` with ``step_b`` added to alternatives if keep both
+    - ``None`` on failure / abstention
+    """
+    action_a = step_a.get("step", step_a.get("action", ""))
+    action_b = step_b.get("step", step_b.get("action", ""))
+
+    prompt = (
+        f"Two versions of a procedure step differ. "
+        f"Version A: '{action_a}'. Version B: '{action_b}'. "
+        f"Which is better, or should both be kept as alternatives? "
+        f'Respond with JSON: {{"keep": "A" or "B" or "both", '
+        f'"reason": "..."}}. '
+        f"If insufficient context, respond with INSUFFICIENT_EVIDENCE."
+    )
+
+    try:
+        result = reasoner.reason_json(
+            prompt=prompt,
+            caller="sop_dedup._resolve_conflict_with_llm",
+        )
+        if not result.success or result.abstained or not result.value:
+            return None
+
+        keep = result.value.get("keep", "").upper()
+        if keep == "A":
+            return dict(step_a)
+        elif keep == "B":
+            return dict(step_b)
+        elif keep == "BOTH":
+            merged_step = dict(step_a)
+            alternatives = list(merged_step.get("alternatives", []))
+            alternatives.append(step_b)
+            merged_step["alternatives"] = alternatives
+            return merged_step
+    except Exception:
+        logger.debug("LLM step conflict resolution failed", exc_info=True)
+
+    return None
+
+
+def merge_sops(
+    existing: dict,
+    new_sop: dict,
+    evidence_normalizer=None,
+    llm_reasoner: "LLMReasoner | None" = None,
+) -> dict:
     """Merge a new SOP into an existing one.
 
     Strategy:
@@ -312,7 +375,14 @@ def merge_sops(existing: dict, new_sop: dict, evidence_normalizer=None) -> dict:
     """
     if evidence_normalizer is not None:
         try:
-            return evidence_normalizer.merge_with_evidence(existing, new_sop.get("steps", []))
+            # evidence_normalizer.merge_with_evidence expects v3 procedure
+            # dicts, but merge_sops operates on SOP templates.  Only use
+            # evidence-based merge when the existing dict looks like a v3
+            # procedure (has "schema_version" and "id").
+            if existing.get("schema_version") and existing.get("id"):
+                return evidence_normalizer.merge_with_evidence(
+                    existing, new_sop.get("steps", []),
+                )
         except Exception:
             logger.debug("Evidence-based merge failed, using default", exc_info=True)
     # ... existing logic continues as fallback ...
@@ -329,10 +399,50 @@ def merge_sops(existing: dict, new_sop: dict, evidence_normalizer=None) -> dict:
     if new_sop.get("task_description"):
         merged["task_description"] = new_sop["task_description"]
 
-    # Steps: keep the version with more steps; if tied, keep latest
+    # Steps: keep the version with more steps; if tied, keep latest.
+    # When step counts are close (within 1) and an LLM reasoner is
+    # available, attempt per-step conflict resolution instead.
     existing_steps = existing.get("steps", [])
     new_steps = new_sop.get("steps", [])
-    if len(new_steps) >= len(existing_steps):
+    step_diff = abs(len(existing_steps) - len(new_steps))
+
+    if step_diff <= 1 and llm_reasoner is not None and existing_steps and new_steps:
+        # Attempt LLM-based step-by-step conflict resolution
+        min_len = min(len(existing_steps), len(new_steps))
+        resolved_steps: list[dict] = []
+        used_llm = False
+
+        for i in range(min_len):
+            s_a = existing_steps[i]
+            s_b = new_steps[i]
+            action_a = (s_a.get("step", s_a.get("action", ""))).strip().lower()
+            action_b = (s_b.get("step", s_b.get("action", ""))).strip().lower()
+
+            if action_a != action_b:
+                # Actual conflict — ask LLM
+                resolved = _resolve_conflict_with_llm(llm_reasoner, s_a, s_b)
+                if resolved is not None:
+                    resolved_steps.append(resolved)
+                    used_llm = True
+                else:
+                    # LLM failed — fall back to keeping new step
+                    resolved_steps.append(s_b)
+            else:
+                # No conflict — keep new (latest)
+                resolved_steps.append(s_b)
+
+        # Append any extra steps from the longer list
+        if len(existing_steps) > min_len:
+            resolved_steps.extend(existing_steps[min_len:])
+        elif len(new_steps) > min_len:
+            resolved_steps.extend(new_steps[min_len:])
+
+        if used_llm:
+            merged["steps"] = resolved_steps
+        elif len(new_steps) >= len(existing_steps):
+            merged["steps"] = new_steps
+        # else: keep existing steps
+    elif len(new_steps) >= len(existing_steps):
         merged["steps"] = new_steps
     # else: keep existing steps (more comprehensive)
 
@@ -533,6 +643,8 @@ def deduplicate_templates(
     new_sops: list[dict],
     state_dir: Path,
     threshold: float = _DEFAULT_THRESHOLD,
+    evidence_normalizer=None,
+    llm_reasoner: "LLMReasoner | None" = None,
 ) -> list[dict]:
     """Deduplicate a batch of new SOPs against the cumulative registry.
 
@@ -543,6 +655,14 @@ def deduplicate_templates(
 
     Updates the registry on disk after processing.
 
+    Args:
+        new_sops: Newly generated SOP templates.
+        state_dir: Directory for the SOP registry file.
+        threshold: Minimum similarity score for matching.
+        evidence_normalizer: Optional ``EvidenceNormalizer`` instance.
+            When provided, ``merge_sops`` uses semantic alignment
+            instead of the simple "keep more steps" strategy.
+
     Returns the final list of SOP templates to export (merged + new).
     """
     registry = load_registry(state_dir)
@@ -552,8 +672,12 @@ def deduplicate_templates(
         match_idx = find_matching_sop(new_sop, registry, threshold)
 
         if match_idx is not None:
-            # Merge into existing
-            merged = merge_sops(registry[match_idx], new_sop)
+            # Merge into existing (with evidence-based merge if available)
+            merged = merge_sops(
+                registry[match_idx], new_sop,
+                evidence_normalizer=evidence_normalizer,
+                llm_reasoner=llm_reasoner,
+            )
             registry[match_idx] = merged
             output.append(merged)
         else:

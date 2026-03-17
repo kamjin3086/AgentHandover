@@ -97,6 +97,40 @@ class OpenClawWriter(SOPExportAdapter):
         # Append v3-only sections
         extra_lines: list[str] = []
 
+        # Strategy section (behavioral synthesis)
+        strategy = procedure.get("strategy")
+        if strategy:
+            extra_lines.append("## Strategy")
+            extra_lines.append(strategy)
+            extra_lines.append("")
+
+        # Evidence summary (pre-synthesis fallback)
+        evidence_summary = procedure.get("evidence_summary")
+        if evidence_summary and not strategy:
+            extra_lines.append("## Observed Patterns")
+            extra_lines.append(evidence_summary)
+            extra_lines.append("")
+
+        # Selection criteria
+        selection = procedure.get("selection_criteria", [])
+        if selection:
+            extra_lines.append("## Selection Criteria")
+            for sc in selection:
+                criterion = sc.get("criterion", "")
+                if criterion:
+                    extra_lines.append(f"- {criterion}")
+            extra_lines.append("")
+
+        # Content templates
+        templates = procedure.get("content_templates", [])
+        if templates:
+            extra_lines.append("## Content Templates")
+            for ct in templates:
+                template = ct.get("template", "")
+                if template:
+                    extra_lines.append(f"- {template}")
+            extra_lines.append("")
+
         # Environment section
         env = procedure.get("environment", {})
         if env.get("required_apps") or env.get("accounts") or env.get("setup_actions"):
@@ -111,7 +145,30 @@ class OpenClawWriter(SOPExportAdapter):
                 extra_lines.append(f"- Setup: {action}")
             extra_lines.append("")
 
-        # Constraints section
+        # Browser automation hints for web-based steps
+        apps = procedure.get("apps_involved", [])
+        has_browser = any(
+            a.lower() in ("chrome", "google chrome", "firefox", "safari",
+                          "brave", "edge", "arc")
+            for a in apps
+        )
+        if has_browser:
+            extra_lines.append("## Execution Hints")
+            extra_lines.append("- This workflow involves web browser interaction")
+            extra_lines.append("- Consider native browser automation for web steps")
+            # Check for API alternatives
+            urls = set()
+            for step in procedure.get("steps", []):
+                loc = step.get("location", "")
+                if "api." in loc or "/api/" in loc:
+                    urls.add(loc)
+            if urls:
+                extra_lines.append("- API endpoints detected (may be faster than browser):")
+                for url in sorted(urls)[:5]:
+                    extra_lines.append(f"  - {url}")
+            extra_lines.append("")
+
+        # Constraints section with guardrails
         constraints = procedure.get("constraints", {})
         trust_level = constraints.get("trust_level", "")
         guardrails = constraints.get("guardrails", [])
@@ -171,6 +228,18 @@ class OpenClawWriter(SOPExportAdapter):
                 extra_lines.append(f"- Depends on: {', '.join(depends_on)}")
             if followed_by:
                 extra_lines.append(f"- Followed by: {', '.join(followed_by)}")
+            extra_lines.append("")
+
+        # Credential references for authenticated workflows
+        inputs = procedure.get("inputs", [])
+        cred_inputs = [i for i in inputs if i.get("credential")]
+        if cred_inputs:
+            extra_lines.append("## Credentials")
+            for ci in cred_inputs:
+                extra_lines.append(
+                    f"- {ci.get('name', '?')}: requires credential "
+                    f"(type: {ci.get('type', 'text')})"
+                )
             extra_lines.append("")
 
         if extra_lines:

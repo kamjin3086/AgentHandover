@@ -6,6 +6,10 @@ Accumulated corrections with sufficient occurrences are applied back to the
 procedure in the knowledge base, closing the observe-learn-execute-correct
 improvement flywheel.
 
+When an ``LLMReasoner`` is provided, correction patterns can be analyzed
+to infer guardrails — rules that prevent the corrected behaviour from
+recurring.
+
 Corrections are persisted at ``{kb_root}/observations/corrections.json``.
 """
 
@@ -17,6 +21,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from agenthandover_worker.event_helpers import (
     extract_app_from_event,
@@ -25,6 +30,9 @@ from agenthandover_worker.event_helpers import (
     parse_annotation,
     parse_timestamp,
 )
+
+if TYPE_CHECKING:
+    from agenthandover_worker.llm_reasoning import LLMReasoner
 
 logger = logging.getLogger(__name__)
 
@@ -86,8 +94,13 @@ class CorrectionDetector:
     procedure when the pattern is strong enough.
     """
 
-    def __init__(self, knowledge_base) -> None:
+    def __init__(
+        self,
+        knowledge_base,
+        llm_reasoner: "LLMReasoner | None" = None,
+    ) -> None:
         self._kb = knowledge_base
+        self._llm_reasoner = llm_reasoner
         self._corrections: list[Correction] = []
         self._load_corrections()
 
@@ -330,6 +343,114 @@ class CorrectionDetector:
             )
 
         return result
+
+    # ------------------------------------------------------------------
+    # LLM-based guardrail learning
+    # ------------------------------------------------------------------
+
+    def analyze_correction_patterns(
+        self,
+        procedure_slug: str,
+        min_corrections: int = 3,
+    ) -> list[dict]:
+        """Analyze repeated corrections to infer guardrails via LLM.
+
+        Groups corrections for *procedure_slug* by step_id (or by
+        corrected_output when step_id is ``None``).  For groups with
+        >= *min_corrections* entries, asks the LLM to identify the
+        underlying rule or guardrail.
+
+        Returns a list of guardrail dicts with keys:
+        ``guardrail``, ``improved_condition``, ``confidence``.
+        """
+        if self._llm_reasoner is None:
+            return []
+
+        corrections = self.get_corrections(procedure_slug)
+        if not corrections:
+            return []
+
+        # Group by step_id (or by corrected_output as key)
+        groups: dict[str, list[Correction]] = {}
+        for c in corrections:
+            key = c.step_id or c.corrected_output
+            groups.setdefault(key, []).append(c)
+
+        guardrails: list[dict] = []
+        for key, group in groups.items():
+            if len(group) < min_corrections:
+                continue
+
+            from agenthandover_worker.llm_reasoning import sanitize_user_data
+            originals = [sanitize_user_data(c.original_output) for c in group if c.original_output]
+            corrected = [sanitize_user_data(c.corrected_output) for c in group]
+
+            prompt = (
+                f"The user corrected this procedure step {len(group)} times. "
+                f"Original outputs: {'; '.join(originals)}. "
+                f"Corrected outputs: {'; '.join(corrected)}. "
+                f"What rule or guardrail does this suggest? "
+                f'Respond with JSON: {{"guardrail": "...", '
+                f'"improved_condition": "...", "confidence": 0.0-1.0}}. '
+                f"If you cannot determine a pattern, respond with "
+                f"INSUFFICIENT_EVIDENCE."
+            )
+
+            try:
+                result = self._llm_reasoner.reason_json(
+                    prompt=prompt,
+                    caller="correction_detector.analyze_correction_patterns",
+                )
+                if result.success and not result.abstained and result.value:
+                    guardrails.append(result.value)
+            except Exception:
+                logger.debug(
+                    "LLM guardrail analysis failed for key '%s'",
+                    key,
+                    exc_info=True,
+                )
+
+        return guardrails
+
+    def apply_guardrails_to_procedure(
+        self,
+        slug: str,
+        guardrails: list[dict],
+    ) -> bool:
+        """Append guardrail strings to a procedure's constraints.
+
+        Loads the procedure from the KB, appends each guardrail's
+        ``guardrail`` value to ``procedure["constraints"]["guardrails"]``,
+        and saves.
+
+        Returns ``True`` if any guardrails were applied.
+        """
+        if not guardrails:
+            return False
+
+        procedure = self._kb.get_procedure(slug)
+        if procedure is None:
+            return False
+
+        constraints = procedure.setdefault("constraints", {})
+        existing_guardrails = constraints.setdefault("guardrails", [])
+
+        applied = False
+        for g in guardrails:
+            guardrail_text = g.get("guardrail", "")
+            if guardrail_text and guardrail_text not in existing_guardrails:
+                existing_guardrails.append(guardrail_text)
+                applied = True
+
+        if applied:
+            self._kb.save_procedure(procedure)
+            logger.info(
+                "Applied %d guardrails to procedure '%s'",
+                len(guardrails),
+                slug,
+            )
+
+        return applied
 
     # ------------------------------------------------------------------
     # Queries

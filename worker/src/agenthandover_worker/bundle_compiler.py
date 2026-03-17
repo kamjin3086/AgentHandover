@@ -308,17 +308,27 @@ class BundleCompiler:
             preflight=preflight,
         )
 
-        # Compile all adapter targets
+        # Only compile adapter targets (write to agent-visible directories)
+        # when the procedure is fully executable.  Draft/reviewed/verified
+        # procedures must NOT be written to live agent workspaces — only
+        # agent_ready procedures with sufficient trust pass this gate.
         compiled_outputs: list[CompiledOutput] = []
-        for adapter_name, adapter in self._adapters.items():
-            try:
-                output = self.compile_target(proc, adapter_name, adapter)
-                compiled_outputs.append(output)
-            except Exception:
-                logger.warning(
-                    "Failed to compile target '%s' for procedure '%s'",
-                    adapter_name, slug, exc_info=True,
-                )
+        if readiness.can_execute:
+            for adapter_name, adapter in self._adapters.items():
+                try:
+                    output = self.compile_target(proc, adapter_name, adapter)
+                    compiled_outputs.append(output)
+                except Exception:
+                    logger.warning(
+                        "Failed to compile target '%s' for procedure '%s'",
+                        adapter_name, slug, exc_info=True,
+                    )
+        else:
+            logger.debug(
+                "Skipping adapter compilation for '%s': not ready "
+                "(can_execute=%s, can_draft=%s)",
+                slug, readiness.can_execute, readiness.can_draft,
+            )
 
         # Compute procedure checksum
         checksum = _procedure_checksum(proc)

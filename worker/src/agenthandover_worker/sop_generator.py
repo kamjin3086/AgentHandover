@@ -194,6 +194,73 @@ filepath, password (always sensitive=true), selection (one of a set)
 Respond with ONLY the JSON object."""
 
 
+ENRICHED_PASSIVE_PROMPT = """\
+I observed the following task performed {demo_count} times.  Pre-analysis \
+has already identified the canonical steps, extracted parameters, and \
+detected branch points.
+
+PRE-ANALYZED CANONICAL STEPS:
+{canonical_steps_text}
+
+EXTRACTED PARAMETERS (values that vary across demonstrations):
+{parameters_text}
+
+DETECTED BRANCH POINTS (where demonstrations diverge):
+{branches_text}
+
+RAW DEMONSTRATIONS (for context):
+{demonstrations_text}
+
+Given the pre-analyzed structure above, generate a JSON SOP that focuses \
+on the STRATEGY and DECISION LOGIC behind these steps, not just the \
+mechanics.
+
+Generate a JSON SOP with this exact structure:
+{{
+  "title": "<human-readable task name>",
+  "short_title": "<concise 3-6 word label>",
+  "tags": ["<1-3 category tags from: communication, development, browsing, documentation, system, finance, design, data, testing, deployment>"],
+  "description": "<1-2 sentence description of the STRATEGY, not just the mechanics>",
+  "outcome": "<what the user achieves when this workflow completes>",
+  "when_to_use": "<conditions that trigger this workflow>",
+  "prerequisites": ["<what the user needs before starting>"],
+  "steps": [
+    {{
+      "step_number": 1,
+      "action": "<verb phrase — use the canonical action as baseline>",
+      "app": "<application>",
+      "location": "<URL or location>",
+      "input": "<text/value, use {{{{variable}}}} for parameters>",
+      "verify": "<how to confirm this step succeeded>"
+    }}
+  ],
+  "success_criteria": ["<overall success checks>"],
+  "variables": [
+    {{
+      "name": "<from extracted parameters above>",
+      "type": "<text, email, url, number, date, filepath, password, selection>",
+      "example": "<example from demonstrations>",
+      "description": "<what this variable represents>",
+      "required": true,
+      "sensitive": false
+    }}
+  ],
+  "common_errors": ["<potential failures and recovery>"],
+  "apps_involved": ["<applications used>"]
+}}
+
+Rules:
+- Use the PRE-ANALYZED CANONICAL STEPS as the foundation — do not reinvent them
+- Use the EXTRACTED PARAMETERS as confirmed variables
+- Where BRANCH POINTS exist, pick the most common path for the main steps
+- Focus your analysis on WHY the user does each step and WHAT determines choices
+- Values that are CONSTANT across demonstrations are hardcoded
+- Variable types: text, email, url, number, date, filepath, password, selection
+- Mark sensitive=true for passwords, API keys, tokens
+
+Respond with ONLY the JSON object."""
+
+
 # ---------------------------------------------------------------------------
 # Timeline formatting
 # ---------------------------------------------------------------------------
@@ -382,6 +449,119 @@ def _build_passive_prompt(
         demo_count=len(demonstrations),
         demonstrations_text="\n\n".join(demo_texts),
     )
+
+
+def _build_enriched_passive_prompt(
+    demonstrations: list[list[dict]],
+    canonical_steps: list[dict],
+    parameters: list,
+    branches: list[dict],
+    evidence_context: dict | None = None,
+) -> str:
+    """Build the enriched SOP generation prompt with pre-analyzed data.
+
+    Includes canonical steps, extracted parameters, and branch points
+    so the VLM can focus on strategy and decision logic.
+    """
+    # Format canonical steps
+    canon_lines = []
+    for cs in canonical_steps:
+        action = cs.get("action", "")
+        conf = cs.get("confidence", 0.0)
+        alts = cs.get("alternatives", [])
+        line = f"  {cs.get('position', '?')}. {action} (confidence: {conf:.0%})"
+        if alts:
+            alt_strs = [f"{a.get('action', '?')} ({a.get('observation_count', 0)}x)" for a in alts]
+            line += f"  [alternatives: {', '.join(alt_strs)}]"
+        canon_lines.append(line)
+    canonical_steps_text = "\n".join(canon_lines) if canon_lines else "(none detected)"
+
+    # Format parameters
+    from dataclasses import asdict
+    param_lines = []
+    for p in parameters:
+        p_dict = asdict(p) if hasattr(p, "__dataclass_fields__") else p
+        name = p_dict.get("name", "?")
+        ptype = p_dict.get("type", "text")
+        values = p_dict.get("values_seen", [])
+        positions = p_dict.get("step_positions", [])
+        param_lines.append(
+            f"  - {name} (type: {ptype}, at steps: {positions}): "
+            f"seen values: {values[:5]}"
+        )
+    parameters_text = "\n".join(param_lines) if param_lines else "(none detected)"
+
+    # Format branches
+    branch_lines = []
+    for b in branches:
+        pos = b.get("position", "?")
+        canon = b.get("canonical_action", "?")
+        alts = b.get("alternatives", [])
+        alt_strs = [f"{a.get('action', '?')} ({a.get('observation_count', 0)}x)" for a in alts]
+        branch_lines.append(
+            f"  Step {pos}: canonical='{canon}', alternatives=[{', '.join(alt_strs)}]"
+        )
+    branches_text = "\n".join(branch_lines) if branch_lines else "(none detected)"
+
+    # Evidence section (from prior observations)
+    evidence_text = ""
+    if evidence_context:
+        evidence_parts = []
+        timing = evidence_context.get("timing_patterns", {})
+        total_dur = timing.get("total_duration_seconds", 0)
+        if total_dur > 0:
+            evidence_parts.append(f"- Duration: {total_dur / 60:.0f} minutes")
+        selection = evidence_context.get("selection_signals", {})
+        high_engagement = selection.get("high_engagement_locations", [])
+        if high_engagement:
+            evidence_parts.append(
+                f"- High engagement at: {', '.join(str(loc) for loc in high_engagement[:5])}"
+            )
+        content = evidence_context.get("content_produced", {})
+        content_count = content.get("count", 0)
+        content_types = content.get("types", [])
+        if content_count > 0:
+            evidence_parts.append(
+                f"- Content produced: {content_count} items ({', '.join(content_types[:5])})"
+            )
+        if evidence_parts:
+            evidence_text = (
+                "\n\nEVIDENCE FROM PRIOR OBSERVATIONS:\n"
+                + "\n".join(evidence_parts)
+            )
+
+    # Build abbreviated demonstrations text (reuse passive prompt builder)
+    demo_texts = []
+    for demo_idx, timeline in enumerate(demonstrations):
+        sampled = _sample_demo_frames(timeline, demo_idx)
+        entries = []
+        for i, frame in enumerate(sampled):
+            annotation = frame.get("annotation", {})
+            diff = frame.get("diff")
+            timestamp = frame.get("timestamp", "")
+            clipboard_ctx = frame.get("clipboard_context")
+            entries.append(
+                _format_timeline_entry(
+                    i, annotation, diff, timestamp,
+                    clipboard_context=clipboard_ctx,
+                )
+            )
+        demo_text = f"--- Demonstration {demo_idx + 1} ({len(timeline)} frames) ---\n"
+        demo_text += "\n\n".join(entries)
+        demo_texts.append(demo_text)
+
+    prompt = ENRICHED_PASSIVE_PROMPT.format(
+        demo_count=len(demonstrations),
+        canonical_steps_text=canonical_steps_text,
+        parameters_text=parameters_text,
+        branches_text=branches_text,
+        demonstrations_text="\n\n".join(demo_texts),
+    )
+
+    if evidence_text:
+        prompt += evidence_text
+
+    return prompt
 
 
 # ---------------------------------------------------------------------------
@@ -1146,4 +1326,139 @@ class SOPGenerator:
         return GeneratedSOP(
             sop=template,
             inference_time_seconds=elapsed,
+        )
+
+    def generate_from_passive_enriched(
+        self,
+        demonstrations: list[list[dict]],
+        task_label: str | None = None,
+        canonical_steps: list[dict] | None = None,
+        parameters: list | None = None,
+        branches: list[dict] | None = None,
+        evidence_context: dict | None = None,
+    ) -> GeneratedSOP:
+        """Generate an enriched SOP using pre-computed variant analysis.
+
+        Uses the ENRICHED_PASSIVE_PROMPT which provides the VLM with
+        pre-analyzed canonical steps, extracted parameters, and variant
+        branches.  The VLM's job shifts from "figure out everything from
+        raw frames" to "explain the strategy and fill in decision logic."
+
+        Args:
+            demonstrations: List of timelines (each a list of frame dicts).
+            task_label: Optional cluster label for the task.
+            canonical_steps: Pre-computed canonical steps from variant_detector.
+            parameters: Pre-computed parameters from variant_detector.
+            branches: Pre-computed branch points from variant_detector.
+
+        Returns:
+            GeneratedSOP with enriched template dict.
+        """
+        if len(demonstrations) < 2:
+            return GeneratedSOP(
+                sop={}, success=False,
+                error="Need at least 2 demonstrations for passive SOP",
+            )
+
+        # Build the enriched prompt
+        prompt = _build_enriched_passive_prompt(
+            demonstrations,
+            canonical_steps=canonical_steps or [],
+            parameters=parameters or [],
+            branches=branches or [],
+            evidence_context=evidence_context,
+        )
+
+        # Call VLM
+        try:
+            raw_response, elapsed = _call_ollama(
+                model=self.config.model,
+                prompt=prompt,
+                host=self.config.ollama_host,
+                num_predict=self.config.num_predict,
+                system=SOP_SYSTEM_PROMPT,
+                timeout=self.config.timeout,
+                think=True,
+            )
+        except Exception as exc:
+            return GeneratedSOP(
+                sop={}, success=False,
+                error=f"VLM call failed: {exc}",
+            )
+
+        # Parse response
+        vlm_sop = _parse_sop_response(raw_response)
+        if vlm_sop is None:
+            logger.warning("Enriched SOP JSON parse failed, retrying")
+            try:
+                repair_prefix = (
+                    "Your previous response was not valid JSON. "
+                    "Please respond with ONLY a valid JSON object.\n\n"
+                )
+                raw_response2, elapsed2 = _call_ollama(
+                    model=self.config.model,
+                    prompt=repair_prefix + prompt,
+                    host=self.config.ollama_host,
+                    num_predict=self.config.num_predict,
+                    system=SOP_SYSTEM_PROMPT,
+                    timeout=self.config.timeout,
+                    think=True,
+                )
+                elapsed += elapsed2
+                vlm_sop = _parse_sop_response(raw_response2)
+            except Exception:
+                pass
+
+            if vlm_sop is None:
+                # Fall back to standard passive generation
+                logger.info("Enriched generation failed, falling back to standard")
+                return self.generate_from_passive(demonstrations, task_label)
+
+        title = task_label or vlm_sop.get("title", "Untitled Workflow")
+
+        template = _vlm_sop_to_template(
+            vlm_sop, mode="passive", title_override=title,
+        )
+        template["episode_count"] = len(demonstrations)
+        template["abs_support"] = len(demonstrations)
+
+        # Carry over pre-computed data so it flows to procedure_schema
+        if canonical_steps:
+            template["_canonical_steps"] = canonical_steps
+        if branches:
+            template["branches"] = branches
+
+        # Collect all annotations for confidence scoring
+        all_annotations: list[dict] = []
+        for demo in demonstrations:
+            for frame in demo:
+                ann = frame.get("annotation")
+                if isinstance(ann, dict):
+                    all_annotations.append(ann)
+
+        breakdown = compute_v2_confidence(
+            template,
+            demonstrations=demonstrations,
+            annotations=all_annotations if all_annotations else None,
+            is_focus=False,
+        )
+        template["confidence_avg"] = breakdown.total
+        template["confidence_breakdown"] = {
+            "demo_count": breakdown.demo_count_score,
+            "step_consistency": breakdown.step_consistency_score,
+            "annotation_quality": breakdown.annotation_quality_score,
+            "variable_detection": breakdown.variable_detection_score,
+            "focus_bonus": breakdown.focus_bonus,
+            "reasons": breakdown.reasons,
+        }
+
+        logger.info(
+            "Generated enriched passive SOP '%s': %d steps from %d demos, "
+            "confidence=%.2f, %.1fs",
+            title, len(template["steps"]), len(demonstrations),
+            template["confidence_avg"], elapsed,
+        )
+
+        return GeneratedSOP(
+            sop=template, inference_time_seconds=elapsed,
         )

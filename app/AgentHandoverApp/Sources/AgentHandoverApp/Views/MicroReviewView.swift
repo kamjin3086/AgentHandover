@@ -674,16 +674,47 @@ final class MicroReviewViewModel: ObservableObject {
                 }
 
                 // Lifecycle upgrade candidates
+                // Rules must match worker's ProcedureCurator.detect_upgrade_candidates()
                 let lifecycle = proc["lifecycle_state"] as? String ?? "observed"
                 let confidenceAvg = proc["confidence_avg"] as? Double ?? proc["confidence"] as? Double ?? 0.0
                 let episodes = proc["episode_count"] as? Int ?? 0
+                let evidence = proc["evidence"] as? [String: Any] ?? [:]
+                let contradictions = evidence["contradictions"] as? [Any] ?? []
+                let stalenessForUpgrade = proc["staleness"] as? [String: Any] ?? [:]
+                let lastObserved = stalenessForUpgrade["last_observed"] as? String ?? ""
+
+                // Compute simple freshness: 1.0 if observed within 7 days, decays after
+                var freshness: Double = 0.0
+                if !lastObserved.isEmpty {
+                    let formatter = ISO8601DateFormatter()
+                    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                    if let observedDate = formatter.date(from: lastObserved) ?? ISO8601DateFormatter().date(from: lastObserved) {
+                        let daysSince = -observedDate.timeIntervalSinceNow / 86400.0
+                        freshness = max(0.0, 1.0 - (daysSince / 30.0))
+                    }
+                }
 
                 var suggestUpgrade = false
                 var nextState = ""
                 if lifecycle == "observed" && episodes >= 3 && confidenceAvg >= 0.65 {
                     suggestUpgrade = true; nextState = "draft"
-                } else if lifecycle == "draft" && episodes >= 5 && confidenceAvg >= 0.75 {
+                } else if lifecycle == "draft" && episodes >= 5 && confidenceAvg >= 0.75
+                            && freshness >= 0.7 && contradictions.isEmpty {
+                    // Matches worker: freshness >= 0.7 AND no contradictions
                     suggestUpgrade = true; nextState = "reviewed"
+                } else if lifecycle == "verified" {
+                    // Worker also suggests verified -> agent_ready when confirmed recently
+                    let lastConfirmed = stalenessForUpgrade["last_confirmed"] as? String ?? ""
+                    if !lastConfirmed.isEmpty {
+                        let formatter = ISO8601DateFormatter()
+                        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                        if let confirmedDate = formatter.date(from: lastConfirmed) ?? ISO8601DateFormatter().date(from: lastConfirmed) {
+                            let daysSinceConfirm = -confirmedDate.timeIntervalSinceNow / 86400.0
+                            if daysSinceConfirm <= 7.0 {
+                                suggestUpgrade = true; nextState = "agent_ready"
+                            }
+                        }
+                    }
                 }
 
                 if suggestUpgrade && !dismissedUpgradeSlugs.contains(slug) {

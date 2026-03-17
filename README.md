@@ -33,14 +33,16 @@ AgentHandover silently observes (screenshots + vision model)
         ↓
 It understands what you're doing, not just what's on screen
         ↓
-Repeated workflows are detected and merged automatically
+Repeated workflows are detected, aligned, and merged automatically
+        ↓
+Behavioral synthesis extracts the strategy behind the steps
         ↓
 You review and approve in the menu bar app
         ↓
 Agent-ready procedure files exported to OpenClaw / Claude Code
 ```
 
-**No macros. No brittle automation scripts. No manual documentation.** AgentHandover captures *intent* — what you're doing and why — augmented with real DOM context (CSS selectors, ARIA labels, form field IDs) from the Chrome extension. The output is a human-readable procedure enriched with machine-usable selectors that agents can follow reliably.
+**No macros. No brittle automation scripts. No manual documentation.** AgentHandover captures *intent* — what you're doing and why — augmented with real DOM context (CSS selectors, ARIA labels, form field IDs) from the Chrome extension. The output isn't just mechanical steps — it's a procedure with strategy, selection criteria, content templates, guardrails, and timing patterns that agents can follow with judgment, not just clicks.
 
 ## Why Not Just Screen Recording?
 
@@ -52,8 +54,8 @@ Screen recording gives you pixels. AgentHandover gives you *understanding*.
 | **What it knows** | Nothing — just pixels | App context, task purpose, step sequence, CSS selectors, form field IDs, ARIA labels, verification criteria |
 | **How it handles noise** | Records everything equally | Classifies activity into 8 types (work, research, communication, entertainment...) and filters noise automatically |
 | **How it handles interruptions** | Breaks the recording | Tracks task continuity across interruptions — if you pause for Slack and come back, it reconnects the workflow |
-| **What happens with repetition** | You get multiple identical recordings | Demonstrations are semantically aligned and merged into one canonical procedure with typed variables and confidence scores |
-| **What the output looks like** | A video file | A structured SKILL.md with steps, inputs, outputs, preconditions, verification criteria, failure recovery, and a DOM hints appendix with CSS selectors for browser automation |
+| **What happens with repetition** | You get multiple identical recordings | Demonstrations are semantically aligned and merged into one canonical procedure with typed variables, confidence scores, and behavioral insights |
+| **What the output looks like** | A video file | A structured SKILL.md with steps, strategy, selection criteria, content templates, guardrails, timing patterns, inputs, outputs, preconditions, verification criteria, failure recovery, and a DOM hints appendix with CSS selectors for browser automation |
 | **Can an agent use it?** | No | Yes — with lifecycle gates, readiness checks, and execution monitoring |
 
 The intelligence comes from a **local vision-language model** that looks at each screenshot and answers: *What app is this? What is the user doing? Is this a repeatable workflow or just browsing?* That structured understanding is what makes the difference between "a recording" and "a learned procedure."
@@ -70,7 +72,9 @@ AgentHandover runs four layers of intelligence on every screen capture:
 
 **Layer 3: Connect** — A continuity tracker links related work across interruptions, app switches, and time gaps. If you start a PR review, get pulled into a Slack thread, and come back 20 minutes later, AgentHandover knows it's the same task. It builds confidence-ranked spans, not hard IDs — when uncertain, it keeps segments separate rather than falsely merging.
 
-**Layer 4: Learn** — When the same workflow appears in 2+ demonstrations, the system aligns steps semantically (not positionally), extracts parameters that vary across demonstrations (e.g., the domain name you searched), detects branches and variants, and produces a canonical procedure with evidence-weighted confidence.
+**Layer 4: Learn** — When the same workflow appears in 2+ demonstrations, the system aligns steps semantically using Needleman-Wunsch dynamic programming (not positional matching), extracts parameters that vary across demonstrations (e.g., the domain name you searched), detects branches and variants, and produces a canonical procedure with evidence-weighted confidence. Pre-computed alignments, parameters, and branches are fed into the VLM so it can focus on strategy and decision logic instead of step discovery.
+
+**Layer 5: Synthesize** — After 3+ observations accumulate, a behavioral synthesis pass extracts the higher-level patterns behind the steps: the overall *strategy* (why you do this, not just what you click), *selection criteria* (what you engage with vs skip), *content templates* (structural patterns in text you produce), *guardrails* (things you consistently avoid), *decision branches* (conditions that determine different paths), and *timing patterns* (phases, durations, think points). This runs automatically in the daily batch and re-runs every 3 additional observations. Before raw annotations expire at 14 days, valuable evidence (content produced, dwell-time engagement signals, URL patterns) is extracted and stored permanently on the procedure.
 
 ### Screenshots are temporary
 
@@ -271,36 +275,38 @@ curl -X POST http://localhost:9477/curation/promote \
                         │ trigger files (JSON)
                         ▼
 Chrome Extension ──→ Daemon (Rust) ──SQLite WAL──→ Worker (Python)
-  DOM snapshots       Screenshots                    ┌──────────┐
-  Click intent        OS Accessibility               │ Pipeline │
-  Secure fields       Clipboard + dHash              │ v2 + VLM │
-                      Focus session tags             └────┬─────┘
-                                                          │
-                                    ┌─────────────────────┼─────────────────────┐
-                                    ▼                     ▼                     ▼
-                              SKILL.md SOPs      v3 Procedures (KB)      Query API
-                              (OpenClaw,         (lifecycle, trust,      (port 9477)
-                               Claude Code)       evidence, curation)
+  DOM snapshots       Screenshots                    ┌──────────────────┐
+  Click intent        OS Accessibility               │ Pipeline v2 +VLM │
+  Secure fields       Clipboard + dHash              │ Variant alignment │
+                      Focus session tags             │ Behavioral synth  │
+                                                     └────────┬─────────┘
+                                                               │
+                                    ┌──────────────────────────┼──────────────────────────┐
+                                    ▼                          ▼                          ▼
+                              SKILL.md SOPs          v3 Procedures (KB)            Query API
+                              (OpenClaw,             (strategy, guardrails,        (port 9477)
+                               Claude Code)           templates, evidence)
 ```
 
 | Component | Language | Role |
 |-----------|----------|------|
 | **Daemon** | Rust | Always-on observer — screenshots, OS events, clipboard, dHash dedup |
-| **Worker** | Python | Pipeline — VLM annotation, classification, segmentation, SOP generation, lifecycle, curation |
+| **Worker** | Python | Pipeline — VLM annotation, classification, segmentation, variant alignment, SOP generation, behavioral synthesis, evidence extraction, lifecycle, curation |
 | **Extension** | TypeScript | Chrome MV3 — DOM snapshots, click intent, dwell/scroll tracking |
 | **CLI** | Rust | Service management, focus recording, SOP approval, lifecycle promotion |
 | **App** | SwiftUI | Menu bar — status, focus recording, review queue, daily digest |
 
 ### Processing budget
 
-AgentHandover uses ~39% of GPU time per work hour. 37 minutes of headroom remain for your own GPU tasks.
+AgentHandover uses ~40% of GPU time per work hour. 36 minutes of headroom remain for your own GPU tasks.
 
 | Stage | Time per hour | Notes |
 |-------|---------------|-------|
 | Scene annotation | 15.6 min | ~75 frames after dedup and stale-skip |
 | Frame diffs | 4.5 min | Consecutive frame comparison |
 | Task segmentation | 0.8 min | CPU only (embeddings) |
-| SOP generation | 2.4 min | Thinking mode for higher quality |
+| SOP generation | 2.4 min | Thinking mode, enriched with variant analysis |
+| Behavioral synthesis | 0.5 min | Daily batch only, when 3+ observations accumulate |
 
 ## Privacy
 
@@ -311,7 +317,7 @@ AgentHandover is designed to never leave your machine:
 - **Auto-redaction.** API keys, tokens, passwords, and credit card numbers are detected and scrubbed before storage.
 - **Secure field exclusion.** Password and credit card inputs are dropped entirely — never captured, never stored.
 - **Encryption at rest.** Artifacts use zstd compression + XChaCha20-Poly1305.
-- **Configurable retention.** Raw events pruned after 14 days, episodes after 90 days.
+- **Configurable retention.** Raw events pruned after 14 days, episodes after 90 days. Valuable evidence (content patterns, engagement signals, timing) is extracted and stored permanently on procedures before raw events expire.
 - **No telemetry.** Pipeline metrics are local-only JSON files. Nothing phones home. Ever.
 
 ## Configuration
@@ -392,7 +398,7 @@ agenthandover logs worker   # Worker-specific errors
 <details>
 <summary>No SOPs being generated</summary>
 
-- **Passive mode** requires 2+ similar demonstrations of the same workflow
+- **Passive mode** requires 2+ similar demonstrations of the same workflow within a 24-hour window
 - Verify Ollama is running: `ollama list`
 - Check worker logs: `agenthandover logs worker -f`
 - Ensure `annotation_enabled = true` in config

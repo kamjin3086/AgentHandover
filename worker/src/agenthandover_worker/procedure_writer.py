@@ -65,6 +65,9 @@ class ProcedureWriter:
         # Enrich environment from observation data
         self._enrich_environment(procedure, sop_template)
 
+        # Pre-populate from evidence (before synthesis data exists)
+        self._pre_populate_from_evidence(procedure, sop_template)
+
         # Validate
         errors = validate_procedure(procedure)
         if errors:
@@ -261,6 +264,59 @@ class ProcedureWriter:
                     existing_services.add(service)
 
         env["accounts"] = accounts
+
+    # ------------------------------------------------------------------
+    # Evidence pre-population
+    # ------------------------------------------------------------------
+
+    def _pre_populate_from_evidence(
+        self, procedure: dict, sop_template: dict,
+    ) -> None:
+        """Pre-populate procedure fields from extracted evidence.
+
+        Only populates fields that are currently empty — does not
+        overwrite data from behavioral synthesis.
+        """
+        evidence = sop_template.get("_extracted_evidence", {})
+        if not evidence:
+            return
+
+        # Workflow rhythm: avg_duration_minutes from timing
+        timing = evidence.get("timing_patterns", {})
+        total_dur = timing.get("total_duration_seconds", 0)
+        if total_dur > 0:
+            rhythm = procedure.setdefault("workflow_rhythm", {})
+            if not rhythm.get("avg_duration_minutes"):
+                rhythm["avg_duration_minutes"] = round(total_dur / 60, 1)
+
+        # Build evidence summary string
+        summary_parts: list[str] = []
+
+        selection = evidence.get("selection_signals", {})
+        high_engagement = selection.get("high_engagement_locations", [])
+        if high_engagement:
+            summary_parts.append(
+                f"High engagement at {len(high_engagement)} location(s)"
+            )
+
+        content = evidence.get("content_produced", {})
+        content_count = content.get("count", 0)
+        content_types = content.get("types", [])
+        if content_count > 0:
+            type_str = ", ".join(content_types[:5]) if content_types else "unknown"
+            summary_parts.append(
+                f"{content_count} content item(s) produced ({type_str})"
+            )
+
+        url_patterns = evidence.get("url_patterns", {})
+        domains = url_patterns.get("domains", [])
+        if domains:
+            summary_parts.append(
+                f"Domains: {', '.join(domains[:5])}"
+            )
+
+        if summary_parts:
+            procedure["evidence_summary"] = "; ".join(summary_parts)
 
     # ------------------------------------------------------------------
     # Cross-procedure composition

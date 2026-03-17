@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -12,6 +13,7 @@ from agenthandover_worker.decision_extractor import (
     DecisionSet,
 )
 from agenthandover_worker.knowledge_base import KnowledgeBase
+from agenthandover_worker.llm_reasoning import LLMReasoner, ReasoningResult
 
 
 # ---------------------------------------------------------------------------
@@ -663,3 +665,96 @@ class TestDataclasses:
         assert ds.rules == []
         assert ds.confidence == 0.75
         assert ds.inferred_from_observations == 4
+
+
+# ---------------------------------------------------------------------------
+# LLM-based decision extraction
+# ---------------------------------------------------------------------------
+
+
+class TestLLMDecisionExtraction:
+    """Tests for LLM-enriched decision condition inference."""
+
+    def test_llm_enriches_generic_condition(
+        self, kb: KnowledgeBase
+    ) -> None:
+        """When heuristic produces a generic condition, LLM refines it."""
+        reasoner = LLMReasoner()
+        # Mock reason_text to return a specific condition
+        reasoner.reason_text = MagicMock(return_value=ReasoningResult(
+            value="when the item price is below the budget threshold",
+            success=True,
+        ))
+        extractor = DecisionExtractor(kb, llm_reasoner=reasoner)
+
+        obs = [
+            make_observation(
+                [make_step("buy", "step_1")],
+                context={"price": 10},
+            ),
+            make_observation(
+                [make_step("skip", "step_1")],
+                context={"price": 100},
+            ),
+        ]
+        result = extractor.extract_decisions("test-slug", observations=obs)
+
+        assert len(result) == 1
+        # The LLM-enriched condition should replace the generic heuristic
+        conditions = {r.condition for r in result[0].rules}
+        assert any(
+            "budget threshold" in c for c in conditions
+        ), f"Expected LLM condition, got: {conditions}"
+        reasoner.reason_text.assert_called()
+
+    def test_llm_failure_keeps_heuristic(
+        self, kb: KnowledgeBase
+    ) -> None:
+        """When LLM returns None/failure, heuristic condition is kept."""
+        reasoner = LLMReasoner()
+        # Mock reason_text to return a failure result
+        reasoner.reason_text = MagicMock(return_value=ReasoningResult(
+            value=None,
+            success=False,
+            error="Ollama connection failed",
+        ))
+        extractor = DecisionExtractor(kb, llm_reasoner=reasoner)
+
+        obs = [
+            make_observation([make_step("buy", "step_1")]),
+            make_observation([make_step("skip", "step_1")]),
+        ]
+        result = extractor.extract_decisions("test-slug", observations=obs)
+
+        assert len(result) == 1
+        # Should fall back to the heuristic "when choosing" pattern
+        conditions = {r.condition for r in result[0].rules}
+        assert any("when choosing" in c for c in conditions)
+
+    def test_specific_heuristic_skips_llm(
+        self, kb: KnowledgeBase
+    ) -> None:
+        """When 3+ actions produce a 'when action is' heuristic, LLM is
+        still called (because it is generic).  But if the heuristic were
+        already specific, LLM would be skipped entirely."""
+        reasoner = LLMReasoner()
+        reasoner.reason_text = MagicMock(return_value=ReasoningResult(
+            value="when the approval queue has items",
+            success=True,
+        ))
+        extractor = DecisionExtractor(kb, llm_reasoner=reasoner)
+
+        # 3 actions -> heuristic produces "when action is '...'" which
+        # is a generic marker, so LLM *will* be called
+        obs = [
+            make_observation([make_step("approve", "step_1")]),
+            make_observation([make_step("reject", "step_1")]),
+            make_observation([make_step("defer", "step_1")]),
+        ]
+        result = extractor.extract_decisions("test-slug", observations=obs)
+        assert len(result) == 1
+        # LLM was called because "when action is" is generic
+        reasoner.reason_text.assert_called()
+        # Each action's condition should be LLM-enriched
+        conditions = {r.condition for r in result[0].rules}
+        assert any("approval queue" in c for c in conditions)

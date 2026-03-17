@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -13,6 +14,7 @@ from agenthandover_worker.outcome_tracker import (
     _event_app,
     _event_kind,
 )
+from agenthandover_worker.llm_reasoning import LLMReasoner, ReasoningResult
 
 
 # ---------------------------------------------------------------------------
@@ -709,3 +711,121 @@ class TestDetectedOutcomeDataclass:
         assert o.description == "Created a file"
         assert o.verification == {"check": "file exists"}
         assert o.confidence == 0.8
+
+
+# ---------------------------------------------------------------------------
+# LLM-based outcome detection
+# ---------------------------------------------------------------------------
+
+
+class TestLLMOutcomeDetection:
+    """Tests for LLM-supplemented outcome detection."""
+
+    def test_llm_supplements_no_heuristic_outcomes(self) -> None:
+        """When heuristics find nothing, LLM outcomes are added."""
+        reasoner = LLMReasoner()
+        reasoner.reason_json = MagicMock(return_value=ReasoningResult(
+            value={
+                "outcomes": [
+                    {
+                        "type": "settings_changed",
+                        "description": "User updated app preferences",
+                        "verification": "preferences file modified",
+                    }
+                ]
+            },
+            success=True,
+        ))
+
+        tracker = OutcomeTracker(llm_reasoner=reasoner)
+        # Generic events that won't trigger any heuristic
+        events = [
+            make_event(kind="FocusChange", app="System Preferences",
+                       what_doing="adjusting display settings"),
+        ]
+        result = tracker.detect_outcomes(events)
+
+        assert len(result) >= 1
+        types = {o.type for o in result}
+        assert "settings_changed" in types
+        reasoner.reason_json.assert_called_once()
+
+    def test_llm_skipped_when_heuristics_confident(self) -> None:
+        """When heuristics produce confident outcomes, LLM is not called."""
+        reasoner = LLMReasoner()
+        reasoner.reason_json = MagicMock()
+
+        tracker = OutcomeTracker(llm_reasoner=reasoner)
+        # Events that trigger confident heuristic outcomes
+        events = [
+            make_event(kind="FocusChange", app="Chrome"),
+            make_event(kind="ClipboardChange", app="Chrome"),
+            make_event(kind="FocusChange", app="TextEdit"),
+            make_event(kind="FocusChange", app="TextEdit"),
+        ]
+        result = tracker.detect_outcomes(events)
+
+        # data_transfer (0.7) and file_created (0.6) are both >= 0.6
+        types = {o.type for o in result}
+        assert "data_transfer" in types
+        assert "file_created" in types
+        # LLM should NOT have been called since we have confident outcomes
+        reasoner.reason_json.assert_not_called()
+
+    def test_llm_failure_returns_heuristic_only(self) -> None:
+        """When LLM fails, only heuristic outcomes are returned."""
+        reasoner = LLMReasoner()
+        reasoner.reason_json = MagicMock(return_value=ReasoningResult(
+            value=None,
+            success=False,
+            error="Ollama not reachable",
+        ))
+
+        tracker = OutcomeTracker(llm_reasoner=reasoner)
+        # Events with no heuristic outcomes
+        events = [
+            make_event(kind="FocusChange", app="System Preferences",
+                       what_doing="browsing settings"),
+        ]
+        result = tracker.detect_outcomes(events)
+
+        # LLM was called but failed; no outcomes from either source
+        assert result == []
+        reasoner.reason_json.assert_called_once()
+
+    def test_llm_deduplicates_by_type(self) -> None:
+        """LLM outcomes that duplicate heuristic types are not added."""
+        reasoner = LLMReasoner()
+        reasoner.reason_json = MagicMock(return_value=ReasoningResult(
+            value={
+                "outcomes": [
+                    {
+                        "type": "navigation_completed",
+                        "description": "User browsed multiple pages",
+                        "verification": "pages visited",
+                    },
+                    {
+                        "type": "report_generated",
+                        "description": "User generated a report",
+                        "verification": "report file exists",
+                    },
+                ]
+            },
+            success=True,
+        ))
+
+        tracker = OutcomeTracker(llm_reasoner=reasoner)
+        # Navigation events that produce a low-confidence heuristic outcome
+        events = [
+            make_event(kind="FocusChange", app="Chrome",
+                       location="https://example.com/page1"),
+            make_event(kind="FocusChange", app="Chrome",
+                       location="https://example.com/page2"),
+        ]
+        result = tracker.detect_outcomes(events)
+
+        types = [o.type for o in result]
+        # navigation_completed from heuristic should exist once
+        assert types.count("navigation_completed") == 1
+        # report_generated from LLM should be added (not a duplicate)
+        assert "report_generated" in types

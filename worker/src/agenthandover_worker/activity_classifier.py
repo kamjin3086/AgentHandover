@@ -22,6 +22,7 @@ from enum import Enum
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from agenthandover_worker.llm_reasoning import LLMReasoner
     from agenthandover_worker.user_policy import UserPolicy
 
 logger = logging.getLogger(__name__)
@@ -201,9 +202,11 @@ class ActivityClassifier:
         self,
         profile: dict | None = None,
         policy: UserPolicy | None = None,
+        llm_reasoner: "LLMReasoner | None" = None,
     ) -> None:
         self._profile = profile
         self._policy = policy
+        self._llm_reasoner = llm_reasoner
         # Session-level app frequency tracker — learns from current session
         # even before the multi-day profile exists
         self._session_app_counts: dict[str, int] = {}
@@ -286,6 +289,23 @@ class ActivityClassifier:
                 # No profile yet — use session-learned priors from day 1
                 result = self._stage_session_prior(result, app, event_context)
 
+        # Stage 2.5 — LLM refinement for ambiguous classifications
+        if (
+            self._llm_reasoner is not None
+            and result.confidence < 0.6
+            and result.source != "policy"
+        ):
+            llm_type = self._classify_with_llm(annotation, result)
+            if llm_type is not None:
+                result = ClassificationResult(
+                    activity_type=ActivityType(llm_type),
+                    learnability=Learnability.CONTEXT_ONLY,  # placeholder
+                    confidence=0.75,
+                    source="llm",
+                    reasoning=f"LLM classified as '{llm_type}' (heuristic was "
+                              f"'{result.activity_type.value}' at {result.confidence:.2f})",
+                )
+
         # Infer learnability from activity type (before policy override)
         result.learnability = _LEARNABILITY_MAP.get(
             result.activity_type, Learnability.CONTEXT_ONLY,
@@ -330,6 +350,58 @@ class ActivityClassifier:
             source="heuristic",
             reasoning="Derived from legacy is_workflow=False",
         )
+
+    # ------------------------------------------------------------------
+    # LLM refinement (between Stage 2 and Stage 3)
+    # ------------------------------------------------------------------
+
+    def _classify_with_llm(
+        self,
+        annotation: dict,
+        heuristic_result: ClassificationResult,
+    ) -> str | None:
+        """Use LLM to classify an ambiguous activity.
+
+        Returns the ActivityType value string, or None on failure/budget/abstention.
+        """
+        if self._llm_reasoner is None:
+            return None
+
+        what_doing = (
+            annotation.get("task_context", {}).get("what_doing", "") or ""
+        )
+        app = annotation.get("app", "") or ""
+        location = (
+            annotation.get("visual_context", {}).get("location", "")
+            or annotation.get("location", "")
+            or ""
+        )
+
+        prompt = (
+            "Classify this activity into exactly one category: "
+            "work, research, communication, setup, personal_admin, "
+            "entertainment, dead_time, context_switch. "
+            f"Activity: {what_doing} App: {app} Location: {location}. "
+            "Respond with ONLY the category name."
+        )
+
+        try:
+            result = self._llm_reasoner.reason_text(
+                prompt, caller="activity_classifier.classify_with_llm",
+                think=False,
+            )
+            if not result.success or result.abstained or not result.value:
+                return None
+
+            raw = str(result.value).strip().lower().replace(" ", "_")
+            # Match against ActivityType enum values
+            valid_values = {at.value for at in ActivityType}
+            if raw in valid_values:
+                return raw
+        except Exception:
+            logger.debug("LLM classification failed", exc_info=True)
+
+        return None
 
     # ------------------------------------------------------------------
     # Stage 1 — keyword + URL heuristics

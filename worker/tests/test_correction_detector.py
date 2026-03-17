@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone, timedelta
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -18,6 +19,7 @@ from agenthandover_worker.correction_detector import (
     _get_location,
 )
 from agenthandover_worker.knowledge_base import KnowledgeBase
+from agenthandover_worker.llm_reasoning import LLMReasoner, ReasoningResult
 
 
 # ---------------------------------------------------------------------------
@@ -672,3 +674,88 @@ class TestPersistence:
         assert "corrections" in data
         assert "updated_at" in data
         assert len(data["corrections"]) == 1
+
+
+# ---------------------------------------------------------------------------
+# LLM-based guardrail learning
+# ---------------------------------------------------------------------------
+
+
+class TestCorrectionGuardrails:
+    """Tests for LLM-based correction pattern analysis and guardrails."""
+
+    def test_analyze_3_corrections_calls_llm(
+        self, kb: KnowledgeBase
+    ) -> None:
+        """When 3+ corrections exist for a group, LLM is called."""
+        reasoner = LLMReasoner()
+        reasoner.reason_json = MagicMock(return_value=ReasoningResult(
+            value={
+                "guardrail": "Always use full browser name, not abbreviation",
+                "improved_condition": "when specifying the browser application",
+                "confidence": 0.85,
+            },
+            success=True,
+        ))
+
+        det = CorrectionDetector(kb, llm_reasoner=reasoner)
+        # Record 3 corrections for the same step
+        for i in range(3):
+            det.record_correction(_make_correction(
+                slug="proc-a",
+                step_id="step_1",
+                original=f"open browser {i}",
+                corrected=f"open chrome browser {i}",
+            ))
+
+        guardrails = det.analyze_correction_patterns("proc-a", min_corrections=3)
+
+        assert len(guardrails) == 1
+        assert guardrails[0]["guardrail"] == "Always use full browser name, not abbreviation"
+        assert guardrails[0]["confidence"] == 0.85
+        reasoner.reason_json.assert_called_once()
+
+    def test_analyze_below_threshold_skips_llm(
+        self, kb: KnowledgeBase
+    ) -> None:
+        """When fewer than min_corrections exist, LLM is not called."""
+        reasoner = LLMReasoner()
+        reasoner.reason_json = MagicMock()
+
+        det = CorrectionDetector(kb, llm_reasoner=reasoner)
+        # Record only 2 corrections (below threshold of 3)
+        for i in range(2):
+            det.record_correction(_make_correction(
+                slug="proc-b",
+                step_id="step_1",
+                corrected=f"fix {i}",
+            ))
+
+        guardrails = det.analyze_correction_patterns("proc-b", min_corrections=3)
+
+        assert guardrails == []
+        reasoner.reason_json.assert_not_called()
+
+    def test_apply_guardrails_updates_procedure(
+        self, kb: KnowledgeBase
+    ) -> None:
+        """apply_guardrails_to_procedure appends to constraints.guardrails."""
+        kb.save_procedure(_make_procedure("proc-g", steps=[
+            {"step_id": "step_1", "index": 0, "action": "open browser"},
+        ]))
+
+        det = CorrectionDetector(kb)
+        guardrails = [
+            {"guardrail": "Always specify full app name", "confidence": 0.9},
+            {"guardrail": "Verify URL before navigating", "confidence": 0.8},
+        ]
+
+        result = det.apply_guardrails_to_procedure("proc-g", guardrails)
+
+        assert result is True
+        proc = kb.get_procedure("proc-g")
+        assert proc is not None
+        assert "constraints" in proc
+        assert "guardrails" in proc["constraints"]
+        assert "Always specify full app name" in proc["constraints"]["guardrails"]
+        assert "Verify URL before navigating" in proc["constraints"]["guardrails"]

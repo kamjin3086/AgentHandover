@@ -15,5 +15,10 @@ let package = Package(
                 .process("Resources/Assets.xcassets"),
             ]
         ),
+        .testTarget(
+            name: "AgentHandoverAppTests",
+            dependencies: ["AgentHandoverApp"],
+            path: "Tests/AgentHandoverAppTests"
+        ),
     ]
 )

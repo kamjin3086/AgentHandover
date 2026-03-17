@@ -11,6 +11,7 @@ Tests cover:
 - Merging (episode accumulation, step selection, variable union)
 - Registry (load/save, cumulative dedup)
 - Real-world scenarios (exact repeat, evolved workflow, different tasks)
+- LLM-based step conflict resolution
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ from __future__ import annotations
 import json
 import tempfile
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -29,6 +31,7 @@ from agenthandover_worker.sop_dedup import (
     _normalize_app,
     _url_to_domain,
     _merge_variables,
+    _resolve_conflict_with_llm,
     compute_fingerprint,
     deduplicate_templates,
     find_matching_sop,
@@ -37,6 +40,7 @@ from agenthandover_worker.sop_dedup import (
     merge_sops,
     save_registry,
 )
+from agenthandover_worker.llm_reasoning import LLMReasoner, ReasoningResult
 
 
 # ------------------------------------------------------------------
@@ -606,3 +610,111 @@ class TestRealWorldScenarios:
 
         var_names = {v["name"] for v in result[0]["variables"]}
         assert var_names == {"query", "search_term", "category"}
+
+
+# ------------------------------------------------------------------
+# Tests: LLM-based merge conflict resolution
+# ------------------------------------------------------------------
+
+
+class TestLLMMerge:
+    """Tests for LLM-assisted step conflict resolution during merge."""
+
+    def test_merge_conflict_calls_llm(self):
+        """When steps differ and counts are within 1, LLM resolves."""
+        reasoner = LLMReasoner()
+        reasoner.reason_json = MagicMock(return_value=ReasoningResult(
+            value={"keep": "B", "reason": "Version B is more specific"},
+            success=True,
+        ))
+
+        sop_a = _amazon_sop(steps=[
+            {"step": "Open website", "parameters": {"app": "Chrome"}},
+            {"step": "Enter query", "parameters": {"app": "Chrome"}},
+        ])
+        sop_b = _amazon_sop_v2(steps=[
+            {"step": "Open Amazon homepage", "parameters": {"app": "Chrome"}},
+            {"step": "Type search term", "parameters": {"app": "Chrome"}},
+        ])
+
+        merged = merge_sops(sop_a, sop_b, llm_reasoner=reasoner)
+
+        # LLM was called for each conflicting step pair
+        assert reasoner.reason_json.call_count == 2
+        # LLM chose "B" so both steps should be from sop_b
+        assert merged["steps"][0]["step"] == "Open Amazon homepage"
+        assert merged["steps"][1]["step"] == "Type search term"
+
+    def test_merge_no_conflict_skips_llm(self):
+        """When existing has many more steps (diff >= 2), LLM is skipped."""
+        reasoner = LLMReasoner()
+        reasoner.reason_json = MagicMock()
+
+        sop_long = _amazon_sop(steps=[
+            {"step": "Open website", "parameters": {}},
+            {"step": "Enter query", "parameters": {}},
+            {"step": "Click search", "parameters": {}},
+            {"step": "Review results", "parameters": {}},
+        ])
+        sop_short = _amazon_sop_v2(steps=[
+            {"step": "Open site", "parameters": {}},
+            {"step": "Search", "parameters": {}},
+        ])
+
+        merged = merge_sops(sop_long, sop_short, llm_reasoner=reasoner)
+
+        # Diff is 2, so heuristic path is used (keep longer = existing)
+        reasoner.reason_json.assert_not_called()
+        assert len(merged["steps"]) == 4
+
+    def test_merge_llm_keeps_both(self):
+        """When LLM says 'both', step A gets step B as an alternative."""
+        reasoner = LLMReasoner()
+        reasoner.reason_json = MagicMock(return_value=ReasoningResult(
+            value={"keep": "both", "reason": "Both approaches are valid"},
+            success=True,
+        ))
+
+        sop_a = _amazon_sop(steps=[
+            {"step": "Click the search icon", "parameters": {"app": "Chrome"}},
+        ])
+        sop_b = _amazon_sop_v2(steps=[
+            {"step": "Press Enter to search", "parameters": {"app": "Chrome"}},
+        ])
+
+        merged = merge_sops(sop_a, sop_b, llm_reasoner=reasoner)
+
+        reasoner.reason_json.assert_called_once()
+        # Step A is kept with B as alternative
+        assert merged["steps"][0]["step"] == "Click the search icon"
+        assert "alternatives" in merged["steps"][0]
+        alt_steps = [
+            a.get("step", a.get("action", ""))
+            for a in merged["steps"][0]["alternatives"]
+        ]
+        assert "Press Enter to search" in alt_steps
+
+    def test_merge_llm_failure_uses_heuristic(self):
+        """When LLM fails, merge falls back to heuristic (keep new)."""
+        reasoner = LLMReasoner()
+        reasoner.reason_json = MagicMock(return_value=ReasoningResult(
+            value=None,
+            success=False,
+            error="Ollama not reachable",
+        ))
+
+        sop_a = _amazon_sop(steps=[
+            {"step": "Open website", "parameters": {"app": "Chrome"}},
+            {"step": "Enter query", "parameters": {"app": "Chrome"}},
+        ])
+        sop_b = _amazon_sop_v2(steps=[
+            {"step": "Navigate to Amazon", "parameters": {"app": "Chrome"}},
+            {"step": "Type search term", "parameters": {"app": "Chrome"}},
+        ])
+
+        merged = merge_sops(sop_a, sop_b, llm_reasoner=reasoner)
+
+        # LLM was attempted but failed — falls back to keeping new (sop_b)
+        reasoner.reason_json.assert_called()
+        assert merged["steps"][0]["step"] == "Navigate to Amazon"
+        assert merged["steps"][1]["step"] == "Type search term"

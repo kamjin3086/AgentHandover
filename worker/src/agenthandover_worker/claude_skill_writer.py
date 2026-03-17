@@ -98,6 +98,47 @@ class ClaudeSkillWriter(SOPExportAdapter):
         # Append v3-only sections before the footer
         extra_lines = []
 
+        # Strategy section (behavioral synthesis)
+        strategy = procedure.get("strategy")
+        if strategy:
+            extra_lines.append("## Strategy")
+            extra_lines.append(strategy)
+            extra_lines.append("")
+
+        # Evidence summary (pre-synthesis fallback)
+        evidence_summary = procedure.get("evidence_summary")
+        if evidence_summary and not strategy:
+            extra_lines.append("## Observed Patterns")
+            extra_lines.append(evidence_summary)
+            extra_lines.append("")
+
+        # Selection criteria (behavioral synthesis)
+        selection = procedure.get("selection_criteria", [])
+        if selection:
+            extra_lines.append("## Selection Criteria")
+            for sc in selection:
+                criterion = sc.get("criterion", "")
+                if criterion:
+                    conf = sc.get("confidence", 0.0)
+                    extra_lines.append(f"- {criterion} (confidence: {conf:.0%})")
+                    examples = sc.get("examples", [])
+                    for ex in examples[:2]:
+                        extra_lines.append(f"  - Example: {ex}")
+            extra_lines.append("")
+
+        # Output templates (behavioral synthesis)
+        templates = procedure.get("content_templates", [])
+        if templates:
+            extra_lines.append("## Output Templates")
+            for ct in templates:
+                template = ct.get("template", "")
+                if template:
+                    extra_lines.append(f"- Template: {template}")
+                    variables = ct.get("variables", [])
+                    if variables:
+                        extra_lines.append(f"  Variables: {', '.join(variables)}")
+            extra_lines.append("")
+
         # Environment section
         env = procedure.get("environment", {})
         if env.get("required_apps") or env.get("accounts") or env.get("setup_actions"):
@@ -112,16 +153,46 @@ class ClaudeSkillWriter(SOPExportAdapter):
                 extra_lines.append(f"- Setup: {action}")
             extra_lines.append("")
 
-        # Constraints
+        # Constraints / Do NOT section (guardrails from behavioral synthesis)
         constraints = procedure.get("constraints", {})
         trust_level = constraints.get("trust_level", "")
         guardrails = constraints.get("guardrails", [])
-        if trust_level or guardrails:
-            extra_lines.append("## Constraints")
+        if guardrails:
+            extra_lines.append("## Do NOT")
             if trust_level:
                 extra_lines.append(f"- Trust level: {trust_level}")
             for g in guardrails:
                 extra_lines.append(f"- {g}")
+            extra_lines.append("")
+        elif trust_level:
+            extra_lines.append("## Constraints")
+            extra_lines.append(f"- Trust level: {trust_level}")
+            extra_lines.append("")
+
+        # Workflow rhythm (behavioral synthesis)
+        rhythm = procedure.get("workflow_rhythm", {})
+        if rhythm and rhythm.get("phases"):
+            extra_lines.append("## Workflow Rhythm")
+            avg_dur = rhythm.get("avg_duration_minutes")
+            if avg_dur:
+                extra_lines.append(f"- Typical duration: {avg_dur:.0f} minutes")
+            for phase in rhythm.get("phases", []):
+                name = phase.get("name", "")
+                dur = phase.get("typical_duration_minutes", 0)
+                desc = phase.get("description", "")
+                extra_lines.append(f"- **{name}** (~{dur} min): {desc}")
+            extra_lines.append("")
+
+        # MCP browser tools hint for web-based workflows
+        apps = procedure.get("apps_involved", [])
+        has_browser = any(
+            a.lower() in _BROWSER_APPS or "browser" in a.lower() or "chrome" in a.lower()
+            for a in apps
+        )
+        if has_browser:
+            extra_lines.append("## Browser Automation")
+            extra_lines.append("This workflow involves web browser interaction.")
+            extra_lines.append("Consider using MCP browser tools for automation.")
             extra_lines.append("")
 
         if extra_lines:

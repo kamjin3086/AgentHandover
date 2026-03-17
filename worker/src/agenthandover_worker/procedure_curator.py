@@ -141,12 +141,16 @@ class ProcedureCurator:
         trust_advisor: TrustAdvisor,
         lifecycle_manager: LifecycleManager,
         evidence_normalizer=None,
+        quality_judge=None,
+        llm_reasoner=None,
     ) -> None:
         self._kb = kb
         self._staleness = staleness_detector
         self._trust = trust_advisor
         self._lifecycle = lifecycle_manager
         self._evidence_normalizer = evidence_normalizer
+        self._quality_judge = quality_judge
+        self._llm_reasoner = llm_reasoner
 
         # Persisted curation decisions
         self._dismissed_merges: set[frozenset[str]] = set()
@@ -591,11 +595,12 @@ class ProcedureCurator:
         tpl_a = procedure_to_sop_template(proc_a)
         tpl_b = procedure_to_sop_template(proc_b)
 
-        # Merge B into A
-        if self._evidence_normalizer is not None:
-            merged_tpl = merge_sops(tpl_a, tpl_b, self._evidence_normalizer)
-        else:
-            merged_tpl = merge_sops(tpl_a, tpl_b)
+        # Merge B into A (with LLM conflict resolution if available)
+        merged_tpl = merge_sops(
+            tpl_a, tpl_b,
+            evidence_normalizer=self._evidence_normalizer,
+            llm_reasoner=self._llm_reasoner,
+        )
 
         # Convert merged template back to procedure and preserve A's id
         from agenthandover_worker.procedure_schema import sop_to_procedure
@@ -650,6 +655,20 @@ class ProcedureCurator:
             target = ProcedureLifecycle(to_state)
         except ValueError:
             return {"success": False, "error": f"Invalid lifecycle state: {to_state}"}
+
+        # Quality gate: if a judge is configured, assess before promoting
+        if self._quality_judge is not None:
+            proc = self._kb.get_procedure(slug)
+            if proc is not None:
+                assessment = self._quality_judge.assess(proc, to_state)
+                if not assessment.passed and not assessment.abstained:
+                    return {
+                        "success": False,
+                        "error": "Quality assessment failed",
+                        "gaps": assessment.gaps,
+                        "reasons": assessment.reasons,
+                        "score": assessment.score,
+                    }
 
         try:
             result = self._lifecycle.transition(

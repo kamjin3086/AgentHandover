@@ -4,14 +4,22 @@ Analyzes variation points across multiple observations of the same
 procedure to infer the rules that govern different choices.  This is
 a heuristic-only implementation that uses pattern matching to identify
 common decision patterns without requiring VLM.
+
+When an ``LLMReasoner`` is provided, generic heuristic conditions
+(e.g. "when choosing X over Y") are refined via a targeted Qwen call
+that considers observation context to produce more specific conditions.
 """
 
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from agenthandover_worker.knowledge_base import KnowledgeBase
+
+if TYPE_CHECKING:
+    from agenthandover_worker.llm_reasoning import LLMReasoner
 
 logger = logging.getLogger(__name__)
 
@@ -47,13 +55,19 @@ class DecisionExtractor:
     to identify common decision patterns without requiring VLM.
     """
 
-    def __init__(self, kb: KnowledgeBase) -> None:
+    def __init__(
+        self,
+        kb: KnowledgeBase,
+        llm_reasoner: "LLMReasoner | None" = None,
+    ) -> None:
         self._kb = kb
+        self._llm_reasoner = llm_reasoner
 
     def extract_decisions(
         self,
         slug: str,
         observations: list[dict] | None = None,
+        evidence: dict | None = None,
     ) -> list[DecisionSet]:
         """Extract decision rules for a procedure.
 
@@ -74,7 +88,7 @@ class DecisionExtractor:
 
         decision_sets: list[DecisionSet] = []
         for variation in variations:
-            rules = self._infer_rules(variation)
+            rules = self._infer_rules(variation, evidence=evidence)
             if rules:
                 decision_sets.append(
                     DecisionSet(
@@ -146,7 +160,11 @@ class DecisionExtractor:
 
         return variations
 
-    def _infer_rules(self, variation: dict) -> list[DecisionRule]:
+    def _infer_rules(
+        self,
+        variation: dict,
+        evidence: dict | None = None,
+    ) -> list[DecisionRule]:
         """Infer decision rules from a variation point.
 
         Uses heuristic pattern matching:
@@ -159,7 +177,9 @@ class DecisionExtractor:
             for action, count in variation["actions"].items():
                 # Try to infer condition from context
                 condition = self._infer_condition_from_contexts(
-                    action, variation["contexts"], variation["actions"]
+                    action, variation["contexts"], variation["actions"],
+                    variation=variation,
+                    evidence=evidence,
                 )
                 rules.append(
                     DecisionRule(
@@ -188,18 +208,97 @@ class DecisionExtractor:
         action: str,
         contexts: list[dict],
         all_actions: dict[str, int],
+        variation: dict | None = None,
+        evidence: dict | None = None,
     ) -> str:
         """Try to infer what condition leads to a specific action.
 
         Heuristic: look for distinguishing context fields.
+        When the heuristic produces a generic fallback string and an
+        ``LLMReasoner`` is available, attempts LLM-based refinement.
         """
         # Simple: if there are only 2 actions, frame as if/else
         if len(all_actions) == 2:
             actions_list = list(all_actions.keys())
             other = actions_list[0] if actions_list[1] == action else actions_list[1]
-            return f"when choosing '{action}' over '{other}'"
+            heuristic = f"when choosing '{action}' over '{other}'"
+        else:
+            heuristic = f"when action is '{action}'"
 
-        return f"when action is '{action}'"
+        # Check whether heuristic is generic and LLM can improve it
+        _GENERIC_MARKERS = ("when choosing", "when action is")
+        is_generic = any(marker in heuristic for marker in _GENERIC_MARKERS)
+
+        if is_generic and self._llm_reasoner is not None:
+            llm_condition = self._infer_condition_with_llm(
+                action, contexts, all_actions, variation or {},
+                evidence=evidence,
+            )
+            if llm_condition is not None:
+                return llm_condition
+
+        return heuristic
+
+    def _infer_condition_with_llm(
+        self,
+        action: str,
+        contexts: list[dict],
+        all_actions: dict[str, int],
+        variation: dict,
+        evidence: dict | None = None,
+    ) -> str | None:
+        """Use LLM to infer a specific condition for an action choice.
+
+        Returns a condition string, or ``None`` if the LLM fails,
+        is over budget, or abstains.
+        """
+        alternatives = [a for a in all_actions if a != action]
+        context_summary = "; ".join(
+            str(ctx) for ctx in contexts[:5] if ctx
+        ) or "no additional context"
+
+        prompt = (
+            f"What condition determines when the user does '{action}' "
+            f"vs '{', '.join(alternatives)}'? "
+            f"Context from observations: {context_summary}. "
+            f"Be specific — describe the observable condition, not just "
+            f"the choice."
+        )
+
+        # Include evidence signals when available
+        if evidence:
+            evidence_parts = []
+            selection = evidence.get("selection_signals", {})
+            if selection:
+                high_engagement = selection.get("high_engagement_locations", [])
+                if high_engagement:
+                    evidence_parts.append(
+                        f"High engagement locations: {', '.join(str(loc) for loc in high_engagement[:3])}"
+                    )
+            content = evidence.get("content_produced", {})
+            content_patterns = content.get("types", [])
+            if content_patterns:
+                evidence_parts.append(
+                    f"Content patterns: {', '.join(content_patterns[:3])}"
+                )
+            if evidence_parts:
+                prompt += f" Evidence: {'; '.join(evidence_parts)}."
+
+        try:
+            result = self._llm_reasoner.reason_text(
+                prompt=prompt,
+                caller="decision_extractor._infer_condition_with_llm",
+            )
+            if result.success and not result.abstained and result.value:
+                return str(result.value)
+        except Exception:
+            logger.debug(
+                "LLM condition inference failed for action '%s'",
+                action,
+                exc_info=True,
+            )
+
+        return None
 
     def save_decisions(self, decision_sets: list[DecisionSet]) -> None:
         """Save extracted decision sets to the knowledge base."""
