@@ -212,7 +212,7 @@ pub fn run() -> Result<()> {
 
     // Check 13: Chrome extension (optional — not all users need it)
     if paths::find_any_extension_path().is_some() {
-        check_pass(&mut counts, "Chrome extension");
+        check_pass(&mut counts, "Browser extension");
     } else {
         let hint = match channel {
             "pkg" => "Re-run .pkg installer to repair",
@@ -220,7 +220,7 @@ pub fn run() -> Result<()> {
             "source" => "cd extension && npm run build",
             _ => "Re-install AgentHandover (.pkg recommended)",
         };
-        check_skip(&mut counts, "Chrome extension", hint);
+        check_skip(&mut counts, "Browser extension", hint);
     }
 
     // Check 14: Worker process alive (optional — may not be started yet)
@@ -422,8 +422,16 @@ fn screen_recording_check() -> bool {
 }
 
 fn native_messaging_manifest_path() -> std::path::PathBuf {
+    // Check all supported Chromium browsers, return the first found manifest
+    let manifest_name = "com.agenthandover.host.json";
+    for dir in crate::paths::native_messaging_hosts_dirs() {
+        let path = dir.join(manifest_name);
+        if path.exists() {
+            return path;
+        }
+    }
+    // Fallback to Chrome default for error reporting
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-    // Chrome's NativeMessagingHosts location on macOS
     std::path::PathBuf::from(home).join(
         "Library/Application Support/Google/Chrome/NativeMessagingHosts/com.agenthandover.host.json",
     )

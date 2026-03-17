@@ -24,13 +24,19 @@ pub fn run(purge_data: bool) -> Result<()> {
         }
     }
 
-    // Step 3: Remove native messaging host manifest
-    let nm_path = std::path::PathBuf::from(&home).join(
-        "Library/Application Support/Google/Chrome/NativeMessagingHosts/com.agenthandover.host.json",
-    );
-    if nm_path.exists() {
-        std::fs::remove_file(&nm_path)?;
-        println!("  Removed native messaging host manifest");
+    // Step 3: Remove native messaging host manifest from all supported browsers
+    let manifest_name = "com.agenthandover.host.json";
+    let mut nm_removed = false;
+    for dir in crate::paths::native_messaging_hosts_dirs() {
+        let nm_path = dir.join(manifest_name);
+        if nm_path.exists() {
+            std::fs::remove_file(&nm_path)?;
+            println!("  Removed {}", nm_path.display());
+            nm_removed = true;
+        }
+    }
+    if !nm_removed {
+        println!("  No native messaging host manifests found");
     }
 
     // Step 4: Remove PID files
