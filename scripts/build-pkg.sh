@@ -103,6 +103,27 @@ productbuild \
     --resources "${REPO_ROOT}/resources/pkg" \
     "${OUTPUT}"
 
+# Sign the package if a Developer ID Installer identity is available
+SIGN_IDENTITY="${SIGN_IDENTITY:-}"
+if [ -z "${SIGN_IDENTITY}" ]; then
+    # Auto-detect Developer ID Installer certificate
+    SIGN_IDENTITY=$(security find-identity -v -p basic 2>/dev/null \
+        | grep "Developer ID Installer" \
+        | head -1 \
+        | sed 's/.*"\(Developer ID Installer:.*\)"/\1/')
+fi
+
+if [ -n "${SIGN_IDENTITY}" ]; then
+    echo "Signing with: ${SIGN_IDENTITY}"
+    SIGNED_OUTPUT="${OUTPUT%.pkg}-signed.pkg"
+    productsign --sign "${SIGN_IDENTITY}" "${OUTPUT}" "${SIGNED_OUTPUT}"
+    mv "${SIGNED_OUTPUT}" "${OUTPUT}"
+    echo "Package signed successfully."
+else
+    echo "Warning: No Developer ID Installer certificate found. Package is unsigned."
+    echo "  Users will need to right-click → Open to bypass Gatekeeper."
+fi
+
 # Cleanup
 rm -rf "${PKG_ROOT}" "${SCRIPTS_STAGING}" "${COMPONENT_PKG}"
 
