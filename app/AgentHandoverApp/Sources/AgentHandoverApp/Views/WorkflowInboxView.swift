@@ -194,60 +194,59 @@ struct SOPRow: View {
     @State private var isHovered = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            // Title
-            Text(sop.displayTitle)
-                .font(.system(size: 13, weight: .medium))
-                .lineLimit(1)
-                .foregroundColor(.primary)
+        HStack(spacing: 12) {
+            // Source icon
+            ZStack {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(isSelected ? Color.accentColor.opacity(0.15) : Color.primary.opacity(0.05))
+                    .frame(width: 36, height: 36)
+                Image(systemName: sop.sourceIcon)
+                    .font(.system(size: 14))
+                    .foregroundColor(isSelected ? .accentColor : .secondary)
+            }
 
-            // Tags + metadata row
-            HStack(spacing: 6) {
-                // Tags
-                ForEach(sop.displayTags, id: \.self) { tag in
-                    Text(tag)
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundColor(.secondary)
-                        .padding(.horizontal, 5)
+            VStack(alignment: .leading, spacing: 4) {
+                // Title
+                Text(sop.displayTitle)
+                    .font(.system(size: 13, weight: .medium))
+                    .lineLimit(2)
+                    .foregroundColor(.primary)
+
+                // Metadata row
+                HStack(spacing: 6) {
+                    // Lifecycle state pill
+                    Text(sop.lifecycleLabel)
+                        .font(.system(size: 9, weight: .semibold))
+                        .padding(.horizontal, 6)
                         .padding(.vertical, 2)
-                        .background(Color.primary.opacity(0.05))
-                        .cornerRadius(3)
+                        .background(sop.lifecycleColor.opacity(0.12))
+                        .foregroundColor(sop.lifecycleColor)
+                        .clipShape(Capsule())
+
+                    if sop.confidence > 0 {
+                        Text(String(format: "%.0f%%", sop.confidence * 100))
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                    }
+
+                    Spacer()
+
+                    Text(sop.relativeTime)
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary.opacity(0.5))
                 }
-
-                if !sop.displayTags.isEmpty {
-                    Text("·")
-                        .font(.system(size: 9))
-                        .foregroundColor(.secondary.opacity(0.4))
-                }
-
-                Text(sop.sourceLabel)
-                    .font(.system(size: 10))
-                    .foregroundColor(.secondary.opacity(0.6))
-
-                // Lifecycle state pill
-                Text(sop.lifecycleLabel)
-                    .font(.caption2)
-                    .padding(.horizontal, 4)
-                    .padding(.vertical, 1)
-                    .background(sop.lifecycleColor.opacity(0.12))
-                    .foregroundColor(sop.lifecycleColor)
-                    .clipShape(Capsule())
-
-                Spacer()
-
-                Text(sop.relativeTime)
-                    .font(.system(size: 10))
-                    .foregroundColor(.secondary.opacity(0.5))
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
         .background(
-            isSelected
-                ? Color.accentColor.opacity(0.12)
-                : (isHovered ? Color.primary.opacity(0.03) : Color.clear)
+            RoundedRectangle(cornerRadius: 8)
+                .fill(
+                    isSelected
+                        ? Color.accentColor.opacity(0.1)
+                        : (isHovered ? Color.primary.opacity(0.04) : Color.clear)
+                )
         )
-        .cornerRadius(6)
         .padding(.horizontal, 6)
         .onHover { isHovered = $0 }
     }
