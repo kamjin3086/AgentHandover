@@ -77,6 +77,32 @@ if [ -f "${APP_BINARY}" ]; then
        "${PKG_ROOT}/Applications/AgentHandover.app/Contents/Info.plist"
 fi
 
+# Codesign all binaries with Developer ID Application + hardened runtime + timestamp
+CODESIGN_IDENTITY="${CODESIGN_IDENTITY:-}"
+if [ -z "${CODESIGN_IDENTITY}" ]; then
+    CODESIGN_IDENTITY=$(security find-identity -v -p codesigning 2>/dev/null \
+        | grep "Developer ID Application" \
+        | head -1 \
+        | sed 's/.*"\(Developer ID Application:.*\)"/\1/')
+fi
+
+if [ -n "${CODESIGN_IDENTITY}" ]; then
+    echo "Codesigning binaries with: ${CODESIGN_IDENTITY}"
+    for binary in \
+        "${PKG_ROOT}/usr/local/bin/agenthandover-daemon" \
+        "${PKG_ROOT}/usr/local/bin/agenthandover" \
+        "${PKG_ROOT}/Applications/AgentHandover.app/Contents/MacOS/AgentHandover"; do
+        if [ -f "${binary}" ]; then
+            codesign --force --options runtime --timestamp \
+                --sign "${CODESIGN_IDENTITY}" "${binary}"
+            echo "  Signed: $(basename "${binary}")"
+        fi
+    done
+else
+    echo "Warning: No Developer ID Application certificate found. Binaries unsigned."
+    echo "  Notarization will fail without codesigned binaries."
+fi
+
 # Copy install scripts
 SCRIPTS_STAGING="$(mktemp -d)"
 cp "${REPO_ROOT}/resources/pkg/scripts/preinstall" "${SCRIPTS_STAGING}/"

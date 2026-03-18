@@ -255,6 +255,7 @@ class BehavioralSynthesizer:
         daily_summaries: list[dict] | None = None,
         linked_tasks: list[dict] | None = None,
         continuity_spans: list[dict] | None = None,
+        force: bool = False,
     ) -> BehavioralInsights:
         """Run behavioral synthesis for a procedure.
 
@@ -265,11 +266,14 @@ class BehavioralSynthesizer:
             daily_summaries: Optional daily summaries for timing/recurrence.
             linked_tasks: Optional cross-day task links.
             continuity_spans: Optional continuity spans for interruption patterns.
+            force: If True, bypass the min_observations check. Used for
+                focus recordings where a single demonstration should still
+                get behavioral analysis. Does NOT bypass the budget check.
 
         Returns:
             BehavioralInsights with extracted patterns.
         """
-        if len(observations) < self.config.min_observations:
+        if not force and len(observations) < self.config.min_observations:
             logger.debug(
                 "Skipping synthesis for '%s': %d observations < %d minimum",
                 slug, len(observations), self.config.min_observations,

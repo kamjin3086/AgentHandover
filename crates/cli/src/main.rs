@@ -135,6 +135,10 @@ enum FocusAction {
     },
     /// Stop the active focus recording session
     Stop,
+    /// Answer pending questions about the focus recording and complete SOP export
+    Finalize,
+    /// Skip pending questions and export with default answers
+    SkipQuestions,
 }
 
 #[derive(Subcommand)]
@@ -218,6 +222,8 @@ fn main() -> Result<()> {
         Commands::Focus { action } => match action {
             FocusAction::Start { title } => commands::focus::start(&title),
             FocusAction::Stop => commands::focus::stop(),
+            FocusAction::Finalize => commands::focus::finalize(),
+            FocusAction::SkipQuestions => commands::focus::skip_questions(),
         },
         Commands::Export { format, sop, output } => {
             commands::export::run(&format, sop.as_deref(), output.as_deref())

@@ -1607,6 +1607,8 @@ def _process_focus_sessions_v2(
     sop_auto_approve: bool = True,
     procedure_writer: "ProcedureWriter | None" = None,
     kb_export_adapter: "KnowledgeBaseExportAdapter | None" = None,
+    behavioral_synthesizer: "BehavioralSynthesizer | None" = None,
+    focus_questioner: "FocusQuestioner | None" = None,
 ) -> int:
     """Process completed focus recording sessions via v2 VLM pipeline.
 
@@ -1614,9 +1616,35 @@ def _process_focus_sessions_v2(
     the v1 episode builder + translator + PrefixSpan path.  Produces
     semantic SOPs with exact screen-observed details.
 
+    Enhanced flow:
+      1. Check for pending focus Q&A answers from a previous cycle.
+         If answered, merge answers into the saved procedure and export.
+      2. Process new focus-session.json signal (SOP generation).
+      3. Run behavioral synthesis with force=True (single demo).
+      4. Generate 1-3 targeted questions via focus_questioner.
+      5. If questions exist, pause export and write Q&A files for the CLI.
+      6. If no questions (or questioner unavailable), export immediately.
+
     Returns the number of SOPs exported.
     """
     state_dir = _status_dir()
+
+    # --- Check for pending focus Q&A answers from a previous cycle ---
+    pending_export = _check_focus_answers(
+        state_dir,
+        focus_questioner=focus_questioner,
+        openclaw_writer=openclaw_writer,
+        skill_md_writer=skill_md_writer,
+        claude_skill_writer=claude_skill_writer,
+        index_generator=index_generator,
+        sop_auto_approve=sop_auto_approve,
+        procedure_writer=procedure_writer,
+        kb_export_adapter=kb_export_adapter,
+    )
+    if pending_export is not None:
+        return pending_export
+
+    # --- Process new focus session signal ---
     signal_path = state_dir / "focus-session.json"
 
     if not signal_path.is_file():
@@ -1683,14 +1711,94 @@ def _process_focus_sessions_v2(
             _clear_focus_signal(signal_path)
             return 0
 
+        # --- Behavioral synthesis for focus (single demo, force=True) ---
+        procedure_dict = dict(result.sop)
+        if behavioral_synthesizer is not None:
+            try:
+                # Build a single-demo observations list from the SOP steps
+                timeline_as_observations = result.sop.get("steps", [])
+                insights = behavioral_synthesizer.synthesize(
+                    slug, procedure_dict, [timeline_as_observations],
+                    force=True,  # bypass min_observations for focus
+                )
+                if insights.strategy or insights.guardrails:
+                    procedure_dict = behavioral_synthesizer.merge_insights_into_procedure(
+                        procedure_dict, insights,
+                    )
+                    # Update the SOP template with synthesized insights
+                    sop_templates = [procedure_dict]
+                    logger.info(
+                        "Focus v2 session '%s': behavioral synthesis complete "
+                        "(strategy=%s, %d guardrails)",
+                        title, bool(insights.strategy), len(insights.guardrails),
+                    )
+            except Exception:
+                logger.debug(
+                    "Focus v2 behavioral synthesis failed for '%s'",
+                    title, exc_info=True,
+                )
+
+        # --- Generate targeted questions ---
+        if focus_questioner is not None:
+            try:
+                questions = focus_questioner.generate_questions(
+                    procedure_dict, result.sop,
+                )
+                if questions:
+                    from agenthandover_worker.focus_questioner import (
+                        write_focus_questions,
+                        write_focus_pending,
+                    )
+                    write_focus_questions(
+                        state_dir, session_id, slug, questions,
+                    )
+                    write_focus_pending(
+                        state_dir, session_id, slug,
+                        sop_template=result.sop,
+                        procedure=procedure_dict,
+                    )
+                    logger.info(
+                        "Focus v2 session '%s': %d question(s) generated, "
+                        "pausing export for user answers",
+                        title, len(questions),
+                    )
+                    # Save SOP to DB as draft while waiting for answers
+                    try:
+                        db.save_generated_sop(
+                            slug=slug,
+                            title=title,
+                            source="focus",
+                            sop_template=procedure_dict,
+                            confidence=procedure_dict.get(
+                                "confidence_avg",
+                                procedure_dict.get("confidence", 0.0),
+                            ),
+                            source_id=session_id,
+                            auto_approve=False,  # draft until answers
+                        )
+                    except Exception:
+                        logger.debug(
+                            "Failed to save pending SOP to DB", exc_info=True,
+                        )
+                    _clear_focus_signal(signal_path)
+                    return 0  # Don't export yet — wait for answers
+            except Exception:
+                logger.debug(
+                    "Focus v2 question generation failed for '%s', "
+                    "proceeding without questions",
+                    title, exc_info=True,
+                )
+
+        # --- Standard export path (no questions or questioner unavailable) ---
+
         # Save generated SOP to DB for review tracking
         try:
             db.save_generated_sop(
                 slug=slug,
                 title=title,
                 source="focus",
-                sop_template=result.sop,
-                confidence=result.sop.get("confidence_avg", result.sop.get("confidence", 0.0)),
+                sop_template=procedure_dict,
+                confidence=procedure_dict.get("confidence_avg", procedure_dict.get("confidence", 0.0)),
                 source_id=session_id,
                 auto_approve=sop_auto_approve,
             )
@@ -1702,70 +1810,17 @@ def _process_focus_sessions_v2(
 
         # Only export if auto_approve is enabled
         if sop_auto_approve:
-            # Deduplicate against known SOPs
-            from agenthandover_worker.sop_dedup import deduplicate_templates
-            sop_templates = deduplicate_templates(sop_templates, _status_dir())
-
-            # Write v3 procedures to the knowledge base first so
-            # all adapters (including OpenClaw) can use the richer v3 format.
-            if procedure_writer is not None:
-                for tpl in sop_templates:
-                    try:
-                        procedure_writer.write_procedure(
-                            tpl,
-                            source="sop_pipeline",
-                            source_id=tpl.get("slug", "unknown"),
-                        )
-                    except Exception:
-                        logger.debug(
-                            "Failed to write procedure for %s",
-                            tpl.get("slug", "?"), exc_info=True,
-                        )
-
-            # Export via OpenClaw (uses v3 procedure from KB when available)
-            try:
-                paths = _export_via_adapter(
-                    openclaw_writer, sop_templates, procedure_writer,
-                )
-                exported = len(paths)
-                index_generator.update_index(
-                    openclaw_writer.get_sops_dir(), sop_templates
-                )
-                logger.info(
-                    "Focus v2 session '%s': exported %d SOP(s) (%.1fs VLM time)",
-                    title, exported, result.inference_time_seconds,
-                )
-            except Exception:
-                logger.exception("Focus v2 SOP export failed")
-
-            # Also export as SKILL.md (uses v3 procedure when available)
-            if skill_md_writer is not None:
-                try:
-                    _export_via_adapter(
-                        skill_md_writer, sop_templates, procedure_writer,
-                    )
-                    logger.info("Focus v2 session '%s': SKILL.md export complete", title)
-                except Exception:
-                    logger.exception("Focus v2 SKILL.md export failed")
-
-            # Also export as Claude Code skills (uses v3 procedure when available)
-            if claude_skill_writer is not None:
-                try:
-                    _export_via_adapter(
-                        claude_skill_writer, sop_templates, procedure_writer,
-                    )
-                    logger.info("Focus v2 session '%s': Claude skill export complete", title)
-                except Exception:
-                    logger.exception("Focus v2 Claude skill export failed")
-
-            if kb_export_adapter is not None:
-                try:
-                    kb_export_adapter.write_all_sops(sop_templates)
-                except Exception:
-                    logger.debug("KB export adapter failed", exc_info=True)
-
-            # Cache for CLI export trigger
-            _save_sop_cache(sop_templates)
+            exported = _focus_v2_export(
+                sop_templates=sop_templates,
+                title=title,
+                inference_time=result.inference_time_seconds,
+                openclaw_writer=openclaw_writer,
+                skill_md_writer=skill_md_writer,
+                claude_skill_writer=claude_skill_writer,
+                index_generator=index_generator,
+                procedure_writer=procedure_writer,
+                kb_export_adapter=kb_export_adapter,
+            )
         else:
             logger.info(
                 "Focus v2 session '%s': SOP saved as draft (auto_approve=False)",
@@ -1793,6 +1848,186 @@ def _process_focus_sessions_v2(
 
     # Clear signal file
     _clear_focus_signal(signal_path)
+    return exported
+
+
+def _focus_v2_export(
+    *,
+    sop_templates: list[dict],
+    title: str,
+    inference_time: float,
+    openclaw_writer: "SOPExportAdapter",
+    skill_md_writer: "SOPExportAdapter | None" = None,
+    claude_skill_writer: "SOPExportAdapter | None" = None,
+    index_generator: "IndexGenerator",
+    procedure_writer: "ProcedureWriter | None" = None,
+    kb_export_adapter: "KnowledgeBaseExportAdapter | None" = None,
+) -> int:
+    """Shared export logic for focus v2 sessions.
+
+    Extracted from _process_focus_sessions_v2 to be reusable by both
+    the immediate export path and the deferred Q&A answer path.
+
+    Returns the number of SOPs exported.
+    """
+    # Deduplicate against known SOPs
+    from agenthandover_worker.sop_dedup import deduplicate_templates
+    sop_templates = deduplicate_templates(sop_templates, _status_dir())
+
+    # Write v3 procedures to the knowledge base first so
+    # all adapters (including OpenClaw) can use the richer v3 format.
+    if procedure_writer is not None:
+        for tpl in sop_templates:
+            try:
+                procedure_writer.write_procedure(
+                    tpl,
+                    source="sop_pipeline",
+                    source_id=tpl.get("slug", "unknown"),
+                )
+            except Exception:
+                logger.debug(
+                    "Failed to write procedure for %s",
+                    tpl.get("slug", "?"), exc_info=True,
+                )
+
+    exported = 0
+
+    # Export via OpenClaw (uses v3 procedure from KB when available)
+    try:
+        paths = _export_via_adapter(
+            openclaw_writer, sop_templates, procedure_writer,
+        )
+        exported = len(paths)
+        index_generator.update_index(
+            openclaw_writer.get_sops_dir(), sop_templates
+        )
+        logger.info(
+            "Focus v2 session '%s': exported %d SOP(s) (%.1fs VLM time)",
+            title, exported, inference_time,
+        )
+    except Exception:
+        logger.exception("Focus v2 SOP export failed")
+
+    # Also export as SKILL.md (uses v3 procedure when available)
+    if skill_md_writer is not None:
+        try:
+            _export_via_adapter(
+                skill_md_writer, sop_templates, procedure_writer,
+            )
+            logger.info("Focus v2 session '%s': SKILL.md export complete", title)
+        except Exception:
+            logger.exception("Focus v2 SKILL.md export failed")
+
+    # Also export as Claude Code skills (uses v3 procedure when available)
+    if claude_skill_writer is not None:
+        try:
+            _export_via_adapter(
+                claude_skill_writer, sop_templates, procedure_writer,
+            )
+            logger.info("Focus v2 session '%s': Claude skill export complete", title)
+        except Exception:
+            logger.exception("Focus v2 Claude skill export failed")
+
+    if kb_export_adapter is not None:
+        try:
+            kb_export_adapter.write_all_sops(sop_templates)
+        except Exception:
+            logger.debug("KB export adapter failed", exc_info=True)
+
+    # Cache for CLI export trigger
+    _save_sop_cache(sop_templates)
+
+    return exported
+
+
+def _check_focus_answers(
+    state_dir: Path,
+    *,
+    focus_questioner: "FocusQuestioner | None",
+    openclaw_writer: "SOPExportAdapter",
+    skill_md_writer: "SOPExportAdapter | None" = None,
+    claude_skill_writer: "SOPExportAdapter | None" = None,
+    index_generator: "IndexGenerator",
+    sop_auto_approve: bool = True,
+    procedure_writer: "ProcedureWriter | None" = None,
+    kb_export_adapter: "KnowledgeBaseExportAdapter | None" = None,
+) -> int | None:
+    """Check for pending focus Q&A answers and complete export if ready.
+
+    Returns:
+        Number of SOPs exported if answers were processed.
+        None if no pending Q&A was found (caller should proceed normally).
+    """
+    from agenthandover_worker.focus_questioner import (
+        read_focus_questions,
+        read_focus_pending,
+        parse_qa_result_from_file,
+        clear_focus_qa_files,
+    )
+
+    questions_data = read_focus_questions(state_dir)
+    if questions_data is None:
+        return None
+
+    status = questions_data.get("status", "")
+    if status not in ("answered", "skipped"):
+        # Still pending — user hasn't answered yet
+        return None
+
+    # Load the saved pending SOP state
+    pending = read_focus_pending(state_dir)
+    if pending is None:
+        logger.warning(
+            "Focus Q&A answers found but no pending SOP state — clearing stale files",
+        )
+        clear_focus_qa_files(state_dir)
+        return None
+
+    slug = pending.get("slug", "")
+    session_id = pending.get("session_id", "")
+    sop_template = pending.get("sop_template", {})
+    procedure_dict = pending.get("procedure", {})
+    title = sop_template.get("title", procedure_dict.get("title", "Untitled"))
+
+    # Parse and merge answers
+    qa_result = parse_qa_result_from_file(questions_data)
+    if qa_result is not None and focus_questioner is not None and qa_result.answers:
+        try:
+            procedure_dict = focus_questioner.merge_answers(procedure_dict, qa_result)
+            logger.info(
+                "Focus v2 '%s': merged %d answer(s) into procedure",
+                title, len(qa_result.answers),
+            )
+        except Exception:
+            logger.debug(
+                "Failed to merge focus Q&A answers for '%s'",
+                title, exc_info=True,
+            )
+
+    sop_templates = [procedure_dict]
+
+    # Export
+    exported = 0
+    if sop_auto_approve:
+        exported = _focus_v2_export(
+            sop_templates=sop_templates,
+            title=title,
+            inference_time=0.0,  # VLM time was in the original cycle
+            openclaw_writer=openclaw_writer,
+            skill_md_writer=skill_md_writer,
+            claude_skill_writer=claude_skill_writer,
+            index_generator=index_generator,
+            procedure_writer=procedure_writer,
+            kb_export_adapter=kb_export_adapter,
+        )
+
+    # Clean up Q&A files
+    clear_focus_qa_files(state_dir)
+
+    logger.info(
+        "Focus v2 '%s': Q&A complete, exported %d SOP(s) (status=%s)",
+        title, exported, status,
+    )
     return exported
 
 
@@ -3952,6 +4187,10 @@ def main(argv: list[str] | None = None) -> None:
     from agenthandover_worker.behavioral_synthesizer import BehavioralSynthesizer
     behavioral_synthesizer = BehavioralSynthesizer(vlm_queue=vlm_queue)
 
+    # Focus session questioner (gap analysis + targeted questions)
+    from agenthandover_worker.focus_questioner import FocusQuestioner
+    focus_questioner_inst = FocusQuestioner(llm_reasoner=llm_reasoner)
+
     evidence_extractor = None  # Initialized after DB is available
 
     # Phase 5: Curation orchestrator
@@ -4487,6 +4726,8 @@ def main(argv: list[str] | None = None) -> None:
                         sop_auto_approve=sop_auto_approve,
                         procedure_writer=procedure_writer,
                         kb_export_adapter=kb_export_adapter,
+                        behavioral_synthesizer=behavioral_synthesizer,
+                        focus_questioner=focus_questioner_inst,
                     )
                 else:
                     focus_sops = _process_focus_sessions(
