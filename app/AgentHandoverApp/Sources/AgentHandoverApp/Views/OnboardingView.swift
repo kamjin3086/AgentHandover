@@ -1729,28 +1729,26 @@ struct OnboardingView: View {
             .buttonStyle(.plain)
             .font(.system(size: 13, weight: .semibold, design: .rounded))
 
+            // Tertiary: Just close, start later
+            Button("I'll start later") {
+                onComplete?()
+                NSApplication.shared.keyWindow?.close()
+            }
+            .foregroundColor(darkNavy.opacity(0.3))
+            .buttonStyle(.plain)
+            .font(.system(size: 12, design: .rounded))
+
             if serviceStartFailed {
                 Text("Services may not have started. Check agenthandover status in Terminal.")
                     .font(captionFont)
                     .foregroundColor(.red)
-            } else if !appState.accessibilityGranted {
-                Text("Accessibility permission is required (go back to step 5)")
-                    .font(captionFont)
-                    .foregroundColor(warmOrange)
-            } else if !appState.vlmAvailable {
-                Text("An AI model must be configured (go back to step 6)")
-                    .font(captionFont)
-                    .foregroundColor(warmOrange)
             }
 
             HStack(spacing: 4) {
-                Text("AgentHandover lives in your menu bar")
-                    .font(captionFont)
-                    .foregroundColor(darkNavy.opacity(0.35))
-                Image(systemName: "arrow.up.right")
-                    .font(.system(size: 9))
-                    .foregroundColor(darkNavy.opacity(0.35))
-                Text(" - that\u{2019}s your control center")
+                Image(systemName: "menubar.rectangle")
+                    .font(.system(size: 10))
+                    .foregroundColor(darkNavy.opacity(0.3))
+                Text("You can start anytime from the menu bar icon")
                     .font(captionFont)
                     .foregroundColor(darkNavy.opacity(0.35))
             }
