@@ -168,7 +168,7 @@ struct OnboardingView: View {
             }
             .frame(height: 3)
 
-            Text("\(currentStep + 1) of \(totalSteps)")
+            Text("Step \(currentStep + 1) of \(totalSteps)")
                 .font(.system(size: 10, weight: .medium, design: .rounded))
                 .foregroundColor(captionColor)
                 .tracking(0.3)
@@ -352,22 +352,34 @@ struct OnboardingView: View {
             mascotImage(height: 120)
                 .shadow(color: warmOrange.opacity(0.12), radius: 20, y: 6)
 
-            // Title
-            VStack(spacing: 8) {
+            // Title + hero tagline
+            VStack(spacing: 12) {
                 Text("AgentHandover")
                     .font(heroFont)
                     .foregroundColor(warmBrown)
 
-                Text("Your work, turned into agent instructions")
-                    .font(.system(size: 15, weight: .medium, design: .rounded))
+                Text("Work once. Hand over forever.")
+                    .font(.system(size: 20, weight: .semibold, design: .rounded))
+                    .foregroundColor(warmBrown)
+
+                Text("AgentHandover studies how you work \u{2014} every app, every step, every pattern \u{2014} and teaches agents like OpenClaw, Claude Code, and Codex to do it exactly the way you would.")
+                    .font(bodyFont)
                     .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .lineSpacing(6)
+                    .frame(maxWidth: 440)
+
+                Text("No instructions to write. No workflows to document. It just watches and learns.")
+                    .font(captionFont)
+                    .foregroundColor(captionColor)
+                    .multilineTextAlignment(.center)
             }
 
             // Three value props as clean text lines (no cards, no icons)
             VStack(spacing: 10) {
-                valuePropLine("Watches your screen silently")
-                valuePropLine("Learns repeatable workflows")
-                valuePropLine("Writes procedures agents can follow")
+                valuePropLine("Watches silently as you work")
+                valuePropLine("Learns your patterns and decisions")
+                valuePropLine("Teaches your agents to do it for you")
             }
             .padding(.top, 4)
 
@@ -393,7 +405,7 @@ struct OnboardingView: View {
         Text(text)
             .font(.system(size: 14, weight: .regular))
             .foregroundColor(.secondary)
-            .lineSpacing(5)
+            .lineSpacing(6)
     }
 
     // MARK: - Screen 2: Two Ways to Teach
@@ -430,11 +442,21 @@ struct OnboardingView: View {
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
                         .foregroundColor(warmBrown)
 
+                    Text("Show your agent how it\u{2019}s done. Record yourself doing the task once \u{2014} AgentHandover figures out the rest.")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                        .lineSpacing(6)
+
                     VStack(alignment: .leading, spacing: 7) {
                         numberedStep(1, "Click Record")
                         numberedStep(2, "Do the task as usual")
                         numberedStep(3, "Stop \u{2014} AI analyzes in 2\u{2013}5 min")
                     }
+
+                    Text("Your agent gets a complete handoff document with steps, strategy, guardrails, and verification criteria.")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary.opacity(0.7))
+                        .lineSpacing(4)
                 }
                 .padding(cardPadding)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -466,17 +488,10 @@ struct OnboardingView: View {
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
                         .foregroundColor(.primary.opacity(0.7))
 
-                    VStack(alignment: .leading, spacing: 7) {
-                        Text("Watches for repeated patterns")
-                            .font(bodyFont)
-                            .foregroundColor(.secondary)
-                        Text("Gets smarter over days")
-                            .font(bodyFont)
-                            .foregroundColor(.secondary)
-                        Text("No effort required")
-                            .font(bodyFont)
-                            .foregroundColor(.secondary)
-                    }
+                    Text("Just work normally. AgentHandover spots patterns in your daily work and builds handoff documents automatically. The more you work, the smarter it gets.")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                        .lineSpacing(6)
                 }
                 .padding(cardPadding)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -490,7 +505,7 @@ struct OnboardingView: View {
                 )
             }
 
-            Text("Start with a Focus Recording. After you stop, the AI analyzes your screenshots in 2\u{2013}5 minutes and asks a few questions to finalize the procedure.")
+            Text("We recommend starting with a Focus Recording \u{2014} you\u{2019}ll have your first agent-ready handoff in minutes.")
                 .font(captionFont)
                 .foregroundColor(captionColor)
                 .multilineTextAlignment(.center)
@@ -530,58 +545,58 @@ struct OnboardingView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 1.5))
 
                 VStack(alignment: .leading, spacing: 0) {
-                    // Document title (serif-like rounded font for contrast)
-                    Text("File Expense Report")
+                    // Document title
+                    Text("Reddit Community Marketing")
                         .font(.system(size: 18, weight: .semibold, design: .rounded))
                         .foregroundColor(warmBrown)
                         .padding(.bottom, 3)
 
-                    Text("Expensify workflow \u{00B7} 5 steps")
+                    Text("Daily engagement workflow \u{00B7} 6 steps \u{00B7} 4 sessions learned")
                         .font(.system(size: 11, weight: .medium))
                         .foregroundColor(warmBrown.opacity(0.5))
-                        .padding(.bottom, 16)
+                        .padding(.bottom, 14)
 
                     // Strategy
                     docSectionLabel("Strategy")
-                    Text("Open Expensify, upload receipt, categorize, submit for approval")
+                    Text("Browse target subreddits for posts about marketing tools or growth hacking. Engage with high-signal posts (10+ comments, posted within 48h, not promotional). Write authentic replies that acknowledge the problem, share personal experience, and softly mention the product.")
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
-                        .lineSpacing(3)
-                        .padding(.bottom, 16)
+                        .lineSpacing(4)
+                        .padding(.bottom, 14)
 
                     // Steps
                     docSectionLabel("Steps")
                     VStack(alignment: .leading, spacing: 5) {
-                        docStep(1, "Open Expensify in Chrome")
-                        docStep(2, "Click \"New Expense\"")
-                        docStep(3, "Upload receipt photo")
-                        docStep(4, "Select category: Travel")
-                        docStep(5, "Submit for manager approval")
+                        docStep(1, "Open Reddit and navigate to r/startups")
+                        docStep(2, "Scan posts \u{2014} skip promotional, skip < 10 comments")
+                        docStep(3, "Open high-signal post and read top comments")
+                        docStep(4, "Write reply: acknowledge \u{2192} experience \u{2192} mention product")
+                        docStep(5, "Submit and verify not auto-removed")
+                        docStep(6, "Repeat for r/marketing, r/growthacking (max 5/day)")
                     }
-                    .padding(.bottom, 16)
+                    .padding(.bottom, 14)
 
-                    // Verification & Guardrails
+                    // Selection Criteria & Guardrails
                     HStack(alignment: .top, spacing: 20) {
                         VStack(alignment: .leading, spacing: 5) {
-                            docSectionLabel("Verification")
-                            Text("\"Expense submitted\" confirmation")
-                                .font(.system(size: 11))
-                                .foregroundColor(.secondary)
+                            docSectionLabel("Selection Criteria")
+                            docBullet("Posts with 10+ comments")
+                            docBullet("Not promotional or competitor")
+                            docBullet("Posted within 48 hours")
+                            docBullet("Relevant to [product category]")
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
 
                         VStack(alignment: .leading, spacing: 5) {
                             docSectionLabel("Guardrails")
-                            Text("Never submit without receipt")
-                                .font(.system(size: 11))
-                                .foregroundColor(.secondary)
-                            Text("Max $500 without pre-approval")
-                                .font(.system(size: 11))
-                                .foregroundColor(.secondary)
+                            docBullet("Max 5 replies per day")
+                            docBullet("Never identical phrasing")
+                            docBullet("Never reply to own posts")
+                            docBullet("Empathy-first tone always")
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .padding(.bottom, 14)
+                    .padding(.bottom, 12)
 
                     // Thin divider
                     Rectangle()
@@ -589,13 +604,13 @@ struct OnboardingView: View {
                         .frame(height: 1)
                         .padding(.bottom, 10)
 
-                    // Footer
+                    // Footer — Timing
                     HStack(spacing: 14) {
                         HStack(spacing: 4) {
                             Image(systemName: "clock")
                                 .font(.system(size: 9))
                                 .foregroundColor(warmBrown.opacity(0.4))
-                            Text("~5 min")
+                            Text("~15 min daily \u{00B7} 9\u{2013}10am")
                                 .font(.system(size: 11))
                                 .foregroundColor(warmBrown.opacity(0.4))
                         }
@@ -603,7 +618,7 @@ struct OnboardingView: View {
                             Image(systemName: "chart.bar.fill")
                                 .font(.system(size: 9))
                                 .foregroundColor(Color.green.opacity(0.7))
-                            Text("Confidence: 92%")
+                            Text("Confidence: 89%")
                                 .font(.system(size: 11))
                                 .foregroundColor(warmBrown.opacity(0.4))
                         }
@@ -621,7 +636,7 @@ struct OnboardingView: View {
             )
             .shadow(color: warmBrown.opacity(0.08), radius: 16, y: 5)
 
-            Text("Exported as a SKILL.md that Claude Code, OpenClaw, and other agents can execute.")
+            Text("This is what your agent receives \u{2014} not just steps, but the strategy, decisions, and guardrails behind them.")
                 .font(captionFont)
                 .foregroundColor(captionColor)
                 .multilineTextAlignment(.center)
@@ -652,6 +667,17 @@ struct OnboardingView: View {
         }
     }
 
+    private func docBullet(_ text: String) -> some View {
+        HStack(alignment: .top, spacing: 6) {
+            Text("\u{2022}")
+                .font(.system(size: 10))
+                .foregroundColor(warmBrown.opacity(0.35))
+            Text(text)
+                .font(.system(size: 11))
+                .foregroundColor(.secondary)
+        }
+    }
+
     // MARK: - Screen 4: Review Cycle (Vertical Timeline)
 
     private var reviewCycleStep: some View {
@@ -665,28 +691,28 @@ struct OnboardingView: View {
                 timelineNode(
                     icon: "camera.fill",
                     title: "Record or Observe",
-                    subtitle: "You do your work normally",
+                    subtitle: "Work normally \u{2014} AgentHandover captures everything",
                     isHighlighted: false,
                     isLast: false
                 )
                 timelineNode(
                     icon: "brain.head.profile",
                     title: "AI Analyzes",
-                    subtitle: "Extracts steps from your screen recordings",
+                    subtitle: "Extracts strategy, steps, decisions, and guardrails",
                     isHighlighted: false,
                     isLast: false
                 )
                 timelineNode(
                     icon: "person.fill",
                     title: "You Review",
-                    subtitle: "Approve, edit, or reject each procedure",
+                    subtitle: "Approve, refine, or reject with one tap",
                     isHighlighted: true,
                     isLast: false
                 )
                 timelineNode(
                     icon: "cpu",
                     title: "Agent Ready",
-                    subtitle: "Only approved procedures reach agents",
+                    subtitle: "Your agent executes exactly how you would",
                     isHighlighted: false,
                     isLast: true
                 )
@@ -703,9 +729,10 @@ struct OnboardingView: View {
                     Text("Review from your menu bar")
                         .font(.system(size: 13, weight: .semibold, design: .rounded))
                         .foregroundColor(warmBrown)
-                    Text("Approve with one tap, or edit to refine.")
+                    Text("All of this lives in your menu bar \u{2014} review drafts, approve handoffs, and monitor your agents from one place.")
                         .font(bodyFont)
                         .foregroundColor(.secondary)
+                        .lineSpacing(6)
                 }
             }
             .padding(cardPadding)
@@ -893,7 +920,7 @@ struct OnboardingView: View {
                 .font(bodyFont)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
-                .lineSpacing(5)
+                .lineSpacing(6)
                 .frame(maxWidth: 440)
 
             if appState.vlmAvailable {
@@ -1193,7 +1220,7 @@ struct OnboardingView: View {
                 Text("Adds CSS selectors, form field names, and page structure to your procedures \u{2014} making browser automation more precise.")
                     .font(bodyFont)
                     .foregroundColor(.secondary)
-                    .lineSpacing(5)
+                    .lineSpacing(6)
             }
             .padding(cardPadding)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -1420,7 +1447,7 @@ struct OnboardingView: View {
             // Small mascot at top
             mascotImage(height: 64)
 
-            Text("You\u{2019}re ready!")
+            Text("Let\u{2019}s go")
                 .font(heroFont)
                 .foregroundColor(warmBrown)
 
@@ -1446,15 +1473,15 @@ struct OnboardingView: View {
 
             // Main recording card
             VStack(spacing: 16) {
-                Text("Record your first workflow")
+                Text("Teach your agent something")
                     .font(.system(size: 17, weight: .semibold, design: .rounded))
                     .foregroundColor(warmBrown)
 
-                Text("What\u{2019}s something you do regularly?")
+                Text("What task should your agent learn first?")
                     .font(bodyFont)
                     .foregroundColor(.secondary)
 
-                TextField("e.g. File expense report, Check inbox, Deploy code...", text: $firstRecordingTitle)
+                TextField("e.g. Morning standup prep, deploy to staging, process invoices...", text: $firstRecordingTitle)
                     .textFieldStyle(.roundedBorder)
                     .font(bodyFont)
                     .frame(maxWidth: 340)

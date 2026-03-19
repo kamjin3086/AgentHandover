@@ -56,7 +56,7 @@ struct MenuBarView: View {
         .onChange(of: delegate.pendingOnboarding) { pending in
             if pending {
                 delegate.pendingOnboarding = false
-                openWindow(id: "onboarding")
+                delegate.showOnboarding(appState: appState)
             }
         }
         .onChange(of: appState.focusQuestionsAvailable) { available in
@@ -67,7 +67,7 @@ struct MenuBarView: View {
         .onAppear {
             if !hasCompletedOnboarding && delegate.pendingOnboarding {
                 delegate.pendingOnboarding = false
-                openWindow(id: "onboarding")
+                delegate.showOnboarding(appState: appState)
             }
             syncFocusState()
         }
@@ -103,7 +103,7 @@ struct MenuBarView: View {
 
             // Setup needed indicator
             if !hasCompletedOnboarding || !appState.accessibilityGranted {
-                Button(action: { openWindow(id: "onboarding") }) {
+                Button(action: { delegate.showOnboarding(appState: appState) }) {
                     Image(systemName: "exclamationmark.circle.fill")
                         .font(.system(size: 16))
                         .foregroundColor(.orange)

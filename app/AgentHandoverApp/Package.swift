@@ -14,6 +14,7 @@ let package = Package(
             resources: [
                 .process("Resources/Assets.xcassets"),
                 .process("Resources/mascot.png"),
+                .copy("Resources/AppIcon.icns"),
             ]
         ),
         .testTarget(

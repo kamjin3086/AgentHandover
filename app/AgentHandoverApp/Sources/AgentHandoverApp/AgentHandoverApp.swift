@@ -12,13 +12,9 @@ struct AgentHandoverApp: App {
                 .environmentObject(appState)
                 .environmentObject(delegate)
                 .onAppear {
-                    // When user first clicks the menu bar icon, auto-open
-                    // onboarding if not completed.  `.onAppear` on MenuBarExtra
-                    // content fires on first click, not at app launch.  The
-                    // AppDelegate handles the true first-launch case below.
                     if !hasCompletedOnboarding && !delegate.hasTriggeredOnboarding {
                         delegate.hasTriggeredOnboarding = true
-                        delegate.pendingOnboarding = true
+                        delegate.showOnboarding(appState: appState)
                     }
                 }
         } label: {
@@ -34,39 +30,25 @@ struct AgentHandoverApp: App {
         }
         .menuBarExtraStyle(.window)
 
-        // Onboarding window (shown on first launch or when permissions missing)
-        Window("AgentHandover Setup", id: "onboarding") {
-            OnboardingView(onComplete: {
-                hasCompletedOnboarding = true
-                delegate.hideFromDock()
-            })
-                .environmentObject(appState)
-                .frame(width: 600, height: 640)
-        }
-        .windowResizability(.contentSize)
-
-        // Workflow inbox window
+        // These Window scenes are opened via openWindow(id:) from MenuBarView
         Window("Workflows", id: "workflows") {
             WorkflowInboxView()
         }
         .defaultSize(width: 900, height: 620)
         .windowResizability(.contentMinSize)
 
-        // Daily digest window
         Window("Daily Digest", id: "daily-digest") {
             DailyDigestView()
         }
         .defaultSize(width: 640, height: 680)
         .windowResizability(.contentMinSize)
 
-        // Micro-review window
         Window("Review Queue", id: "micro-review") {
             MicroReviewView()
         }
         .defaultSize(width: 640, height: 680)
         .windowResizability(.contentMinSize)
 
-        // Focus Q&A window (questions from worker after focus recording)
         Window("Focus Q&A", id: "focus-qa") {
             FocusQAView()
                 .environmentObject(appState)
@@ -76,55 +58,62 @@ struct AgentHandoverApp: App {
     }
 }
 
-/// App delegate for handling first-launch auto-open of onboarding.
+/// App delegate — handles first-launch onboarding window directly via NSWindow.
 ///
-/// SwiftUI `MenuBarExtra` doesn't provide a hook at app launch to open
-/// secondary windows.  The delegate bridges this gap by signalling the
-/// MenuBarView to open the onboarding window on its first appearance.
+/// SwiftUI `Window` scenes are lazy and can't be opened from AppDelegate.
+/// Instead, we create the onboarding window ourselves using NSHostingController,
+/// which guarantees it appears immediately on first launch.
 final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     @Published var pendingOnboarding = false
     var hasTriggeredOnboarding = false
+    private var onboardingWindow: NSWindow?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         if !UserDefaults.standard.bool(forKey: "hasCompletedOnboarding") {
-            pendingOnboarding = true
             hasTriggeredOnboarding = true
 
-            // Show the app in the dock during onboarding so users know it launched.
-            // After onboarding completes, it becomes a menu-bar-only app.
+            // Show in dock during onboarding
             NSApp.setActivationPolicy(.regular)
 
-            // Keep trying to find and show the onboarding window.
-            // SwiftUI creates Window scenes lazily, so we poll briefly.
-            var attempts = 0
-            Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { timer in
-                attempts += 1
-                NSApp.activate(ignoringOtherApps: true)
-
-                for window in NSApp.windows {
-                    if window.title == "AgentHandover Setup" {
-                        window.makeKeyAndOrderFront(nil)
-                        window.orderFrontRegardless()
-                        timer.invalidate()
-                        return
-                    }
+            // Create the onboarding window directly — don't wait for SwiftUI
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                Task { @MainActor [weak self] in
+                    self?.showOnboarding(appState: nil)
                 }
-
-                // After a few attempts, try clicking the menu bar to trigger .onAppear
-                if attempts == 3 {
-                    if let button = NSApp.windows
-                        .compactMap({ $0.contentView?.subviews.first as? NSStatusBarButton })
-                        .first {
-                        button.performClick(nil)
-                    }
-                }
-
-                if attempts >= 8 { timer.invalidate() }
             }
         }
     }
 
-    /// Called when onboarding completes — hide from dock, become menu-bar-only.
+    @MainActor
+    func showOnboarding(appState: AppState?) {
+        // Don't create duplicates
+        if onboardingWindow != nil { return }
+
+        let state = appState ?? AppState()
+        let onboardingView = OnboardingView(onComplete: { [weak self] in
+            UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
+            self?.onboardingWindow?.close()
+            self?.onboardingWindow = nil
+            self?.hideFromDock()
+        })
+        .environmentObject(state)
+        .frame(width: 600, height: 640)
+
+        let hostingController = NSHostingController(rootView: onboardingView)
+        let window = NSWindow(contentViewController: hostingController)
+        window.title = "AgentHandover Setup"
+        window.styleMask = [.titled, .closable, .miniaturizable]
+        window.setContentSize(NSSize(width: 600, height: 640))
+        window.center()
+        window.isReleasedWhenClosed = false
+
+        self.onboardingWindow = window
+
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+        window.orderFrontRegardless()
+    }
+
     func hideFromDock() {
         NSApp.setActivationPolicy(.accessory)
     }
