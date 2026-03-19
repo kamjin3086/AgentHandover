@@ -18,11 +18,7 @@ struct AgentHandoverApp: App {
                     }
                 }
         } label: {
-            Label {
-                Text("AgentHandover")
-            } icon: {
-                Image(systemName: appState.menuBarIcon)
-            }
+            Image(systemName: appState.menuBarIcon)
         }
         .menuBarExtraStyle(.window)
 
