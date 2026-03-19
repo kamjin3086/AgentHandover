@@ -16,6 +16,15 @@ struct MenuBarView: View {
     @State private var elapsedSeconds: Int = 0
     @State private var showMoreActions = false
 
+    // Record button idle pulse
+    @State private var idlePulse = false
+
+    // Design tokens
+    private let cardBg = Color(nsColor: .controlBackgroundColor)
+    private let cardBorder = Color.primary.opacity(0.08)
+    private let cardRadius: CGFloat = 12
+    private let cardShadow = Color.black.opacity(0.04)
+
     var body: some View {
         VStack(spacing: 0) {
             // Status + brand
@@ -75,14 +84,14 @@ struct MenuBarView: View {
             // Animated status indicator
             ZStack {
                 Circle()
-                    .fill(appState.health.color.opacity(0.2))
-                    .frame(width: 32, height: 32)
+                    .fill(appState.health.color.opacity(0.15))
+                    .frame(width: 34, height: 34)
                 Circle()
                     .fill(appState.health.color)
                     .frame(width: 10, height: 10)
             }
 
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(statusTitle)
                     .font(.system(size: 13, weight: .semibold))
                 Text(statusSubtitle)
@@ -121,7 +130,7 @@ struct MenuBarView: View {
 
     private var statusSubtitle: String {
         if isRecording {
-            return "\(focusSessionTitle) · \(formattedElapsed)"
+            return "\(focusSessionTitle) \u{00B7} \(formattedElapsed)"
         }
         if appState.userStopped { return "Tap Start to resume learning" }
         if !appState.daemonRunning && !appState.workerRunning {
@@ -178,9 +187,14 @@ struct MenuBarView: View {
         }
         .padding(12)
         .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(Color.primary.opacity(0.04))
+            RoundedRectangle(cornerRadius: cardRadius)
+                .fill(cardBg)
         )
+        .overlay(
+            RoundedRectangle(cornerRadius: cardRadius)
+                .stroke(cardBorder, lineWidth: 1)
+        )
+        .shadow(color: cardShadow, radius: 8, y: 2)
     }
 
     // MARK: - Attention Section
@@ -196,15 +210,15 @@ struct MenuBarView: View {
                 Button(action: { openWindow(id: "focus-qa") }) {
                     HStack(spacing: 10) {
                         ZStack {
-                            RoundedRectangle(cornerRadius: 6)
-                                .fill(Color.orange.opacity(0.15))
-                                .frame(width: 28, height: 28)
+                            RoundedRectangle(cornerRadius: 7)
+                                .fill(Color.orange.opacity(0.12))
+                                .frame(width: 30, height: 30)
                             Image(systemName: "questionmark.bubble.fill")
                                 .font(.system(size: 13))
                                 .foregroundColor(.orange)
                         }
 
-                        VStack(alignment: .leading, spacing: 1) {
+                        VStack(alignment: .leading, spacing: 2) {
                             Text("Finish your workflow")
                                 .font(.system(size: 12, weight: .medium))
                             Text("Answer a few questions to complete")
@@ -218,10 +232,20 @@ struct MenuBarView: View {
                             .font(.system(size: 10, weight: .semibold))
                             .foregroundColor(.secondary)
                     }
-                    .padding(8)
+                    .padding(10)
                     .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(Color.orange.opacity(0.06))
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(Color.orange.opacity(0.04))
+                    )
+                    .overlay(
+                        HStack {
+                            Rectangle()
+                                .fill(Color.orange)
+                                .frame(width: 3)
+                                .cornerRadius(2)
+                            Spacer()
+                        }
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
                     )
                 }
                 .buttonStyle(.plain)
@@ -232,15 +256,15 @@ struct MenuBarView: View {
                 Button(action: { openWindow(id: "micro-review") }) {
                     HStack(spacing: 10) {
                         ZStack {
-                            RoundedRectangle(cornerRadius: 6)
-                                .fill(Color.blue.opacity(0.15))
-                                .frame(width: 28, height: 28)
+                            RoundedRectangle(cornerRadius: 7)
+                                .fill(Color.blue.opacity(0.12))
+                                .frame(width: 30, height: 30)
                             Image(systemName: "checkmark.rectangle.stack.fill")
                                 .font(.system(size: 13))
                                 .foregroundColor(.blue)
                         }
 
-                        VStack(alignment: .leading, spacing: 1) {
+                        VStack(alignment: .leading, spacing: 2) {
                             Text("\(appState.sopDraftCount) workflow\(appState.sopDraftCount == 1 ? "" : "s") to review")
                                 .font(.system(size: 12, weight: .medium))
                             Text("Approve to make agent-ready")
@@ -254,10 +278,20 @@ struct MenuBarView: View {
                             .font(.system(size: 10, weight: .semibold))
                             .foregroundColor(.secondary)
                     }
-                    .padding(8)
+                    .padding(10)
                     .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(Color.blue.opacity(0.06))
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(Color.blue.opacity(0.04))
+                    )
+                    .overlay(
+                        HStack {
+                            Rectangle()
+                                .fill(Color.blue)
+                                .frame(width: 3)
+                                .cornerRadius(2)
+                            Spacer()
+                        }
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
                     )
                 }
                 .buttonStyle(.plain)
@@ -299,7 +333,7 @@ struct MenuBarView: View {
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 8)
-                        .background(Color.red.opacity(0.12))
+                        .background(Color.red.opacity(0.1))
                         .foregroundColor(.red)
                         .cornerRadius(8)
                     }
@@ -307,9 +341,14 @@ struct MenuBarView: View {
                 }
                 .padding(12)
                 .background(
-                    RoundedRectangle(cornerRadius: 10)
-                        .strokeBorder(Color.red.opacity(0.3), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: cardRadius)
+                        .fill(cardBg)
                 )
+                .overlay(
+                    RoundedRectangle(cornerRadius: cardRadius)
+                        .stroke(Color.red.opacity(0.25), lineWidth: 1)
+                )
+                .shadow(color: Color.red.opacity(0.04), radius: 8, y: 2)
             } else if showTitlePrompt {
                 // Title input
                 VStack(alignment: .leading, spacing: 8) {
@@ -349,16 +388,29 @@ struct MenuBarView: View {
                 .buttonStyle(.plain)
                 .padding(12)
                 .background(
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(Color.primary.opacity(0.04))
+                    RoundedRectangle(cornerRadius: cardRadius)
+                        .fill(cardBg)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: cardRadius)
+                        .stroke(cardBorder, lineWidth: 1)
                 )
             } else {
-                // Record button
+                // Record button with idle pulse
                 Button(action: { showTitlePrompt = true }) {
                     HStack(spacing: 8) {
-                        Image(systemName: "record.circle")
-                            .font(.system(size: 15))
-                            .foregroundColor(.red)
+                        ZStack {
+                            // Pulse ring
+                            Circle()
+                                .fill(Color.red.opacity(0.15))
+                                .frame(width: 24, height: 24)
+                                .scaleEffect(idlePulse ? 1.4 : 1.0)
+                                .opacity(idlePulse ? 0.0 : 0.5)
+
+                            Image(systemName: "record.circle")
+                                .font(.system(size: 15))
+                                .foregroundColor(.red)
+                        }
                         Text("Record a Workflow")
                             .font(.system(size: 13, weight: .medium))
                         Spacer()
@@ -368,11 +420,20 @@ struct MenuBarView: View {
                     }
                     .padding(12)
                     .background(
-                        RoundedRectangle(cornerRadius: 10)
-                            .fill(Color.primary.opacity(0.04))
+                        RoundedRectangle(cornerRadius: cardRadius)
+                            .fill(cardBg)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: cardRadius)
+                            .stroke(cardBorder, lineWidth: 1)
                     )
                 }
                 .buttonStyle(.plain)
+                .onAppear {
+                    withAnimation(.easeInOut(duration: 2.0).repeatForever(autoreverses: false)) {
+                        idlePulse = true
+                    }
+                }
             }
         }
     }
@@ -437,18 +498,11 @@ struct MenuBarView: View {
             Spacer()
 
             // Service pills (compact)
-            HStack(spacing: 4) {
-                Circle()
-                    .fill(appState.daemonRunning ? Color.green : Color.red.opacity(0.5))
-                    .frame(width: 5, height: 5)
-                Circle()
-                    .fill(appState.workerRunning ? Color.green : Color.red.opacity(0.5))
-                    .frame(width: 5, height: 5)
-                Circle()
-                    .fill(appState.extensionConnected ? Color.green : Color.red.opacity(0.5))
-                    .frame(width: 5, height: 5)
+            HStack(spacing: 5) {
+                serviceDot(running: appState.daemonRunning, label: "Daemon")
+                serviceDot(running: appState.workerRunning, label: "Worker")
+                serviceDot(running: appState.extensionConnected, label: "Extension")
             }
-            .help("Daemon · Worker · Extension")
 
             Spacer()
 
@@ -460,7 +514,15 @@ struct MenuBarView: View {
             .buttonStyle(.plain)
             .keyboardShortcut("q")
         }
-        .padding(.top, 4)
+        .padding(.top, 6)
+        .padding(.horizontal, 2)
+    }
+
+    private func serviceDot(running: Bool, label: String) -> some View {
+        Circle()
+            .fill(running ? Color.green : Color.red.opacity(0.4))
+            .frame(width: 6, height: 6)
+            .help(label)
     }
 
     // MARK: - Focus Recording Helpers
@@ -615,6 +677,8 @@ struct QuickLink: View {
     var badge: Int = 0
     let action: () -> Void
 
+    @State private var isHovered = false
+
     var body: some View {
         Button(action: action) {
             HStack(spacing: 6) {
@@ -634,10 +698,15 @@ struct QuickLink: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
             .background(
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(Color.primary.opacity(0.04))
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(isHovered ? Color.primary.opacity(0.06) : Color.primary.opacity(0.03))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color.primary.opacity(0.06), lineWidth: 1)
             )
         }
         .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
     }
 }

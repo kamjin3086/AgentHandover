@@ -20,6 +20,11 @@ struct WorkflowInboxView: View {
         case agentReady = "Agent Ready"
     }
 
+    // Design tokens
+    private let cardBg = Color(nsColor: .controlBackgroundColor)
+    private let cardBorder = Color.primary.opacity(0.08)
+    private let cardRadius: CGFloat = 12
+
     var body: some View {
         NavigationSplitView {
             sidebar
@@ -56,15 +61,20 @@ struct WorkflowInboxView: View {
             if let sop = selectedSOP {
                 SOPDetailView(sop: sop, sopManager: sopManager)
             } else {
-                VStack(spacing: 12) {
-                    Image(systemName: "doc.text.magnifyingglass")
-                        .font(.system(size: 40))
-                        .foregroundColor(.secondary.opacity(0.4))
+                VStack(spacing: 14) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 14)
+                            .fill(Color.primary.opacity(0.03))
+                            .frame(width: 64, height: 64)
+                        Image(systemName: "doc.text.magnifyingglass")
+                            .font(.system(size: 28))
+                            .foregroundColor(.secondary.opacity(0.4))
+                    }
                     Text("Select a workflow")
-                        .font(.title3)
+                        .font(.system(size: 17, weight: .semibold))
                         .foregroundColor(.secondary)
                     Text("Choose a workflow from the sidebar to view its details.")
-                        .font(.caption)
+                        .font(.system(size: 13))
                         .foregroundColor(.secondary.opacity(0.7))
                         .multilineTextAlignment(.center)
                 }
@@ -76,58 +86,65 @@ struct WorkflowInboxView: View {
     // MARK: - Header
 
     private var headerBar: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 12) {
             HStack {
                 Text("Workflows")
-                    .font(.title2)
-                    .bold()
+                    .font(.system(size: 22, weight: .bold, design: .rounded))
                 Spacer()
                 if let index = sopManager.index {
-                    HStack(spacing: 12) {
+                    HStack(spacing: 10) {
                         StatPill(
                             count: index.approved_count,
                             label: "approved",
-                            color: .secondary
+                            color: .green
                         )
                         if index.draft_count > 0 {
                             StatPill(
                                 count: index.draft_count,
                                 label: "drafts",
-                                color: .secondary
+                                color: .orange
                             )
                         }
                     }
                 }
             }
 
-            // Filter tabs
-            HStack(spacing: 2) {
+            // Filter tabs — segmented pill style
+            HStack(spacing: 3) {
                 ForEach(SOPFilter.allCases, id: \.self) { tab in
-                    Button(action: { withAnimation(.easeInOut(duration: 0.15)) { filter = tab } }) {
+                    Button(action: { withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { filter = tab } }) {
                         Text(tab.rawValue)
-                            .font(.caption)
-                            .fontWeight(filter == tab ? .semibold : .regular)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 5)
-                            .background(filter == tab ? Color.accentColor.opacity(0.12) : Color.clear)
+                            .font(.system(size: 12, weight: filter == tab ? .semibold : .regular))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(
+                                filter == tab
+                                    ? RoundedRectangle(cornerRadius: 8)
+                                        .fill(Color.accentColor.opacity(0.12))
+                                    : nil
+                            )
                             .foregroundColor(filter == tab ? .accentColor : .secondary)
-                            .cornerRadius(6)
                     }
                     .buttonStyle(.plain)
                 }
                 Spacer()
             }
+            .padding(3)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color.primary.opacity(0.03))
+            )
         }
         .padding(.horizontal, 16)
-        .padding(.top, 14)
-        .padding(.bottom, 8)
+        .padding(.top, 16)
+        .padding(.bottom, 10)
     }
 
     // MARK: - List
 
     private var sopList: some View {
         ScrollView {
-            LazyVStack(spacing: 1) {
+            LazyVStack(spacing: 2) {
                 ForEach(filteredSOPs) { sop in
                     SOPRow(sop: sop, isSelected: selectedSOPID == sop.id)
                         .contentShape(Rectangle())
@@ -143,29 +160,35 @@ struct WorkflowInboxView: View {
     // MARK: - Empty states
 
     private var emptyState: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "tray")
-                .font(.system(size: 36))
-                .foregroundColor(.secondary.opacity(0.5))
+        VStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(Color.primary.opacity(0.03))
+                    .frame(width: 56, height: 56)
+                Image(systemName: "tray")
+                    .font(.system(size: 26))
+                    .foregroundColor(.secondary.opacity(0.5))
+            }
             Text("No workflows yet")
-                .font(.headline)
+                .font(.system(size: 15, weight: .semibold))
                 .foregroundColor(.secondary)
             Text("AgentHandover discovers workflows as you work.\nUse Record Workflow for instant capture.")
-                .font(.caption)
+                .font(.system(size: 12))
                 .foregroundColor(.secondary.opacity(0.7))
                 .multilineTextAlignment(.center)
+                .lineSpacing(3)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()
     }
 
     private var noMatchState: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 10) {
             Image(systemName: "line.3.horizontal.decrease.circle")
-                .font(.title2)
+                .font(.system(size: 22))
                 .foregroundColor(.secondary.opacity(0.5))
             Text("No \(filter.rawValue.lowercased()) workflows")
-                .font(.subheadline)
+                .font(.system(size: 14, weight: .medium))
                 .foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -195,17 +218,28 @@ struct SOPRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            // Source icon
+            // Source icon with subtle gradient
             ZStack {
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(isSelected ? Color.accentColor.opacity(0.15) : Color.primary.opacity(0.05))
-                    .frame(width: 36, height: 36)
+                RoundedRectangle(cornerRadius: 9)
+                    .fill(
+                        isSelected
+                            ? Color.accentColor.opacity(0.12)
+                            : Color.primary.opacity(0.04)
+                    )
+                    .frame(width: 38, height: 38)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 9)
+                            .stroke(
+                                isSelected ? Color.accentColor.opacity(0.2) : Color.primary.opacity(0.05),
+                                lineWidth: 1
+                            )
+                    )
                 Image(systemName: sop.sourceIcon)
-                    .font(.system(size: 14))
+                    .font(.system(size: 15))
                     .foregroundColor(isSelected ? .accentColor : .secondary)
             }
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 5) {
                 // Title
                 Text(sop.displayTitle)
                     .font(.system(size: 13, weight: .medium))
@@ -217,9 +251,9 @@ struct SOPRow: View {
                     // Lifecycle state pill
                     Text(sop.lifecycleLabel)
                         .font(.system(size: 9, weight: .semibold))
-                        .padding(.horizontal, 6)
+                        .padding(.horizontal, 7)
                         .padding(.vertical, 2)
-                        .background(sop.lifecycleColor.opacity(0.12))
+                        .background(sop.lifecycleColor.opacity(0.1))
                         .foregroundColor(sop.lifecycleColor)
                         .clipShape(Capsule())
 
@@ -240,11 +274,18 @@ struct SOPRow: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .background(
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: 10)
                 .fill(
                     isSelected
-                        ? Color.accentColor.opacity(0.1)
+                        ? Color.accentColor.opacity(0.08)
                         : (isHovered ? Color.primary.opacity(0.04) : Color.clear)
+                )
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(
+                    isSelected ? Color.accentColor.opacity(0.15) : Color.clear,
+                    lineWidth: 1
                 )
         )
         .padding(.horizontal, 6)
@@ -279,11 +320,11 @@ struct StatusBadge: View {
     var body: some View {
         Text(status.capitalized)
             .font(.system(size: 9, weight: .semibold))
-            .padding(.horizontal, 6)
+            .padding(.horizontal, 7)
             .padding(.vertical, 3)
-            .background(backgroundColor.opacity(0.12))
+            .background(backgroundColor.opacity(0.1))
             .foregroundColor(backgroundColor)
-            .cornerRadius(4)
+            .clipShape(Capsule())
     }
 
     private var backgroundColor: Color {
@@ -299,16 +340,16 @@ struct StatPill: View {
     let color: Color
 
     var body: some View {
-        HStack(spacing: 3) {
+        HStack(spacing: 4) {
             Text("\(count)")
                 .font(.system(size: 11, weight: .bold, design: .rounded))
             Text(label)
                 .font(.system(size: 10))
         }
         .foregroundColor(color)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 3)
-        .background(color.opacity(0.1))
-        .cornerRadius(10)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 4)
+        .background(color.opacity(0.08))
+        .clipShape(Capsule())
     }
 }

@@ -14,6 +14,11 @@ struct FocusQAView: View {
     @State private var writeError: String?
     @State private var didSubmit = false
 
+    // Design tokens
+    private let cardBg = Color(nsColor: .controlBackgroundColor)
+    private let cardBorder = Color.primary.opacity(0.08)
+    private let cardRadius: CGFloat = 14
+
     private var statusDir: URL {
         let home = FileManager.default.homeDirectoryForCurrentUser
         return home.appendingPathComponent("Library/Application Support/agenthandover")
@@ -35,17 +40,23 @@ struct FocusQAView: View {
     // MARK: - Empty State
 
     private var emptyState: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "checkmark.circle")
-                .font(.system(size: 36))
-                .foregroundColor(.secondary)
+        VStack(spacing: 14) {
+            ZStack {
+                Circle()
+                    .fill(Color.green.opacity(0.08))
+                    .frame(width: 56, height: 56)
+                Image(systemName: "checkmark.circle")
+                    .font(.system(size: 28))
+                    .foregroundColor(.green)
+            }
             Text("No questions pending")
-                .font(.headline)
+                .font(.system(size: 16, weight: .semibold))
                 .foregroundColor(.secondary)
             Text("Questions will appear here after a focus recording is processed.")
-                .font(.caption)
-                .foregroundColor(.secondary)
+                .font(.system(size: 13))
+                .foregroundColor(.secondary.opacity(0.8))
                 .multilineTextAlignment(.center)
+                .lineSpacing(3)
         }
         .padding(40)
         .frame(minWidth: 400, minHeight: 200)
@@ -56,39 +67,48 @@ struct FocusQAView: View {
     private func questionsContent(_ file: FocusQuestionsFile) -> some View {
         VStack(spacing: 0) {
             // Header
-            VStack(spacing: 6) {
-                Image(systemName: "questionmark.bubble")
-                    .font(.system(size: 28))
-                    .foregroundColor(.orange)
+            VStack(spacing: 8) {
+                ZStack {
+                    Circle()
+                        .fill(Color.orange.opacity(0.1))
+                        .frame(width: 48, height: 48)
+                    Image(systemName: "questionmark.bubble.fill")
+                        .font(.system(size: 22))
+                        .foregroundColor(.orange)
+                }
 
                 Text(displayTitle(for: file.slug))
-                    .font(.title3)
-                    .fontWeight(.semibold)
+                    .font(.system(size: 18, weight: .bold, design: .rounded))
 
                 Text("Answer these questions so your agent can execute this workflow reliably.")
-                    .font(.caption)
+                    .font(.system(size: 13))
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
+                    .lineSpacing(3)
                     .frame(maxWidth: 380)
             }
-            .padding(.top, 24)
-            .padding(.bottom, 16)
+            .padding(.top, 28)
+            .padding(.bottom, 20)
 
-            Divider()
+            Rectangle()
+                .fill(Color.primary.opacity(0.06))
+                .frame(height: 1)
                 .padding(.horizontal, 24)
 
             // Questions list
             ScrollView {
-                VStack(spacing: 16) {
+                VStack(spacing: 14) {
                     ForEach(file.questions) { question in
                         questionCard(question)
                     }
                 }
                 .padding(.horizontal, 24)
-                .padding(.vertical, 16)
+                .padding(.vertical, 18)
             }
 
-            Divider()
+            Rectangle()
+                .fill(Color.primary.opacity(0.06))
+                .frame(height: 1)
                 .padding(.horizontal, 24)
 
             // Footer
@@ -108,33 +128,72 @@ struct FocusQAView: View {
     // MARK: - Question Card
 
     private func questionCard(_ question: FocusQuestion) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(question.question)
-                .font(.callout)
-                .fontWeight(.semibold)
-                .fixedSize(horizontal: false, vertical: true)
+        VStack(alignment: .leading, spacing: 10) {
+            // Category badge + question
+            HStack(alignment: .top, spacing: 8) {
+                categoryBadge(for: question)
+
+                Text(question.question)
+                    .font(.system(size: 13, weight: .semibold))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .lineSpacing(3)
+            }
 
             if !question.context.isEmpty {
                 Text(question.context)
-                    .font(.caption)
+                    .font(.system(size: 12))
                     .foregroundColor(.secondary)
                     .italic()
                     .fixedSize(horizontal: false, vertical: true)
+                    .lineSpacing(2)
+                    .padding(.leading, 4)
             }
 
             TextField("Your answer", text: answerBinding(for: question.index, default: question.default))
                 .textFieldStyle(.roundedBorder)
-                .font(.callout)
+                .font(.system(size: 13))
         }
-        .padding(12)
+        .padding(14)
         .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Color.secondary.opacity(0.05))
+            RoundedRectangle(cornerRadius: cardRadius)
+                .fill(cardBg)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(Color.secondary.opacity(0.1), lineWidth: 1)
+            RoundedRectangle(cornerRadius: cardRadius)
+                .stroke(cardBorder, lineWidth: 1)
         )
+        .shadow(color: Color.black.opacity(0.03), radius: 6, y: 2)
+    }
+
+    /// Color-coded category badge based on the question context.
+    private func categoryBadge(for question: FocusQuestion) -> some View {
+        let (icon, color) = categorize(question)
+        return ZStack {
+            RoundedRectangle(cornerRadius: 6)
+                .fill(color.opacity(0.1))
+                .frame(width: 26, height: 26)
+            Image(systemName: icon)
+                .font(.system(size: 12))
+                .foregroundColor(color)
+        }
+    }
+
+    /// Categorize a question by analyzing its text content.
+    private func categorize(_ question: FocusQuestion) -> (icon: String, color: Color) {
+        let text = (question.question + " " + question.context).lowercased()
+        if text.contains("credential") || text.contains("login") || text.contains("password") || text.contains("account") {
+            return ("key.fill", .red)
+        }
+        if text.contains("decide") || text.contains("choose") || text.contains("which") || text.contains("option") {
+            return ("arrow.triangle.branch", .purple)
+        }
+        if text.contains("verify") || text.contains("confirm") || text.contains("check") || text.contains("success") {
+            return ("checkmark.circle", .green)
+        }
+        if text.contains("how often") || text.contains("frequen") || text.contains("schedule") || text.contains("when") {
+            return ("clock", .blue)
+        }
+        return ("questionmark.circle", .orange)
     }
 
     // MARK: - Footer
@@ -145,16 +204,29 @@ struct FocusQAView: View {
                 writeSkipped()
             }
             .buttonStyle(.plain)
-            .font(.callout)
+            .font(.system(size: 13))
             .foregroundColor(.secondary)
 
             Spacer()
 
-            Button("Submit Answers") {
+            Button {
                 writeAnswered()
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "paperplane.fill")
+                        .font(.system(size: 11))
+                    Text("Submit Answers")
+                        .font(.system(size: 13, weight: .semibold))
+                }
+                .padding(.horizontal, 18)
+                .padding(.vertical, 9)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.orange)
+                )
+                .foregroundColor(.white)
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.regular)
+            .buttonStyle(.plain)
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 16)
