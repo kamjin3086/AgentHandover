@@ -414,7 +414,7 @@ struct OnboardingView: View {
                             Image(systemName: "3.circle.fill")
                                 .font(.system(size: 12))
                                 .foregroundColor(.secondary.opacity(0.5))
-                            Text("Stop \u{2014} procedure in ~60s")
+                            Text("Stop \u{2014} AI analyzes in 2-5 min")
                                 .font(bodyFont)
                                 .foregroundColor(.secondary)
                         }
@@ -472,7 +472,7 @@ struct OnboardingView: View {
                 .shadow(color: cardShadow, radius: 8, y: 2)
             }
 
-            Text("We recommend starting with Focus Recording \u{2014} you'll see your first procedure in under a minute.")
+            Text("We recommend starting with Focus Recording. After you stop, the AI analyzes your screenshots in 2-5 minutes and asks you a few questions to finalize the procedure.")
                 .font(captionFont)
                 .foregroundColor(captionColor)
                 .multilineTextAlignment(.center)

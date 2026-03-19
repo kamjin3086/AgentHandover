@@ -131,6 +131,7 @@ final class AppState: ObservableObject {
 
     // Focus Recording
     @Published var focusSessionActive = false
+    @Published var focusSessionProcessing = false  // stopped, awaiting worker
     @Published var focusSessionTitle: String = ""
     @Published var focusSessionId: String?
     @Published var focusSessionStartedAt: String?
@@ -278,6 +279,7 @@ final class AppState: ObservableObject {
         }
 
         focusSessionActive = signal.status == "recording"
+        focusSessionProcessing = signal.status == "stopped"
         focusSessionTitle = signal.title
         focusSessionId = signal.session_id
         focusSessionStartedAt = signal.started_at

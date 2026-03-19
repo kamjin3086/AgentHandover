@@ -395,6 +395,32 @@ struct MenuBarView: View {
                     RoundedRectangle(cornerRadius: cardRadius)
                         .stroke(cardBorder, lineWidth: 1)
                 )
+            } else if appState.focusSessionProcessing {
+                // Focus session stopped, worker is processing
+                HStack(spacing: 10) {
+                    ProgressView()
+                        .controlSize(.small)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Analyzing \"\(appState.focusSessionTitle)\"")
+                            .font(.system(size: 12, weight: .medium))
+                            .lineLimit(1)
+                        Text("AI is reviewing your screenshots \u{2014} 2-5 min")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                    }
+
+                    Spacer()
+                }
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: cardRadius)
+                        .fill(Color.purple.opacity(0.04))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: cardRadius)
+                        .stroke(Color.purple.opacity(0.15), lineWidth: 1)
+                )
             } else {
                 // Record button with idle pulse
                 Button(action: { showTitlePrompt = true }) {
