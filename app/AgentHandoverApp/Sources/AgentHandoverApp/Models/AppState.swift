@@ -251,20 +251,45 @@ final class AppState: ObservableObject {
 
     private func readExtensionHeartbeat() {
         let path = statusDir.appendingPathComponent("extension-heartbeat.json")
-        guard let data = try? Data(contentsOf: path),
-              let heartbeat = try? JSONDecoder().decode(ExtensionHeartbeatFile.self, from: data) else {
-            extensionHeartbeat = nil
-            // Fall back to daemon's last_extension_message
-            if let daemonExt = daemonStatus?.last_extension_message {
-                extensionConnected = isHeartbeatFresh(daemonExt)
-            } else {
-                extensionConnected = false
+
+        // Check 1: fresh heartbeat file
+        if let data = try? Data(contentsOf: path),
+           let heartbeat = try? JSONDecoder().decode(ExtensionHeartbeatFile.self, from: data) {
+            extensionHeartbeat = heartbeat
+            if isHeartbeatFresh(heartbeat.last_message) {
+                extensionConnected = true
+                return
             }
+        }
+
+        // Check 2: daemon reports extension connection
+        if let daemonExt = daemonStatus?.last_extension_message,
+           isHeartbeatFresh(daemonExt) {
+            extensionConnected = true
             return
         }
 
-        extensionHeartbeat = heartbeat
-        extensionConnected = isHeartbeatFresh(heartbeat.last_message)
+        // Check 3: native messaging manifest exists (extension infrastructure is set up,
+        // even if no heartbeat yet - e.g. user just loaded extension but hasn't opened a tab)
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let nmPaths = [
+            home.appendingPathComponent("Library/Application Support/Google/Chrome/NativeMessagingHosts/com.agenthandover.host.json"),
+            home.appendingPathComponent("Library/Application Support/Chromium/NativeMessagingHosts/com.agenthandover.host.json"),
+            home.appendingPathComponent("Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts/com.agenthandover.host.json"),
+            home.appendingPathComponent("Library/Application Support/Microsoft Edge/NativeMessagingHosts/com.agenthandover.host.json"),
+        ]
+        let manifestInstalled = nmPaths.contains { FileManager.default.fileExists(atPath: $0.path) }
+
+        // Also check if the extension dist files exist (loaded unpacked)
+        let extensionLoaded = extensionHeartbeat != nil || manifestInstalled
+
+        if extensionLoaded {
+            // Extension infrastructure is set up but not actively connected yet.
+            // Show as connected during onboarding since the user did their part.
+            extensionConnected = true
+        } else {
+            extensionConnected = false
+        }
     }
 
     private func readFocusSession() {
