@@ -1,15 +1,27 @@
 import SwiftUI
 
-/// Displays the daily digest — a summary of today's activity, highlights,
+/// Displays the daily digest - a summary of today's activity, highlights,
 /// and actionable suggestions from the knowledge base.
 struct DailyDigestView: View {
     @StateObject private var viewModel = DigestViewModel()
+
+    // Contra design tokens
+    private let darkNavy = Color(red: 0.09, green: 0.10, blue: 0.12)
+    private let warmOrange = Color(red: 0.92, green: 0.57, blue: 0.20)
+    private let goldenYellow = Color(red: 1.0, green: 0.74, blue: 0.07)
+    private let warmCream = Color(red: 1.0, green: 0.96, blue: 0.88)
+    private let lightGray = Color(red: 0.96, green: 0.96, blue: 0.96)
+    private let brightGreen = Color(red: 0.18, green: 0.80, blue: 0.34)
+    private let cardRadius: CGFloat = 14
+    private let contraBorder: CGFloat = 1.5
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 headerSection
-                Divider()
+                Rectangle()
+                    .fill(darkNavy.opacity(0.08))
+                    .frame(height: 1)
 
                 if viewModel.isLoading {
                     loadingState
@@ -32,22 +44,31 @@ struct DailyDigestView: View {
     private var headerSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Image(systemName: "calendar.badge.clock")
-                    .font(.title2)
-                    .foregroundColor(.accentColor)
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(warmOrange.opacity(0.12))
+                        .frame(width: 32, height: 32)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(darkNavy.opacity(0.12), lineWidth: contraBorder)
+                        )
+                    Image(systemName: "calendar.badge.clock")
+                        .font(.system(size: 15))
+                        .foregroundColor(warmOrange)
+                }
                 Text("Daily Digest")
-                    .font(.title2)
-                    .bold()
+                    .font(.system(size: 22, weight: .bold, design: .rounded))
+                    .foregroundColor(darkNavy)
                 Spacer()
                 Text(viewModel.dateDisplay)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                    .font(.system(size: 12))
+                    .foregroundColor(darkNavy.opacity(0.5))
             }
 
             if let summary = viewModel.digest?.summary, !summary.isEmpty {
                 Text(summary)
                     .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(darkNavy.opacity(0.6))
                     .lineSpacing(2)
             }
         }
@@ -79,19 +100,24 @@ struct DailyDigestView: View {
         HStack(spacing: 8) {
             Image(systemName: icon)
                 .font(.system(size: 14))
-                .foregroundColor(.accentColor)
+                .foregroundColor(warmOrange)
             VStack(alignment: .leading, spacing: 1) {
                 Text(value)
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                    .foregroundColor(darkNavy)
                 Text(label)
                     .font(.system(size: 10))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(darkNavy.opacity(0.5))
             }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(Color.primary.opacity(0.04))
-        .cornerRadius(8)
+        .background(lightGray)
+        .cornerRadius(cardRadius)
+        .overlay(
+            RoundedRectangle(cornerRadius: cardRadius)
+                .stroke(darkNavy.opacity(0.12), lineWidth: contraBorder)
+        )
     }
 
     // MARK: - Highlights
@@ -101,7 +127,8 @@ struct DailyDigestView: View {
             if !digest.highlights.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Highlights")
-                        .font(.headline)
+                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .foregroundColor(darkNavy)
 
                     ForEach(digest.highlights, id: \.title) { highlight in
                         highlightRow(highlight)
@@ -113,17 +140,26 @@ struct DailyDigestView: View {
 
     private func highlightRow(_ highlight: DigestHighlightData) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: highlight.iconName)
-                .font(.system(size: 12))
-                .foregroundColor(highlight.color)
-                .frame(width: 20)
+            ZStack {
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(highlight.color.opacity(0.12))
+                    .frame(width: 24, height: 24)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(darkNavy.opacity(0.12), lineWidth: contraBorder)
+                    )
+                Image(systemName: highlight.iconName)
+                    .font(.system(size: 11))
+                    .foregroundColor(highlight.color)
+            }
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(highlight.title)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(darkNavy)
                 Text(highlight.detail)
                     .font(.system(size: 11))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(darkNavy.opacity(0.5))
                     .lineLimit(2)
             }
 
@@ -132,17 +168,31 @@ struct DailyDigestView: View {
             priorityBadge(highlight.priority)
         }
         .padding(10)
-        .background(Color.primary.opacity(0.03))
-        .cornerRadius(6)
+        .background(lightGray)
+        .cornerRadius(cardRadius)
+        .overlay(
+            RoundedRectangle(cornerRadius: cardRadius)
+                .stroke(darkNavy.opacity(0.12), lineWidth: contraBorder)
+        )
     }
 
     private func priorityBadge(_ priority: Int) -> some View {
-        Text(priority == 1 ? "!" : priority == 2 ? "i" : "")
-            .font(.system(size: 9, weight: .bold))
-            .foregroundColor(priority == 1 ? .red : .orange)
-            .frame(width: priority <= 2 ? 16 : 0, height: 16)
-            .background(priority <= 2 ? (priority == 1 ? Color.red : Color.orange).opacity(0.15) : Color.clear)
-            .cornerRadius(4)
+        Group {
+            if priority <= 2 {
+                Text(priority == 1 ? "!" : "i")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundColor(priority == 1 ? .red : warmOrange)
+                    .frame(width: 16, height: 16)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(priority == 1 ? Color.red.opacity(0.12) : warmOrange.opacity(0.12))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 4)
+                            .stroke(darkNavy.opacity(0.12), lineWidth: 1)
+                    )
+            }
+        }
     }
 
     // MARK: - Sections
@@ -151,12 +201,13 @@ struct DailyDigestView: View {
         ForEach(digest.sections, id: \.title) { section in
             VStack(alignment: .leading, spacing: 8) {
                 Text(section.title)
-                    .font(.headline)
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                    .foregroundColor(darkNavy)
 
                 if section.items.isEmpty {
                     Text("Nothing to report")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                        .font(.system(size: 12))
+                        .foregroundColor(darkNavy.opacity(0.4))
                         .padding(.leading, 4)
                 } else {
                     ForEach(Array(section.items.enumerated()), id: \.offset) { _, item in
@@ -171,18 +222,19 @@ struct DailyDigestView: View {
     private func sectionItemRow(_ item: [String: String]) -> some View {
         HStack(spacing: 8) {
             Circle()
-                .fill(Color.accentColor.opacity(0.3))
+                .fill(warmOrange)
                 .frame(width: 6, height: 6)
 
             VStack(alignment: .leading, spacing: 1) {
                 if let title = item["title"] {
                     Text(title)
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(darkNavy)
                 }
                 if let detail = item["detail"] {
                     Text(detail)
                         .font(.system(size: 11))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(darkNavy.opacity(0.5))
                 }
             }
 
@@ -197,24 +249,34 @@ struct DailyDigestView: View {
     private var loadingState: some View {
         VStack(spacing: 12) {
             ProgressView()
+                .tint(warmOrange)
             Text("Loading digest...")
-                .font(.caption)
-                .foregroundColor(.secondary)
+                .font(.system(size: 12))
+                .foregroundColor(darkNavy.opacity(0.5))
         }
         .frame(maxWidth: .infinity, minHeight: 200)
     }
 
     private var emptyState: some View {
         VStack(spacing: 12) {
-            Image(systemName: "doc.text.magnifyingglass")
-                .font(.system(size: 32))
-                .foregroundColor(.secondary.opacity(0.4))
+            ZStack {
+                RoundedRectangle(cornerRadius: cardRadius)
+                    .fill(warmCream)
+                    .frame(width: 56, height: 56)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: cardRadius)
+                            .stroke(darkNavy.opacity(0.12), lineWidth: contraBorder)
+                    )
+                Image(systemName: "doc.text.magnifyingglass")
+                    .font(.system(size: 28))
+                    .foregroundColor(warmOrange)
+            }
             Text("No digest available")
-                .font(.title3)
-                .foregroundColor(.secondary)
+                .font(.system(size: 18, weight: .bold, design: .rounded))
+                .foregroundColor(darkNavy)
             Text("Digests are generated at the end of each day\nonce enough activity has been observed.")
-                .font(.caption)
-                .foregroundColor(.secondary.opacity(0.7))
+                .font(.system(size: 13))
+                .foregroundColor(darkNavy.opacity(0.5))
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity, minHeight: 200)
@@ -291,7 +353,7 @@ final class DigestViewModel: ObservableObject {
                 display.dateStyle = .medium
                 return display.string(from: parsed)
             }
-            // Date string present but unparseable — show it as-is.
+            // Date string present but unparseable - show it as-is.
             return dateStr
         }
         let formatter = DateFormatter()

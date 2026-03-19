@@ -10,11 +10,15 @@ struct SOPDetailView: View {
     @State private var fileExists = false
     @State private var resolvedPath: URL?
 
-    // Design tokens
-    private let cardBg = Color(nsColor: .controlBackgroundColor)
-    private let cardBorder = Color.primary.opacity(0.08)
+    // Contra design tokens
+    private let darkNavy = Color(red: 0.09, green: 0.10, blue: 0.12)
+    private let warmOrange = Color(red: 0.92, green: 0.57, blue: 0.20)
+    private let goldenYellow = Color(red: 1.0, green: 0.74, blue: 0.07)
+    private let warmCream = Color(red: 1.0, green: 0.96, blue: 0.88)
+    private let lightGray = Color(red: 0.96, green: 0.96, blue: 0.96)
+    private let brightGreen = Color(red: 0.18, green: 0.80, blue: 0.34)
     private let cardRadius: CGFloat = 14
-    private let cardShadow = Color.black.opacity(0.04)
+    private let contraBorder: CGFloat = 1.5
 
     /// Returns candidate export paths in priority order.
     /// The first existing file wins in `loadSkillFile()`.
@@ -31,7 +35,10 @@ struct SOPDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 headerSection
-                Divider().padding(.vertical, 20)
+                Rectangle()
+                    .fill(darkNavy.opacity(0.08))
+                    .frame(height: 1)
+                    .padding(.vertical, 20)
 
                 if fileExists, let content = skillContent {
                     if resolvedPath?.pathExtension == "json" {
@@ -59,14 +66,14 @@ struct SOPDetailView: View {
             // Short title
             Text(sop.displayTitle)
                 .font(.system(size: 22, weight: .bold, design: .rounded))
-                .foregroundColor(.primary)
+                .foregroundColor(darkNavy)
                 .textSelection(.enabled)
 
             // Full description from title field
             if sop.title != sop.displayTitle {
                 Text(sop.title)
                     .font(.system(size: 13))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(darkNavy.opacity(0.6))
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
                     .lineSpacing(3)
@@ -78,16 +85,16 @@ struct SOPDetailView: View {
                     ForEach(sop.displayTags, id: \.self) { tag in
                         Text(tag)
                             .font(.system(size: 10, weight: .medium))
-                            .foregroundColor(.secondary)
+                            .foregroundColor(darkNavy.opacity(0.6))
                             .padding(.horizontal, 8)
                             .padding(.vertical, 3)
                             .background(
                                 RoundedRectangle(cornerRadius: 6)
-                                    .fill(Color.primary.opacity(0.04))
+                                    .fill(lightGray)
                             )
                             .overlay(
                                 RoundedRectangle(cornerRadius: 6)
-                                    .stroke(Color.primary.opacity(0.06), lineWidth: 1)
+                                    .stroke(darkNavy.opacity(0.12), lineWidth: 1)
                             )
                     }
                 }
@@ -99,21 +106,25 @@ struct SOPDetailView: View {
 
                 // Lifecycle state badge
                 Text(sop.lifecycleLabel)
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(size: 10, weight: .bold))
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
                     .background(sop.lifecycleColor.opacity(0.1))
                     .foregroundColor(sop.lifecycleColor)
                     .clipShape(Capsule())
+                    .overlay(
+                        Capsule()
+                            .stroke(darkNavy.opacity(0.08), lineWidth: 1)
+                    )
 
                 if sop.confidence > 0 {
                     Text(String(format: "%.0f%%", sop.confidence * 100))
                         .font(.system(size: 11))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(darkNavy.opacity(0.5))
                 }
 
                 Text("\u{00B7}")
-                    .foregroundColor(.secondary.opacity(0.3))
+                    .foregroundColor(darkNavy.opacity(0.2))
 
                 HStack(spacing: 4) {
                     Image(systemName: sop.sourceIcon)
@@ -121,23 +132,23 @@ struct SOPDetailView: View {
                     Text(sop.sourceLabel)
                         .font(.system(size: 11))
                 }
-                .foregroundColor(.secondary)
+                .foregroundColor(darkNavy.opacity(0.5))
 
                 Spacer()
 
                 Text(sop.relativeTime)
                     .font(.system(size: 11))
-                    .foregroundColor(.secondary.opacity(0.5))
+                    .foregroundColor(darkNavy.opacity(0.35))
             }
 
-            // Action bar — prominent
+            // Action bar
             actionBar
         }
     }
 
     private var actionBar: some View {
         HStack(spacing: 10) {
-            // Approve button — green accent
+            // Approve button - Contra green
             Button(action: {
                 sopManager.approveSOP(sop)
             }) {
@@ -145,24 +156,24 @@ struct SOPDetailView: View {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 12))
                     Text("Approve")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: 12, weight: .bold))
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 7)
                 .background(
                     RoundedRectangle(cornerRadius: 8)
-                        .fill(sop.status == "approved" ? Color.green.opacity(0.06) : Color.green.opacity(0.1))
+                        .fill(sop.status == "approved" ? brightGreen.opacity(0.1) : brightGreen.opacity(0.15))
                 )
-                .foregroundColor(sop.status == "approved" ? .green.opacity(0.5) : .green)
+                .foregroundColor(sop.status == "approved" ? brightGreen.opacity(0.4) : brightGreen)
                 .overlay(
                     RoundedRectangle(cornerRadius: 8)
-                        .stroke(Color.green.opacity(0.15), lineWidth: 1)
+                        .stroke(darkNavy.opacity(0.12), lineWidth: contraBorder)
                 )
             }
             .buttonStyle(.plain)
             .disabled(sop.status == "approved")
 
-            // Promote lifecycle button — brand accent
+            // Promote lifecycle button - Contra dark navy filled
             if sop.canPromote, let nextState = sop.nextLifecycleState {
                 Button(action: {
                     sopManager.promoteProcedure(sop, toState: nextState)
@@ -171,20 +182,24 @@ struct SOPDetailView: View {
                         Image(systemName: "arrow.up.circle.fill")
                             .font(.system(size: 12))
                         Text("Promote to \(SOPEntry.lifecycleLabelFor(nextState))")
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(.system(size: 12, weight: .bold))
                     }
                     .padding(.horizontal, 14)
                     .padding(.vertical, 7)
                     .background(
                         RoundedRectangle(cornerRadius: 8)
-                            .fill(Color.orange)
+                            .fill(darkNavy)
                     )
                     .foregroundColor(.white)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(darkNavy, lineWidth: contraBorder)
+                    )
                 }
                 .buttonStyle(.plain)
             }
 
-            // Reject button
+            // Reject button - outlined red
             Button(action: {
                 sopManager.rejectSOP(sop)
             }) {
@@ -196,14 +211,10 @@ struct SOPDetailView: View {
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 7)
-                .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(Color.red.opacity(0.06))
-                )
-                .foregroundColor(sop.status == "rejected" ? .red.opacity(0.4) : .red)
+                .foregroundColor(sop.status == "rejected" ? Color.red.opacity(0.4) : .red)
                 .overlay(
                     RoundedRectangle(cornerRadius: 8)
-                        .stroke(Color.red.opacity(0.1), lineWidth: 1)
+                        .stroke(Color.red.opacity(0.3), lineWidth: contraBorder)
                 )
             }
             .buttonStyle(.plain)
@@ -218,7 +229,11 @@ struct SOPDetailView: View {
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 7)
-                .foregroundColor(.secondary)
+                .foregroundColor(darkNavy.opacity(0.5))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(darkNavy.opacity(0.12), lineWidth: contraBorder)
+                )
             }
             .buttonStyle(.plain)
             .disabled(!fileExists)
@@ -245,7 +260,7 @@ struct SOPDetailView: View {
                 if let desc = json["description"] as? String ?? json["goal"] as? String, !desc.isEmpty {
                     Text(desc)
                         .font(.system(size: 13))
-                        .foregroundColor(.primary.opacity(0.8))
+                        .foregroundColor(darkNavy.opacity(0.8))
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                         .lineSpacing(4)
@@ -254,36 +269,40 @@ struct SOPDetailView: View {
                 // Steps
                 if let steps = json["steps"] as? [[String: Any]], !steps.isEmpty {
                     VStack(alignment: .leading, spacing: 12) {
-                        sectionHeader("Steps", icon: "list.number", color: .blue)
+                        sectionHeader("Steps", icon: "list.number", color: warmOrange)
                         ForEach(Array(steps.enumerated()), id: \.offset) { index, step in
                             HStack(alignment: .top, spacing: 12) {
-                                // Numbered circle
+                                // Numbered circle - Contra style
                                 Text("\(index + 1)")
                                     .font(.system(size: 11, weight: .bold, design: .rounded))
-                                    .foregroundColor(.accentColor)
+                                    .foregroundColor(.white)
                                     .frame(width: 26, height: 26)
                                     .background(
                                         Circle()
-                                            .fill(Color.accentColor.opacity(0.08))
+                                            .fill(warmOrange)
                                     )
                                     .overlay(
                                         Circle()
-                                            .stroke(Color.accentColor.opacity(0.12), lineWidth: 1)
+                                            .stroke(darkNavy.opacity(0.12), lineWidth: contraBorder)
                                     )
 
                                 VStack(alignment: .leading, spacing: 4) {
                                     if let app = step["app"] as? String {
                                         Text(app)
                                             .font(.system(size: 10, weight: .medium))
-                                            .foregroundColor(.secondary)
+                                            .foregroundColor(darkNavy.opacity(0.5))
                                             .padding(.horizontal, 7)
                                             .padding(.vertical, 2)
-                                            .background(Color.primary.opacity(0.04))
+                                            .background(lightGray)
                                             .cornerRadius(5)
+                                            .overlay(
+                                                RoundedRectangle(cornerRadius: 5)
+                                                    .stroke(darkNavy.opacity(0.08), lineWidth: 1)
+                                            )
                                     }
                                     Text(step["action"] as? String ?? step["description"] as? String ?? "")
                                         .font(.system(size: 12))
-                                        .foregroundColor(.primary.opacity(0.85))
+                                        .foregroundColor(darkNavy.opacity(0.85))
                                         .textSelection(.enabled)
                                         .fixedSize(horizontal: false, vertical: true)
                                         .lineSpacing(3)
@@ -293,12 +312,12 @@ struct SOPDetailView: View {
                             .padding(.vertical, 12)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .background(
-                                RoundedRectangle(cornerRadius: 10)
-                                    .fill(cardBg)
+                                RoundedRectangle(cornerRadius: cardRadius)
+                                    .fill(Color.white)
                             )
                             .overlay(
-                                RoundedRectangle(cornerRadius: 10)
-                                    .stroke(cardBorder, lineWidth: 1)
+                                RoundedRectangle(cornerRadius: cardRadius)
+                                    .stroke(darkNavy.opacity(0.12), lineWidth: contraBorder)
                             )
                         }
                     }
@@ -307,17 +326,17 @@ struct SOPDetailView: View {
                 // Preconditions / prerequisites
                 if let preconds = json["preconditions"] as? [String] ?? json["prerequisites"] as? [String], !preconds.isEmpty {
                     VStack(alignment: .leading, spacing: 10) {
-                        sectionHeader("Prerequisites", icon: "checkmark.circle", color: .green)
+                        sectionHeader("Prerequisites", icon: "checkmark.circle", color: brightGreen)
                         VStack(alignment: .leading, spacing: 6) {
                             ForEach(preconds, id: \.self) { item in
                                 HStack(alignment: .top, spacing: 8) {
                                     Image(systemName: "checkmark")
                                         .font(.system(size: 9, weight: .semibold))
-                                        .foregroundColor(.green)
+                                        .foregroundColor(brightGreen)
                                         .frame(width: 16, height: 16)
                                     Text(item)
                                         .font(.system(size: 12))
-                                        .foregroundColor(.primary.opacity(0.8))
+                                        .foregroundColor(darkNavy.opacity(0.8))
                                         .textSelection(.enabled)
                                 }
                             }
@@ -325,12 +344,12 @@ struct SOPDetailView: View {
                         .padding(.horizontal, 14)
                         .padding(.vertical, 12)
                         .background(
-                            RoundedRectangle(cornerRadius: 10)
-                                .fill(Color.primary.opacity(0.02))
+                            RoundedRectangle(cornerRadius: cardRadius)
+                                .fill(lightGray)
                         )
                         .overlay(
-                            RoundedRectangle(cornerRadius: 10)
-                                .stroke(cardBorder, lineWidth: 1)
+                            RoundedRectangle(cornerRadius: cardRadius)
+                                .stroke(darkNavy.opacity(0.12), lineWidth: contraBorder)
                         )
                     }
                 }
@@ -345,26 +364,26 @@ struct SOPDetailView: View {
                 }
                 if !metaItems.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
-                        sectionHeader("Metadata", icon: "info.circle", color: .secondary)
+                        sectionHeader("Metadata", icon: "info.circle", color: darkNavy.opacity(0.5))
                         ForEach(metaItems, id: \.0) { label, value in
                             metadataRow(label: label, value: value)
                         }
                     }
                     .padding(14)
                     .background(
-                        RoundedRectangle(cornerRadius: 10)
-                            .fill(Color.primary.opacity(0.02))
+                        RoundedRectangle(cornerRadius: cardRadius)
+                            .fill(lightGray)
                     )
                     .overlay(
-                        RoundedRectangle(cornerRadius: 10)
-                            .stroke(cardBorder, lineWidth: 1)
+                        RoundedRectangle(cornerRadius: cardRadius)
+                            .stroke(darkNavy.opacity(0.12), lineWidth: contraBorder)
                     )
                 }
             } else {
-                // JSON parse failed — show raw content
+                // JSON parse failed - show raw content
                 Text(raw)
                     .font(.system(size: 12, design: .monospaced))
-                    .foregroundColor(.primary.opacity(0.7))
+                    .foregroundColor(darkNavy.opacity(0.7))
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -378,7 +397,7 @@ struct SOPDetailView: View {
             if let desc = extractDescription(content), !desc.isEmpty {
                 Text(desc)
                     .font(.system(size: 13))
-                    .foregroundColor(.primary.opacity(0.8))
+                    .foregroundColor(darkNavy.opacity(0.8))
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
                     .lineSpacing(4)
@@ -396,11 +415,11 @@ struct SOPDetailView: View {
         case .arguments:
             argumentsSection(section)
         case .prerequisites:
-            bulletSection(title: section.title, items: section.lines, icon: "checkmark.circle", color: .green)
+            bulletSection(title: section.title, items: section.lines, icon: "checkmark.circle", color: brightGreen)
         case .steps:
             stepsSection(section)
         case .successCriteria:
-            bulletSection(title: section.title, items: section.lines, icon: "target", color: .orange)
+            bulletSection(title: section.title, items: section.lines, icon: "target", color: warmOrange)
         case .commonErrors:
             errorSection(section)
         case .other:
@@ -428,7 +447,7 @@ struct SOPDetailView: View {
                             .padding(.top, 4)
                         Text(cleaned)
                             .font(.system(size: 12))
-                            .foregroundColor(.primary.opacity(0.8))
+                            .foregroundColor(darkNavy.opacity(0.8))
                             .textSelection(.enabled)
                     }
                 }
@@ -436,12 +455,12 @@ struct SOPDetailView: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
             .background(
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(Color.primary.opacity(0.02))
+                RoundedRectangle(cornerRadius: cardRadius)
+                    .fill(lightGray)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .stroke(cardBorder, lineWidth: 1)
+                RoundedRectangle(cornerRadius: cardRadius)
+                    .stroke(darkNavy.opacity(0.12), lineWidth: contraBorder)
             )
         }
     }
@@ -463,7 +482,7 @@ struct SOPDetailView: View {
                             .frame(width: 16, height: 16)
                         Text(cleaned)
                             .font(.system(size: 12))
-                            .foregroundColor(.primary.opacity(0.8))
+                            .foregroundColor(darkNavy.opacity(0.8))
                             .textSelection(.enabled)
                     }
                 }
@@ -471,12 +490,12 @@ struct SOPDetailView: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
             .background(
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(Color.primary.opacity(0.02))
+                RoundedRectangle(cornerRadius: cardRadius)
+                    .fill(lightGray)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .stroke(cardBorder, lineWidth: 1)
+                RoundedRectangle(cornerRadius: cardRadius)
+                    .stroke(darkNavy.opacity(0.12), lineWidth: contraBorder)
             )
         }
     }
@@ -496,7 +515,7 @@ struct SOPDetailView: View {
                                 .frame(width: 16, height: 16)
                             Text(cleaned)
                                 .font(.system(size: 12))
-                                .foregroundColor(.primary.opacity(0.8))
+                                .foregroundColor(darkNavy.opacity(0.8))
                                 .textSelection(.enabled)
                         }
                     }
@@ -505,36 +524,36 @@ struct SOPDetailView: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
             .background(
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(Color.red.opacity(0.02))
+                RoundedRectangle(cornerRadius: cardRadius)
+                    .fill(Color.red.opacity(0.03))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .stroke(Color.red.opacity(0.08), lineWidth: 1)
+                RoundedRectangle(cornerRadius: cardRadius)
+                    .stroke(Color.red.opacity(0.15), lineWidth: contraBorder)
             )
         }
     }
 
     private func stepsSection(_ section: ParsedSection) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            sectionHeader(section.title, icon: "list.number", color: .blue)
+            sectionHeader(section.title, icon: "list.number", color: warmOrange)
 
             VStack(alignment: .leading, spacing: 8) {
                 let steps = parseSteps(section.lines)
                 ForEach(Array(steps.enumerated()), id: \.offset) { index, step in
                     HStack(alignment: .top, spacing: 12) {
-                        // Numbered circle
+                        // Numbered circle - Contra style
                         Text("\(index + 1)")
                             .font(.system(size: 11, weight: .bold, design: .rounded))
-                            .foregroundColor(.accentColor)
+                            .foregroundColor(.white)
                             .frame(width: 26, height: 26)
                             .background(
                                 Circle()
-                                    .fill(Color.accentColor.opacity(0.08))
+                                    .fill(warmOrange)
                             )
                             .overlay(
                                 Circle()
-                                    .stroke(Color.accentColor.opacity(0.12), lineWidth: 1)
+                                    .stroke(darkNavy.opacity(0.12), lineWidth: contraBorder)
                             )
 
                         VStack(alignment: .leading, spacing: 4) {
@@ -542,16 +561,20 @@ struct SOPDetailView: View {
                             if let app = step.app {
                                 Text(app)
                                     .font(.system(size: 10, weight: .medium))
-                                    .foregroundColor(.secondary)
+                                    .foregroundColor(darkNavy.opacity(0.5))
                                     .padding(.horizontal, 7)
                                     .padding(.vertical, 2)
-                                    .background(Color.primary.opacity(0.04))
+                                    .background(lightGray)
                                     .cornerRadius(5)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 5)
+                                            .stroke(darkNavy.opacity(0.08), lineWidth: 1)
+                                    )
                             }
 
                             Text(step.action)
                                 .font(.system(size: 12))
-                                .foregroundColor(.primary.opacity(0.85))
+                                .foregroundColor(darkNavy.opacity(0.85))
                                 .textSelection(.enabled)
                                 .fixedSize(horizontal: false, vertical: true)
                                 .lineSpacing(3)
@@ -560,7 +583,7 @@ struct SOPDetailView: View {
                                 Text(verify)
                                     .font(.system(size: 11))
                                     .italic()
-                                    .foregroundColor(.secondary.opacity(0.7))
+                                    .foregroundColor(darkNavy.opacity(0.45))
                                     .textSelection(.enabled)
                                     .padding(.top, 2)
                             }
@@ -570,12 +593,12 @@ struct SOPDetailView: View {
                     .padding(.vertical, 12)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(
-                        RoundedRectangle(cornerRadius: 10)
-                            .fill(cardBg)
+                        RoundedRectangle(cornerRadius: cardRadius)
+                            .fill(Color.white)
                     )
                     .overlay(
-                        RoundedRectangle(cornerRadius: 10)
-                            .stroke(cardBorder, lineWidth: 1)
+                        RoundedRectangle(cornerRadius: cardRadius)
+                            .stroke(darkNavy.opacity(0.12), lineWidth: contraBorder)
                     )
                 }
             }
@@ -584,25 +607,25 @@ struct SOPDetailView: View {
 
     private func genericSection(_ section: ParsedSection) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            sectionHeader(section.title, icon: "doc.text", color: .secondary)
+            sectionHeader(section.title, icon: "doc.text", color: darkNavy.opacity(0.5))
 
             VStack(alignment: .leading, spacing: 5) {
                 ForEach(section.lines, id: \.self) { line in
                     Text(cleanMarkdown(line))
                         .font(.system(size: 12))
-                        .foregroundColor(.primary.opacity(0.8))
+                        .foregroundColor(darkNavy.opacity(0.8))
                         .textSelection(.enabled)
                 }
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
             .background(
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(Color.primary.opacity(0.02))
+                RoundedRectangle(cornerRadius: cardRadius)
+                    .fill(lightGray)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .stroke(cardBorder, lineWidth: 1)
+                RoundedRectangle(cornerRadius: cardRadius)
+                    .stroke(darkNavy.opacity(0.12), lineWidth: contraBorder)
             )
         }
     }
@@ -611,15 +634,19 @@ struct SOPDetailView: View {
         HStack(spacing: 8) {
             ZStack {
                 RoundedRectangle(cornerRadius: 6)
-                    .fill(color.opacity(0.08))
+                    .fill(color.opacity(0.12))
                     .frame(width: 24, height: 24)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(darkNavy.opacity(0.12), lineWidth: contraBorder)
+                    )
                 Image(systemName: icon)
                     .font(.system(size: 11))
                     .foregroundColor(color)
             }
             Text(title)
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundColor(.primary.opacity(0.7))
+                .font(.system(size: 14, weight: .bold, design: .rounded))
+                .foregroundColor(darkNavy.opacity(0.7))
                 .tracking(0.3)
         }
     }
@@ -631,23 +658,30 @@ struct SOPDetailView: View {
             HStack(spacing: 10) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 8)
-                        .fill(Color.secondary.opacity(0.06))
+                        .fill(warmCream)
                         .frame(width: 32, height: 32)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(darkNavy.opacity(0.12), lineWidth: contraBorder)
+                        )
                     Image(systemName: "doc.questionmark")
                         .font(.system(size: 16))
-                        .foregroundColor(.secondary.opacity(0.5))
+                        .foregroundColor(warmOrange)
                 }
                 Text("SOP not yet exported")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundColor(.secondary)
+                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .foregroundColor(darkNavy)
             }
 
             Text("This SOP has not been exported yet. Approve it to trigger export.")
                 .font(.system(size: 13))
-                .foregroundColor(.secondary.opacity(0.7))
+                .foregroundColor(darkNavy.opacity(0.5))
                 .lineSpacing(3)
 
-            Divider().padding(.vertical, 4)
+            Rectangle()
+                .fill(darkNavy.opacity(0.08))
+                .frame(height: 1)
+                .padding(.vertical, 4)
 
             VStack(alignment: .leading, spacing: 8) {
                 metadataRow(label: "SOP ID", value: sop.sop_id)
@@ -664,12 +698,12 @@ struct SOPDetailView: View {
             }
             .padding(14)
             .background(
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(Color.primary.opacity(0.02))
+                RoundedRectangle(cornerRadius: cardRadius)
+                    .fill(lightGray)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .stroke(cardBorder, lineWidth: 1)
+                RoundedRectangle(cornerRadius: cardRadius)
+                    .stroke(darkNavy.opacity(0.12), lineWidth: contraBorder)
             )
         }
     }
@@ -678,11 +712,11 @@ struct SOPDetailView: View {
         HStack(alignment: .top) {
             Text(label)
                 .font(.system(size: 11, weight: .medium))
-                .foregroundColor(.secondary)
+                .foregroundColor(darkNavy.opacity(0.5))
                 .frame(width: 80, alignment: .trailing)
             Text(value)
                 .font(.system(size: 11, design: .monospaced))
-                .foregroundColor(.primary.opacity(0.7))
+                .foregroundColor(darkNavy.opacity(0.7))
                 .textSelection(.enabled)
         }
     }
@@ -691,10 +725,13 @@ struct SOPDetailView: View {
 
     private var footerSection: some View {
         VStack {
-            Divider().padding(.top, 28)
+            Rectangle()
+                .fill(darkNavy.opacity(0.08))
+                .frame(height: 1)
+                .padding(.top, 28)
             Text("Generated by AgentHandover")
                 .font(.system(size: 10))
-                .foregroundColor(.secondary.opacity(0.4))
+                .foregroundColor(darkNavy.opacity(0.3))
                 .padding(.top, 8)
         }
     }
@@ -911,7 +948,7 @@ struct SOPDetailView: View {
             if line.hasPrefix("## ") { break }
 
             if pastFrontmatter || pastTitle {
-                // Skip the **Arguments:** line — it's handled in the arguments section
+                // Skip the **Arguments:** line - it's handled in the arguments section
                 let trimmed = line.trimmingCharacters(in: .whitespaces)
                 if trimmed.hasPrefix("**Arguments") || trimmed.hasPrefix("Arguments:") {
                     continue

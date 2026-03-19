@@ -14,10 +14,15 @@ struct FocusQAView: View {
     @State private var writeError: String?
     @State private var didSubmit = false
 
-    // Design tokens
-    private let cardBg = Color(nsColor: .controlBackgroundColor)
-    private let cardBorder = Color.primary.opacity(0.08)
+    // Contra design tokens
+    private let darkNavy = Color(red: 0.09, green: 0.10, blue: 0.12)
+    private let warmOrange = Color(red: 0.92, green: 0.57, blue: 0.20)
+    private let goldenYellow = Color(red: 1.0, green: 0.74, blue: 0.07)
+    private let warmCream = Color(red: 1.0, green: 0.96, blue: 0.88)
+    private let lightGray = Color(red: 0.96, green: 0.96, blue: 0.96)
+    private let brightGreen = Color(red: 0.18, green: 0.80, blue: 0.34)
     private let cardRadius: CGFloat = 14
+    private let contraBorder: CGFloat = 1.5
 
     private var statusDir: URL {
         let home = FileManager.default.homeDirectoryForCurrentUser
@@ -43,18 +48,22 @@ struct FocusQAView: View {
         VStack(spacing: 14) {
             ZStack {
                 Circle()
-                    .fill(Color.green.opacity(0.08))
+                    .fill(brightGreen.opacity(0.1))
                     .frame(width: 56, height: 56)
+                    .overlay(
+                        Circle()
+                            .stroke(darkNavy.opacity(0.12), lineWidth: contraBorder)
+                    )
                 Image(systemName: "checkmark.circle")
                     .font(.system(size: 28))
-                    .foregroundColor(.green)
+                    .foregroundColor(brightGreen)
             }
             Text("No questions pending")
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundColor(.secondary)
+                .font(.system(size: 16, weight: .bold, design: .rounded))
+                .foregroundColor(darkNavy)
             Text("Questions will appear here after a focus recording is processed.")
                 .font(.system(size: 13))
-                .foregroundColor(.secondary.opacity(0.8))
+                .foregroundColor(darkNavy.opacity(0.5))
                 .multilineTextAlignment(.center)
                 .lineSpacing(3)
         }
@@ -70,19 +79,24 @@ struct FocusQAView: View {
             VStack(spacing: 8) {
                 ZStack {
                     Circle()
-                        .fill(Color.orange.opacity(0.1))
+                        .fill(warmOrange.opacity(0.12))
                         .frame(width: 48, height: 48)
+                        .overlay(
+                            Circle()
+                                .stroke(darkNavy.opacity(0.12), lineWidth: contraBorder)
+                        )
                     Image(systemName: "questionmark.bubble.fill")
                         .font(.system(size: 22))
-                        .foregroundColor(.orange)
+                        .foregroundColor(warmOrange)
                 }
 
                 Text(displayTitle(for: file.slug))
                     .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .foregroundColor(darkNavy)
 
                 Text("Answer these questions so your agent can execute this workflow reliably.")
                     .font(.system(size: 13))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(darkNavy.opacity(0.5))
                     .multilineTextAlignment(.center)
                     .lineSpacing(3)
                     .frame(maxWidth: 380)
@@ -91,7 +105,7 @@ struct FocusQAView: View {
             .padding(.bottom, 20)
 
             Rectangle()
-                .fill(Color.primary.opacity(0.06))
+                .fill(darkNavy.opacity(0.08))
                 .frame(height: 1)
                 .padding(.horizontal, 24)
 
@@ -107,7 +121,7 @@ struct FocusQAView: View {
             }
 
             Rectangle()
-                .fill(Color.primary.opacity(0.06))
+                .fill(darkNavy.opacity(0.08))
                 .frame(height: 1)
                 .padding(.horizontal, 24)
 
@@ -134,7 +148,8 @@ struct FocusQAView: View {
                 categoryBadge(for: question)
 
                 Text(question.question)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundColor(darkNavy)
                     .fixedSize(horizontal: false, vertical: true)
                     .lineSpacing(3)
             }
@@ -142,7 +157,7 @@ struct FocusQAView: View {
             if !question.context.isEmpty {
                 Text(question.context)
                     .font(.system(size: 12))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(darkNavy.opacity(0.5))
                     .italic()
                     .fixedSize(horizontal: false, vertical: true)
                     .lineSpacing(2)
@@ -150,19 +165,26 @@ struct FocusQAView: View {
             }
 
             TextField("Your answer", text: answerBinding(for: question.index, default: question.default))
-                .textFieldStyle(.roundedBorder)
+                .textFieldStyle(.plain)
                 .font(.system(size: 13))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(Color.white)
+                .cornerRadius(cardRadius)
+                .overlay(
+                    RoundedRectangle(cornerRadius: cardRadius)
+                        .stroke(darkNavy.opacity(0.15), lineWidth: contraBorder)
+                )
         }
         .padding(14)
         .background(
             RoundedRectangle(cornerRadius: cardRadius)
-                .fill(cardBg)
+                .fill(lightGray)
         )
         .overlay(
             RoundedRectangle(cornerRadius: cardRadius)
-                .stroke(cardBorder, lineWidth: 1)
+                .stroke(darkNavy.opacity(0.12), lineWidth: contraBorder)
         )
-        .shadow(color: Color.black.opacity(0.03), radius: 6, y: 2)
     }
 
     /// Color-coded category badge based on the question context.
@@ -170,8 +192,12 @@ struct FocusQAView: View {
         let (icon, color) = categorize(question)
         return ZStack {
             RoundedRectangle(cornerRadius: 6)
-                .fill(color.opacity(0.1))
+                .fill(color.opacity(0.12))
                 .frame(width: 26, height: 26)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(darkNavy.opacity(0.12), lineWidth: contraBorder)
+                )
             Image(systemName: icon)
                 .font(.system(size: 12))
                 .foregroundColor(color)
@@ -188,12 +214,12 @@ struct FocusQAView: View {
             return ("arrow.triangle.branch", .purple)
         }
         if text.contains("verify") || text.contains("confirm") || text.contains("check") || text.contains("success") {
-            return ("checkmark.circle", .green)
+            return ("checkmark.circle", brightGreen)
         }
         if text.contains("how often") || text.contains("frequen") || text.contains("schedule") || text.contains("when") {
             return ("clock", .blue)
         }
-        return ("questionmark.circle", .orange)
+        return ("questionmark.circle", warmOrange)
     }
 
     // MARK: - Footer
@@ -204,8 +230,14 @@ struct FocusQAView: View {
                 writeSkipped()
             }
             .buttonStyle(.plain)
-            .font(.system(size: 13))
-            .foregroundColor(.secondary)
+            .font(.system(size: 13, weight: .medium))
+            .foregroundColor(darkNavy.opacity(0.5))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .overlay(
+                RoundedRectangle(cornerRadius: cardRadius)
+                    .stroke(darkNavy.opacity(0.12), lineWidth: contraBorder)
+            )
 
             Spacer()
 
@@ -216,15 +248,19 @@ struct FocusQAView: View {
                     Image(systemName: "paperplane.fill")
                         .font(.system(size: 11))
                     Text("Submit Answers")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: 13, weight: .bold))
                 }
                 .padding(.horizontal, 18)
                 .padding(.vertical, 9)
                 .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(Color.orange)
+                    RoundedRectangle(cornerRadius: cardRadius)
+                        .fill(darkNavy)
                 )
                 .foregroundColor(.white)
+                .overlay(
+                    RoundedRectangle(cornerRadius: cardRadius)
+                        .stroke(darkNavy, lineWidth: contraBorder)
+                )
             }
             .buttonStyle(.plain)
         }

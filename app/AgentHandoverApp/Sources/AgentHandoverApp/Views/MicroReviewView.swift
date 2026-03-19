@@ -3,9 +3,19 @@ import SwiftUI
 /// Card-based micro-review UX for quick procedure approval.
 ///
 /// Each card shows a procedure summary with one-tap approve/reject/detail
-/// actions — designed for 5-second reviews.
+/// actions - designed for 5-second reviews.
 struct MicroReviewView: View {
     @StateObject private var viewModel = MicroReviewViewModel()
+
+    // Contra design tokens
+    private let darkNavy = Color(red: 0.09, green: 0.10, blue: 0.12)
+    private let warmOrange = Color(red: 0.92, green: 0.57, blue: 0.20)
+    private let goldenYellow = Color(red: 1.0, green: 0.74, blue: 0.07)
+    private let warmCream = Color(red: 1.0, green: 0.96, blue: 0.88)
+    private let lightGray = Color(red: 0.96, green: 0.96, blue: 0.96)
+    private let brightGreen = Color(red: 0.18, green: 0.80, blue: 0.34)
+    private let cardRadius: CGFloat = 14
+    private let contraBorder: CGFloat = 1.5
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -30,19 +40,26 @@ struct MicroReviewView: View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Review Queue")
-                    .font(.title2)
-                    .bold()
+                    .font(.system(size: 22, weight: .bold, design: .rounded))
+                    .foregroundColor(darkNavy)
                 Text("\(viewModel.cards.count) item(s) need your review")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                    .font(.system(size: 12))
+                    .foregroundColor(darkNavy.opacity(0.5))
             }
             Spacer()
             Button(action: { viewModel.load() }) {
                 Image(systemName: "arrow.clockwise")
-                    .font(.system(size: 12))
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(darkNavy.opacity(0.5))
+                    .frame(width: 28, height: 28)
+                    .background(lightGray)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(darkNavy.opacity(0.12), lineWidth: contraBorder)
+                    )
             }
             .buttonStyle(.plain)
-            .foregroundColor(.secondary)
         }
     }
 
@@ -65,24 +82,34 @@ struct MicroReviewView: View {
     private var loadingState: some View {
         VStack(spacing: 12) {
             ProgressView()
+                .tint(warmOrange)
             Text("Loading review items...")
-                .font(.caption)
-                .foregroundColor(.secondary)
+                .font(.system(size: 12))
+                .foregroundColor(darkNavy.opacity(0.5))
         }
         .frame(maxWidth: .infinity, minHeight: 200)
     }
 
     private var emptyState: some View {
         VStack(spacing: 12) {
-            Image(systemName: "checkmark.seal")
-                .font(.system(size: 32))
-                .foregroundColor(.green.opacity(0.5))
+            ZStack {
+                Circle()
+                    .fill(brightGreen.opacity(0.1))
+                    .frame(width: 56, height: 56)
+                    .overlay(
+                        Circle()
+                            .stroke(darkNavy.opacity(0.12), lineWidth: contraBorder)
+                    )
+                Image(systemName: "checkmark.seal")
+                    .font(.system(size: 28))
+                    .foregroundColor(brightGreen)
+            }
             Text("All caught up!")
-                .font(.title3)
-                .foregroundColor(.secondary)
+                .font(.system(size: 18, weight: .bold, design: .rounded))
+                .foregroundColor(darkNavy)
             Text("No procedures need review right now.")
-                .font(.caption)
-                .foregroundColor(.secondary.opacity(0.7))
+                .font(.system(size: 13))
+                .foregroundColor(darkNavy.opacity(0.5))
         }
         .frame(maxWidth: .infinity, minHeight: 200)
     }
@@ -96,27 +123,42 @@ struct ReviewCard: View {
 
     @State private var showingDetail = false
 
+    // Contra design tokens
+    private let darkNavy = Color(red: 0.09, green: 0.10, blue: 0.12)
+    private let warmOrange = Color(red: 0.92, green: 0.57, blue: 0.20)
+    private let goldenYellow = Color(red: 1.0, green: 0.74, blue: 0.07)
+    private let warmCream = Color(red: 1.0, green: 0.96, blue: 0.88)
+    private let lightGray = Color(red: 0.96, green: 0.96, blue: 0.96)
+    private let brightGreen = Color(red: 0.18, green: 0.80, blue: 0.34)
+    private let cardRadius: CGFloat = 14
+    private let contraBorder: CGFloat = 1.5
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             // Title + type badge
             HStack {
                 Image(systemName: card.iconName)
                     .font(.system(size: 14))
-                    .foregroundColor(card.accentColor)
+                    .foregroundColor(warmOrange)
 
                 Text(card.title)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(darkNavy)
                     .lineLimit(1)
 
                 Spacer()
 
                 Text(card.typeLabel)
-                    .font(.system(size: 9, weight: .medium))
-                    .foregroundColor(.white)
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundColor(darkNavy)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
-                    .background(card.accentColor)
+                    .background(goldenYellow)
                     .cornerRadius(4)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 4)
+                            .stroke(darkNavy.opacity(0.12), lineWidth: 1)
+                    )
             }
 
             // Metadata row
@@ -127,17 +169,17 @@ struct ReviewCard: View {
                 metadataItem(icon: "chart.bar", text: String(format: "%.0f%%", card.confidence * 100))
             }
             .font(.system(size: 10))
-            .foregroundColor(.secondary)
+            .foregroundColor(darkNavy.opacity(0.5))
 
             // Variables preview
             if !card.variables.isEmpty {
                 HStack(spacing: 4) {
                     Text("Variables:")
                         .font(.system(size: 10))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(darkNavy.opacity(0.5))
                     Text(card.variables.joined(separator: ", "))
                         .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(.primary.opacity(0.7))
+                        .foregroundColor(darkNavy.opacity(0.7))
                         .lineLimit(1)
                 }
             }
@@ -147,33 +189,57 @@ struct ReviewCard: View {
                 HStack(spacing: 4) {
                     Text("Outcome:")
                         .font(.system(size: 10))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(darkNavy.opacity(0.5))
                     Text(outcome)
                         .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(.primary.opacity(0.7))
+                        .foregroundColor(darkNavy.opacity(0.7))
                         .lineLimit(1)
                 }
             }
 
-            Divider()
+            Rectangle()
+                .fill(darkNavy.opacity(0.08))
+                .frame(height: 1)
 
-            // Action buttons
+            // Action buttons - Contra styled
             HStack(spacing: 10) {
                 Button(action: { onAction(.approve) }) {
-                    Label("Approve", systemImage: "checkmark")
-                        .font(.system(size: 11, weight: .medium))
+                    HStack(spacing: 4) {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 10, weight: .bold))
+                        Text("Approve")
+                            .font(.system(size: 11, weight: .bold))
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(brightGreen)
+                    )
+                    .foregroundColor(.white)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(darkNavy.opacity(0.12), lineWidth: contraBorder)
+                    )
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(.green)
-                .controlSize(.small)
+                .buttonStyle(.plain)
 
                 Button(action: { onAction(.reject) }) {
-                    Label("Reject", systemImage: "xmark")
-                        .font(.system(size: 11, weight: .medium))
+                    HStack(spacing: 4) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 10, weight: .bold))
+                        Text("Reject")
+                            .font(.system(size: 11, weight: .bold))
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .foregroundColor(.red)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(Color.red.opacity(0.3), lineWidth: contraBorder)
+                    )
                 }
-                .buttonStyle(.bordered)
-                .tint(.red)
-                .controlSize(.small)
+                .buttonStyle(.plain)
 
                 Spacer()
 
@@ -181,40 +247,56 @@ struct ReviewCard: View {
                     || card.type == .mergeCandidate || card.type == .driftAlert {
                     Button(action: { onAction(.dismiss) }) {
                         Text("Later")
-                            .font(.system(size: 11))
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(darkNavy.opacity(0.4))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(darkNavy.opacity(0.12), lineWidth: contraBorder)
+                            )
                     }
                     .buttonStyle(.plain)
-                    .foregroundColor(.secondary)
                 }
 
                 Button(action: { showingDetail.toggle() }) {
                     Text("Detail")
-                        .font(.system(size: 11))
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(warmOrange)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(warmOrange.opacity(0.3), lineWidth: contraBorder)
+                        )
                 }
                 .buttonStyle(.plain)
-                .foregroundColor(.accentColor)
             }
 
             // Expandable detail
             if showingDetail {
                 VStack(alignment: .leading, spacing: 6) {
-                    Divider()
+                    Rectangle()
+                        .fill(darkNavy.opacity(0.08))
+                        .frame(height: 1)
 
                     if !card.evidenceText.isEmpty {
                         Text("Evidence")
-                            .font(.system(size: 10, weight: .semibold))
+                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                            .foregroundColor(darkNavy)
                         Text(card.evidenceText)
                             .font(.system(size: 10))
-                            .foregroundColor(.secondary)
+                            .foregroundColor(darkNavy.opacity(0.5))
                     }
 
                     if !card.stepsPreview.isEmpty {
                         Text("Steps")
-                            .font(.system(size: 10, weight: .semibold))
+                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                            .foregroundColor(darkNavy)
                         ForEach(Array(card.stepsPreview.enumerated()), id: \.offset) { i, step in
                             Text("\(i + 1). \(step)")
                                 .font(.system(size: 10))
-                                .foregroundColor(.secondary)
+                                .foregroundColor(darkNavy.opacity(0.5))
                         }
                     }
                 }
@@ -222,11 +304,11 @@ struct ReviewCard: View {
             }
         }
         .padding(14)
-        .background(Color.primary.opacity(0.03))
-        .cornerRadius(10)
+        .background(lightGray)
+        .cornerRadius(cardRadius)
         .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+            RoundedRectangle(cornerRadius: cardRadius)
+                .stroke(darkNavy.opacity(0.12), lineWidth: contraBorder)
         )
     }
 
@@ -352,7 +434,7 @@ final class MicroReviewViewModel: ObservableObject {
         var success = false
 
         switch (card.type, action) {
-        // Draft SOP cards → approve-trigger.json
+        // Draft SOP cards -> approve-trigger.json
         case (.draftProcedure, .approve):
             success = writeTrigger(
                 dir: stateDir,
@@ -374,7 +456,7 @@ final class MicroReviewViewModel: ObservableObject {
                 ]
             )
 
-        // Trust suggestion cards → trust-accept / trust-dismiss triggers
+        // Trust suggestion cards -> trust-accept / trust-dismiss triggers
         case (.trustSuggestion, .approve):
             success = writeTrigger(
                 dir: stateDir,
@@ -395,7 +477,7 @@ final class MicroReviewViewModel: ObservableObject {
                 ]
             )
 
-        // Stale procedure cards → staleness-reviewed-trigger.json
+        // Stale procedure cards -> staleness-reviewed-trigger.json
         case (.staleAlert, .approve):
             success = writeTrigger(
                 dir: stateDir,
@@ -575,8 +657,8 @@ final class MicroReviewViewModel: ObservableObject {
                     id: sop["sop_id"] as? String ?? UUID().uuidString,
                     type: .draftProcedure,
                     title: title,
-                    recurrence: "—",
-                    duration: "—",
+                    recurrence: "-",
+                    duration: "-",
                     observations: 1,
                     confidence: sop["confidence"] as? Double ?? 0,
                     variables: [],
@@ -607,8 +689,8 @@ final class MicroReviewViewModel: ObservableObject {
                     id: UUID().uuidString,
                     type: .trustSuggestion,
                     title: "Promote: \(slug)",
-                    recurrence: "—",
-                    duration: "—",
+                    recurrence: "-",
+                    duration: "-",
                     observations: evidence["observations"] as? Int ?? 0,
                     confidence: evidence["success_rate"] as? Double ?? 0,
                     variables: [],
@@ -661,8 +743,8 @@ final class MicroReviewViewModel: ObservableObject {
                         id: UUID().uuidString,
                         type: .staleAlert,
                         title: "Review: \(slug)",
-                        recurrence: "—",
-                        duration: "—",
+                        recurrence: "-",
+                        duration: "-",
                         observations: 0,
                         confidence: 0,
                         variables: [],
@@ -722,8 +804,8 @@ final class MicroReviewViewModel: ObservableObject {
                         id: "upgrade-\(slug)",
                         type: .lifecycleUpgrade,
                         title: "Upgrade: \(procTitle)",
-                        recurrence: "—",
-                        duration: "—",
+                        recurrence: "-",
+                        duration: "-",
                         observations: episodes,
                         confidence: confidenceAvg,
                         variables: [],
@@ -735,7 +817,7 @@ final class MicroReviewViewModel: ObservableObject {
                     ))
                 }
 
-                // Drift alerts — from staleness.drift_signals AND staleness.signals
+                // Drift alerts - from staleness.drift_signals AND staleness.signals
                 let staleness = proc["staleness"] as? [String: Any] ?? [:]
                 var driftSignals = staleness["drift_signals"] as? [[String: Any]] ?? []
                 // Also include staleness-generated signals (confidence_drift, etc.)
@@ -754,8 +836,8 @@ final class MicroReviewViewModel: ObservableObject {
                         id: "drift-\(slug)-\(driftType)",
                         type: .driftAlert,
                         title: "Drift: \(procTitle)",
-                        recurrence: "—",
-                        duration: "—",
+                        recurrence: "-",
+                        duration: "-",
                         observations: episodes,
                         confidence: confidenceAvg,
                         variables: [],
@@ -787,8 +869,8 @@ final class MicroReviewViewModel: ObservableObject {
                     id: "merge-\(slugA)-\(slugB)",
                     type: .mergeCandidate,
                     title: "Merge: \(slugA)",
-                    recurrence: "—",
-                    duration: "—",
+                    recurrence: "-",
+                    duration: "-",
                     observations: 0,
                     confidence: similarity,
                     variables: [],
