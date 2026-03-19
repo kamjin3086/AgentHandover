@@ -1732,7 +1732,12 @@ struct OnboardingView: View {
             // Tertiary: Just close, start later
             Button("I'll start later") {
                 onComplete?()
-                NSApplication.shared.keyWindow?.close()
+                // Brief delay so the menu bar icon appears before the window closes
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    // Flash the menu bar icon to draw attention
+                    NSApp.activate(ignoringOtherApps: true)
+                    NSApplication.shared.keyWindow?.close()
+                }
             }
             .foregroundColor(darkNavy.opacity(0.3))
             .buttonStyle(.plain)
