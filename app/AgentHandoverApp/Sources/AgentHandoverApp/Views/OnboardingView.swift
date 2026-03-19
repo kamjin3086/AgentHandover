@@ -843,6 +843,8 @@ struct OnboardingView: View {
 
     // MARK: - Screen 5: Permissions (WHITE BACKGROUND)
 
+    @State private var permissionCheckPending = false
+
     private var permissionsStep: some View {
         VStack(spacing: sectionSpacing) {
             Text("Two permissions to enable")
@@ -857,7 +859,13 @@ struct OnboardingView: View {
                     description: "Read window titles and UI elements",
                     granted: appState.accessibilityGranted,
                     action: {
+                        // Start daemon briefly - macOS will prompt for the daemon binary
+                        ServiceController.startDaemon()
+                        // Also request for this app as fallback
                         PermissionChecker.requestAccessibility()
+                        permissionCheckPending = true
+                        // Poll aggressively for a few seconds after granting
+                        pollPermissionsAfterGrant()
                     },
                     actionLabel: "Grant Access"
                 )
@@ -869,10 +877,25 @@ struct OnboardingView: View {
                     description: "Capture screenshots for AI analysis",
                     granted: appState.screenRecordingGranted,
                     action: {
+                        // Start daemon briefly so macOS knows which binary needs it
+                        ServiceController.startDaemon()
                         PermissionChecker.openScreenRecordingSettings()
+                        permissionCheckPending = true
+                        pollPermissionsAfterGrant()
                     },
                     actionLabel: "Open Settings"
                 )
+            }
+
+            if permissionCheckPending && (!appState.accessibilityGranted || !appState.screenRecordingGranted) {
+                HStack(spacing: 7) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Checking permissions - toggle them on in System Settings, then come back here")
+                        .font(.system(size: 12))
+                        .foregroundColor(darkNavy.opacity(0.5))
+                }
+                .padding(.top, 4)
             }
 
             HStack(spacing: 7) {
@@ -885,6 +908,39 @@ struct OnboardingView: View {
             }
             .multilineTextAlignment(.center)
             .frame(maxWidth: 440)
+        }
+    }
+
+    /// Poll permissions aggressively after user clicks Grant
+    private func pollPermissionsAfterGrant() {
+        // Check every 2 seconds for 30 seconds
+        var checks = 0
+        Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { timer in
+            checks += 1
+            Task { @MainActor in
+                // Re-check our own permissions
+                appState.accessibilityGranted = PermissionChecker.isAccessibilityGranted()
+                appState.screenRecordingGranted = PermissionChecker.isScreenRecordingGranted()
+
+                // Also check daemon status file for its permission report
+                let home = FileManager.default.homeDirectoryForCurrentUser
+                let daemonStatusPath = home
+                    .appendingPathComponent("Library/Application Support/agenthandover/daemon-status.json")
+                if let data = try? Data(contentsOf: daemonStatusPath),
+                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    if json["accessibility_permitted"] as? Bool == true {
+                        appState.accessibilityGranted = true
+                    }
+                    if json["screen_recording_permitted"] as? Bool == true {
+                        appState.screenRecordingGranted = true
+                    }
+                }
+
+                if (appState.accessibilityGranted && appState.screenRecordingGranted) || checks >= 15 {
+                    permissionCheckPending = false
+                    timer.invalidate()
+                }
+            }
         }
     }
 
