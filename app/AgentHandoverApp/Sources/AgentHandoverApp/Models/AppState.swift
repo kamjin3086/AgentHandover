@@ -379,8 +379,22 @@ final class AppState: ObservableObject {
     // MARK: - Permissions
 
     private func checkPermissions() {
-        accessibilityGranted = PermissionChecker.isAccessibilityGranted()
-        screenRecordingGranted = PermissionChecker.isScreenRecordingGranted()
+        // Check this app's own permissions first
+        var accOk = PermissionChecker.isAccessibilityGranted()
+        var scrOk = PermissionChecker.isScreenRecordingGranted()
+
+        // Also check the daemon's reported permissions from its status file.
+        // The user grants permissions to the daemon binary, not this app,
+        // so AXIsProcessTrusted() returns false for us even when the daemon
+        // has permission. The daemon reports its permission state in its
+        // status file.
+        if let status = daemonStatus {
+            if status.accessibility_permitted { accOk = true }
+            if status.screen_recording_permitted { scrOk = true }
+        }
+
+        accessibilityGranted = accOk
+        screenRecordingGranted = scrOk
     }
 
     // MARK: - Helpers
