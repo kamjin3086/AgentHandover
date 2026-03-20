@@ -207,7 +207,7 @@ struct MenuBarView: View {
         VStack(spacing: 6) {
             // Focus Q&A pending
             if appState.focusQuestionsAvailable {
-                Button(action: { openWindow(id: "focus-qa") }) {
+                Button(action: { openAndActivate("focus-qa") }) {
                     HStack(spacing: 10) {
                         ZStack {
                             Circle()
@@ -249,7 +249,7 @@ struct MenuBarView: View {
 
             // Drafts to review
             if appState.sopDraftCount > 0 {
-                Button(action: { openWindow(id: "micro-review") }) {
+                Button(action: { openAndActivate("micro-review") }) {
                     HStack(spacing: 10) {
                         ZStack {
                             Circle()
@@ -464,13 +464,13 @@ struct MenuBarView: View {
             GridItem(.flexible()),
         ], spacing: 8) {
             QuickLink(icon: "tray.full", label: "Workflows", badge: appState.sopTotalCount) {
-                openWindow(id: "workflows")
+                openAndActivate("workflows")
             }
             QuickLink(icon: "calendar.badge.clock", label: "Digest") {
-                openWindow(id: "daily-digest")
+                openAndActivate("daily-digest")
             }
             QuickLink(icon: "checkmark.rectangle.stack", label: "Review") {
-                openWindow(id: "micro-review")
+                openAndActivate("micro-review")
             }
             QuickLink(icon: "gearshape", label: "Settings") {
                 openConfig()
@@ -656,6 +656,13 @@ struct MenuBarView: View {
             return nil
         }
         return startedAt
+    }
+
+    private func openAndActivate(_ windowId: String) {
+        openWindow(id: windowId)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            NSApp.activate(ignoringOtherApps: true)
+        }
     }
 
     private func openConfig() {

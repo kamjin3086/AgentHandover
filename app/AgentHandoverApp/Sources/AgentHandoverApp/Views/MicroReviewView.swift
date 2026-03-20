@@ -171,26 +171,57 @@ struct ReviewCard: View {
             .font(.system(size: 10))
             .foregroundColor(darkNavy.opacity(0.5))
 
-            // Variables preview
+            // Evidence / description
+            if !card.evidenceText.isEmpty {
+                Text(card.evidenceText)
+                    .font(.system(size: 11))
+                    .foregroundColor(darkNavy.opacity(0.6))
+                    .lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            // Steps preview — always visible
+            if !card.stepsPreview.isEmpty {
+                VStack(alignment: .leading, spacing: 3) {
+                    ForEach(Array(card.stepsPreview.prefix(4).enumerated()), id: \.offset) { i, step in
+                        HStack(alignment: .top, spacing: 6) {
+                            Text("\(i + 1)")
+                                .font(.system(size: 9, weight: .bold, design: .rounded))
+                                .foregroundColor(.white)
+                                .frame(width: 16, height: 16)
+                                .background(Circle().fill(warmOrange))
+                            Text(step)
+                                .font(.system(size: 11))
+                                .foregroundColor(darkNavy.opacity(0.7))
+                                .lineLimit(1)
+                        }
+                    }
+                    if card.stepsPreview.count > 4 {
+                        Text("+\(card.stepsPreview.count - 4) more steps")
+                            .font(.system(size: 10))
+                            .foregroundColor(darkNavy.opacity(0.4))
+                            .padding(.leading, 22)
+                    }
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.white)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(darkNavy.opacity(0.08), lineWidth: 1)
+                )
+            }
+
+            // Variables
             if !card.variables.isEmpty {
                 HStack(spacing: 4) {
                     Text("Variables:")
                         .font(.system(size: 10))
                         .foregroundColor(darkNavy.opacity(0.5))
                     Text(card.variables.joined(separator: ", "))
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(darkNavy.opacity(0.7))
-                        .lineLimit(1)
-                }
-            }
-
-            // Outcome preview
-            if let outcome = card.outcome {
-                HStack(spacing: 4) {
-                    Text("Outcome:")
-                        .font(.system(size: 10))
-                        .foregroundColor(darkNavy.opacity(0.5))
-                    Text(outcome)
                         .font(.system(size: 10, weight: .medium))
                         .foregroundColor(darkNavy.opacity(0.7))
                         .lineLimit(1)
@@ -653,6 +684,34 @@ final class MicroReviewViewModel: ObservableObject {
                 let slug = sop["slug"] as? String ?? ""
                 let title = sop["short_title"] as? String ?? sop["title"] as? String ?? slug
 
+                // Load procedure JSON to get steps, strategy, description
+                var steps: [String] = []
+                var description = ""
+                var strategy = ""
+                var variables: [String] = []
+                let procPath = kbDir.appendingPathComponent("procedures/\(slug).json")
+                if let procData = try? Data(contentsOf: procPath),
+                   let proc = try? JSONSerialization.jsonObject(with: procData) as? [String: Any] {
+                    // Extract steps
+                    if let procSteps = proc["steps"] as? [[String: Any]] {
+                        steps = procSteps.map { s in
+                            s["action"] as? String ?? s["step"] as? String ?? ""
+                        }.filter { !$0.isEmpty }
+                    }
+                    // Extract strategy
+                    strategy = proc["strategy"] as? String ?? ""
+                    // Extract description
+                    description = proc["description"] as? String ?? proc["task_description"] as? String ?? ""
+                    // Extract variable names
+                    if let inputs = proc["inputs"] as? [[String: Any]] {
+                        variables = inputs.compactMap { $0["name"] as? String }
+                    }
+                }
+
+                let evidenceText = !strategy.isEmpty ? strategy :
+                    (!description.isEmpty ? description :
+                    "Source: \(sop["source"] as? String ?? "unknown")")
+
                 cards.append(ReviewCardData(
                     id: sop["sop_id"] as? String ?? UUID().uuidString,
                     type: .draftProcedure,
@@ -661,10 +720,10 @@ final class MicroReviewViewModel: ObservableObject {
                     duration: "-",
                     observations: 1,
                     confidence: sop["confidence"] as? Double ?? 0,
-                    variables: [],
+                    variables: variables,
                     outcome: nil,
-                    evidenceText: "Source: \(sop["source"] as? String ?? "unknown")",
-                    stepsPreview: [],
+                    evidenceText: evidenceText,
+                    stepsPreview: steps,
                     slug: slug
                 ))
             }

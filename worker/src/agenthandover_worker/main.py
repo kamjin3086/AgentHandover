@@ -860,7 +860,7 @@ def _write_sops_index(
         all_sops = [
             s for s in all_sops_raw
             if s.get("source", "") in _V2_SOURCES
-            or s.get("confidence", 0) >= 0.5
+            and s.get("confidence", 0) > 0
         ]
 
         draft_count = sum(1 for s in all_sops if s.get("status") == "draft")
