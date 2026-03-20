@@ -195,7 +195,8 @@ final class AppState: ObservableObject {
 
     func startPolling() {
         pollTimer?.invalidate()
-        pollTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+        // Poll every 30s in background — fast refresh happens on menu bar open
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.refreshStatus()
             }

@@ -62,6 +62,8 @@ struct MenuBarView: View {
         }
         // Q&A window is opened manually via the attention card — no auto-open
         .onAppear {
+            // Refresh immediately when user opens menu bar
+            appState.refreshStatus()
             if !hasCompletedOnboarding && delegate.pendingOnboarding {
                 delegate.pendingOnboarding = false
                 delegate.showOnboarding(appState: appState)
