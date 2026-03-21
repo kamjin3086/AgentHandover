@@ -863,8 +863,7 @@ def _write_sops_index(
             and s.get("confidence", 0) > 0
         ]
 
-        draft_count = sum(1 for s in all_sops if s.get("status") == "draft")
-        approved_count = sum(1 for s in all_sops if s.get("status") == "approved")
+        # draft_count and approved_count computed after dedup below
 
         # Load full sop_json for each SOP to extract short_title/tags
         sop_templates: dict[str, dict] = {}
@@ -921,6 +920,27 @@ def _write_sops_index(
                 "reviewed_at": s.get("reviewed_at"),
                 "lifecycle_state": lifecycle_state,
             })
+
+        # Deduplicate by slug — keep highest confidence entry per slug
+        seen_slugs: dict[str, int] = {}
+        deduped: list[dict] = []
+        for entry in sop_entries:
+            slug = entry.get("slug", "")
+            if not slug:
+                deduped.append(entry)
+                continue
+            conf = entry.get("confidence", 0.0)
+            if slug in seen_slugs:
+                existing_idx = seen_slugs[slug]
+                if conf > deduped[existing_idx].get("confidence", 0.0):
+                    deduped[existing_idx] = entry
+            else:
+                seen_slugs[slug] = len(deduped)
+                deduped.append(entry)
+        sop_entries = deduped
+
+        draft_count = sum(1 for s in sop_entries if s.get("status") == "draft")
+        approved_count = sum(1 for s in sop_entries if s.get("status") == "approved")
 
         index = {
             "updated_at": datetime.now(timezone.utc).strftime(
