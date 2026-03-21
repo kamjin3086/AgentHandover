@@ -659,9 +659,26 @@ struct MenuBarView: View {
     }
 
     private func openAndActivate(_ windowId: String) {
+        NSApp.setActivationPolicy(.regular)
         openWindow(id: windowId)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
             NSApp.activate(ignoringOtherApps: true)
+            // Find and bring the window to front
+            for window in NSApp.windows {
+                if window.title.lowercased().contains(windowId.replacingOccurrences(of: "-", with: " ").lowercased())
+                    || window.title == "Workflows"
+                    || window.title == "Review Queue"
+                    || window.title == "Daily Digest"
+                    || window.title == "Focus Q&A" {
+                    window.makeKeyAndOrderFront(nil)
+                    window.orderFrontRegardless()
+                    break
+                }
+            }
+            // Go back to accessory after a moment
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                NSApp.setActivationPolicy(.accessory)
+            }
         }
     }
 
