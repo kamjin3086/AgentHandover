@@ -1,184 +1,144 @@
 <p align="center">
-  <img src="resources/favicon.png" width="140" alt="AgentHandover — briefcase with binoculars" />
+  <img src="resources/favicon.png" width="140" alt="AgentHandover" />
 </p>
 
 <h1 align="center">AgentHandover</h1>
 
 <p align="center">
-  <strong>Watch your screen. Learn your workflows. Hand them to agents.</strong>
+  <strong>Work once. Hand over forever.</strong>
 </p>
 
 <p align="center">
-  <a href="#install">Install</a> &middot;
+  <a href="#what-you-get">What You Get</a> &middot;
   <a href="#how-it-works">How It Works</a> &middot;
-  <a href="#why-not-just-screen-recording">Why Not Just Screen Recording</a> &middot;
-  <a href="#usage">Usage</a> &middot;
+  <a href="#install">Install</a> &middot;
+  <a href="#the-menu-bar-app">The App</a> &middot;
+  <a href="#for-agent-developers">For Agent Developers</a> &middot;
   <a href="#privacy">Privacy</a>
 </p>
 
 ---
 
-Every time you hand a task to an AI agent, you end up explaining the same steps you already know how to do. Open this app, go to this URL, fill in these fields, click submit, verify it worked. You do it every day without thinking — but your agent needs a manual.
+You already know how to do your work. Now your agents can too.
 
-AgentHandover writes that manual by watching you work. It runs locally on your Mac, observes your screen, and turns your real workflows into step-by-step procedures that agents like Claude Code and OpenClaw can follow.
+AgentHandover watches you work on your Mac, understands what you're doing and why, and turns your real workflows into step-by-step procedures that agents can follow. Not screen recordings. Not macros. Actual procedures with strategy, decision criteria, guardrails, and timing - the kind of context a capable agent needs to do the work right.
 
-You keep working. AgentHandover watches, learns, and writes the manual.
+You keep working normally. AgentHandover writes the manual.
 
 ## What You Get
 
+Here is a real example of what AgentHandover produces. This procedure was generated from a few focus recording sessions of Reddit community engagement:
+
 ```
-You work normally on your laptop
-        ↓
-AgentHandover silently observes (screenshots + vision model)
-        ↓
-It understands what you're doing, not just what's on screen
-        ↓
-Repeated workflows are detected, aligned, and merged automatically
-        ↓
-Behavioral synthesis extracts the strategy behind the steps
-        ↓
-You review and approve in the menu bar app
-        ↓
-Agent-ready procedure files exported to OpenClaw / Claude Code
+Reddit Community Marketing
+Daily engagement workflow - 6 steps - 4 sessions learned
+
+STRATEGY
+Browse target subreddits for posts about marketing tools or growth
+hacking. Engage with high-signal posts (10+ comments, posted within
+48h, not promotional). Write authentic replies that acknowledge the
+problem, share personal experience, and softly mention the product.
+
+STEPS
+1. Open Reddit and navigate to r/startups
+2. Scan posts - skip promotional, skip < 10 comments
+3. Open high-signal post and read top comments
+4. Write reply: acknowledge -> experience -> mention product
+5. Submit and verify not auto-removed
+6. Repeat for r/marketing, r/growthacking (max 5/day)
+
+SELECTION CRITERIA              GUARDRAILS
+- Posts with 10+ comments       - Max 5 replies per day
+- Not promotional or competitor - Never identical phrasing
+- Posted within 48 hours        - Never reply to own posts
+- Relevant to [product category]- Empathy-first tone always
+
+~15 min daily - 9-10am                     Confidence: 89%
 ```
 
-**No macros. No brittle automation scripts. No manual documentation.** AgentHandover captures *intent* — what you're doing and why — augmented with real DOM context (CSS selectors, ARIA labels, form field IDs) from the Chrome extension. The output isn't just mechanical steps — it's a procedure with strategy, selection criteria, content templates, guardrails, and timing patterns that agents can follow with judgment, not just clicks.
-
-## Why Not Just Screen Recording?
-
-Screen recording gives you pixels. AgentHandover gives you *understanding*.
-
-| | Screen recording | AgentHandover |
-|---|---|---|
-| **What it captures** | Raw video frames | Structured intent + DOM context: "User is filing an expense report in Chrome on Expensify, clicking `#submit-btn` in a form with ARIA label 'Expense Form'" |
-| **What it knows** | Nothing — just pixels | App context, task purpose, step sequence, CSS selectors, form field IDs, ARIA labels, verification criteria |
-| **How it handles noise** | Records everything equally | Classifies activity into 8 types (work, research, communication, entertainment...) and filters noise automatically |
-| **How it handles interruptions** | Breaks the recording | Tracks task continuity across interruptions — if you pause for Slack and come back, it reconnects the workflow |
-| **What happens with repetition** | You get multiple identical recordings | Demonstrations are semantically aligned and merged into one canonical procedure with typed variables, confidence scores, and behavioral insights |
-| **What the output looks like** | A video file | A structured SKILL.md with steps, strategy, selection criteria, content templates, guardrails, timing patterns, inputs, outputs, preconditions, verification criteria, failure recovery, and a DOM hints appendix with CSS selectors for browser automation |
-| **Can an agent use it?** | No | Yes — with lifecycle gates, readiness checks, and execution monitoring |
-
-The intelligence comes from a **local vision-language model** that looks at each screenshot and answers: *What app is this? What is the user doing? Is this a repeatable workflow or just browsing?* That structured understanding is what makes the difference between "a recording" and "a learned procedure."
+This is what your agent receives. Not just steps, but the strategy, decisions, and guardrails behind them.
 
 ## How It Works
 
-### The observation pipeline
+### Two ways to teach it
 
-AgentHandover runs four layers of intelligence on every screen capture:
+**Focus Recording** - Click Record in the menu bar, name the task, perform it, click Stop. A few minutes later, you get a complete procedure. Best for workflows you want to hand over right now.
 
-**Layer 1: See** — A local vision model (running on your machine, not in the cloud) looks at each screenshot and produces a structured annotation: what app is open, what URL, what the user is doing, what they'll likely do next, and whether this looks like a repeatable workflow. When the Chrome extension is loaded, this is enriched with **real DOM context** — CSS selectors, ARIA labels, `data-testid` attributes, form field names, and Shadow DOM paths — giving agents precise targets for browser automation, not just visual descriptions.
+**Passive Discovery** - Just work normally. When AgentHandover sees the same task appear in 2+ sessions, it generates a procedure automatically. No action required. Good for catching workflows you didn't think to record.
 
-**Layer 2: Classify** — An 8-class activity classifier separates signal from noise. Your expense filing is "work." Your Reddit scrolling is "entertainment." Your Slack reply is "communication." Only workflow-relevant activity feeds into learning. You can override any classification with policy rules (e.g., "always ignore YouTube", "always track VS Code").
+### Focus Q&A
 
-**Layer 3: Connect** — A continuity tracker links related work across interruptions, app switches, and time gaps. If you start a PR review, get pulled into a Slack thread, and come back 20 minutes later, AgentHandover knows it's the same task. It builds confidence-ranked spans, not hard IDs — when uncertain, it keeps segments separate rather than falsely merging.
+After a focus recording, AgentHandover asks 1-3 targeted questions before producing the final deliverable. These fill in gaps that screen observation alone can't capture:
 
-**Layer 4: Learn** — When the same workflow appears in 2+ demonstrations, the system aligns steps semantically using Needleman-Wunsch dynamic programming (not positional matching), extracts parameters that vary across demonstrations (e.g., the domain name you searched), detects branches and variants, and produces a canonical procedure with evidence-weighted confidence. Pre-computed alignments, parameters, and branches are fed into the VLM so it can focus on strategy and decision logic instead of step discovery.
+- "Does this workflow require logging into Reddit?"
+- "What determines which posts you engage with vs. skip?"
+- "How do you verify the reply wasn't auto-removed?"
 
-**Layer 5: Synthesize** — After 3+ observations accumulate, a behavioral synthesis pass extracts the higher-level patterns behind the steps: the overall *strategy* (why you do this, not just what you click), *selection criteria* (what you engage with vs skip), *content templates* (structural patterns in text you produce), *guardrails* (things you consistently avoid), *decision branches* (conditions that determine different paths), and *timing patterns* (phases, durations, think points). This runs automatically in the daily batch and re-runs every 3 additional observations. Before raw annotations expire at 14 days, valuable evidence (content produced, dwell-time engagement signals, URL patterns) is extracted and stored permanently on the procedure.
+Your answers are merged into the procedure so the agent has complete context. You can skip questions and it will use reasonable defaults.
+
+### What happens under the hood
+
+A local vision-language model (running on your machine, not in the cloud) watches each screenshot and produces a structured annotation: what app is open, what URL, what you're doing, what you'll likely do next. When the Chrome extension is loaded, this is enriched with real DOM context - CSS selectors, ARIA labels, form field IDs - giving agents precise targets for browser automation.
+
+An activity classifier separates signal from noise. Your expense filing is "work." Your YouTube break is "entertainment." Only workflow-relevant activity feeds into learning.
+
+A continuity tracker links related work across interruptions. Start a PR review, get pulled into Slack, come back 20 minutes later - AgentHandover knows it's the same task.
+
+When the same workflow appears in multiple demonstrations, steps are aligned semantically (not by position), parameters are extracted, branches are detected, and the result is a single canonical procedure with confidence scores.
+
+After 3+ observations accumulate, a behavioral synthesis pass extracts the higher-level patterns: overall strategy, selection criteria, content templates, guardrails, decision branches, and timing patterns.
 
 ### Screenshots are temporary
 
-Screenshots are captured as half-resolution JPEGs (~270 KB each), deduplicated via perceptual hashing (70% of frames are duplicates and get dropped immediately), and **deleted after the vision model processes them, whether the annotation succeeds or fails**. Only the structured JSON annotation (~500 bytes) is kept. Your screen content never accumulates on disk.
-
-### Two observation modes
-
-**Focus Recording** — Click Record in the menu bar, name the task, perform it, click Stop. One demonstration → one SKILL.md in ~60 seconds.
-
-```bash
-agenthandover focus start "File expense report"
-# ... do the workflow ...
-agenthandover focus stop
-```
-
-**Passive Discovery** — Just work normally. When the same task appears in 2+ demonstrations (detected by embedding similarity), a procedure is generated automatically. No user action required.
-
-### Any vision model, not just Qwen
-
-AgentHandover defaults to local Qwen models via Ollama because they're free, fast, and private. But you can use **any of 6 supported backends**:
-
-| Backend | How to use | Best for |
-|---------|-----------|----------|
-| **Ollama** (default) | `ollama pull qwen3.5:2b` | Local, free, private |
-| **MLX** | Apple Silicon native | Fastest on Mac |
-| **llama.cpp** | CPU/GPU flexible | Cross-platform local |
-| **OpenAI** | `mode = "remote"` in config | Highest quality (GPT-4o) |
-| **Anthropic** | `mode = "remote"` in config | Claude vision |
-| **Google** | `mode = "remote"` in config | Gemini vision |
-
-Switch models by editing `annotation_model` and `sop_model` in config, or run `agenthandover setup --vlm` for guided setup. Remote APIs require explicit opt-in and show a privacy warning.
-
-### Review and approve
-
-Generated procedures appear as drafts in the menu bar app. You review, approve, and promote them through a lifecycle:
-
-```
-Observed → Draft → Reviewed → Verified → Agent Ready
-```
-
-Each promotion requires your approval. No procedure reaches agents without your sign-off. The system suggests promotions based on evidence (observation count, confidence, execution success rate) but never auto-promotes.
-
-The menu bar app surfaces:
-- **Draft SOPs** to approve or reject
-- **Trust suggestions** — earned enough evidence for higher agent permissions
-- **Lifecycle upgrades** — ready for promotion based on observation evidence
-- **Merge candidates** — similar procedures that might be duplicates
-- **Drift alerts** — procedures whose observed behavior has changed
-- **Stale alerts** — procedures not seen recently
-
-### Agent-ready export
-
-Approved procedures are compiled into target-specific formats from a single canonical source:
-
-| Format | Location | Used by |
-|--------|----------|---------|
-| **SKILL.md** | `~/.openclaw/workspace/memory/apprentice/sops/` | OpenClaw agents |
-| **Claude Code Skill** | `~/.claude/skills/<slug>/SKILL.md` | Claude Code (`/skill-name`) |
-| **v3 Procedure JSON** | `~/.agenthandover/knowledge/procedures/` | Any agent via Query API |
-
-Agents query `GET /ready` on port 9477 to discover executable procedures, or `GET /bundle/<slug>` for a fully resolved handoff package with readiness checks, preflight validation, and execution stats.
-
-### What makes a procedure "agent ready"?
-
-Not just generation — a procedure must pass multiple gates:
-
-| Gate | What it checks | Who decides |
-|------|---------------|-------------|
-| **Lifecycle** | Has the human reviewed and promoted it through observed → draft → reviewed → verified → agent_ready? | Human |
-| **Trust level** | Is the agent authorized to execute (not just observe or draft)? | Human (via trust suggestions) |
-| **Freshness** | Has the procedure been observed recently? Stale procedures auto-demote. | System |
-| **Preflight** | Are required apps running? Any blocked domains? Steps present? | System |
-| **Evidence** | How many observations? Any contradictions? What's the confidence? | System |
-| **Execution history** | Has it succeeded when agents tried it before? 3+ failures → auto-demotion. | System |
-
-All six must pass. A procedure with lifecycle=agent_ready but low freshness won't execute. A fresh procedure with trust=observe won't execute either. The system is designed to be **truthful about readiness** — it will never tell an agent a procedure is ready when it isn't.
+Screenshots are captured as half-resolution JPEGs, deduplicated via perceptual hashing (70% of frames are duplicates and get dropped immediately), and deleted after the vision model processes them - whether the annotation succeeds or fails. Only the structured annotation (~500 bytes) is kept. Your screen content never accumulates on disk.
 
 ## Install
 
-### Recommended: macOS Installer
+### Download and run
 
-Download the latest `.pkg` from [**Releases**](https://github.com/sandroandric/AgentHandover/releases) and double-click to install.
+Download the latest `.pkg` from [**Releases**](https://github.com/sandroandric/OpenMimic/releases) and double-click to install.
 
-Then:
-
-```bash
-agenthandover doctor     # Verify everything is set up
-agenthandover start all  # Start observing
-```
-
-That's it. The daemon, worker, CLI, and Chrome extension are installed to standard paths.
+The app opens a guided setup that walks you through everything: permissions, vision model download, and Chrome extension install. Follow the prompts and you're done.
 
 <details>
-<summary><strong>Developer install</strong> (Homebrew or source)</summary>
+<summary><strong>Developer / advanced install</strong></summary>
 
-**Homebrew:**
+### CLI setup (if you skip the onboarding)
+
+```bash
+agenthandover doctor     # Verify all prerequisites
+agenthandover start all  # Start daemon + worker
+```
+
+Fix any `FAIL` items from `doctor`. Usually:
+- **Accessibility** - System Settings > Privacy & Security > Accessibility > add `agenthandover-daemon`
+- **Screen Recording** - same location
+
+### Pull VLM models manually (~6 GB for default local models)
+
+```bash
+ollama pull qwen3.5:2b         # Scene annotation
+ollama pull qwen3.5:4b         # SOP generation
+ollama pull all-minilm:l6-v2   # Task embeddings
+```
+
+Or: `agenthandover setup --vlm` for guided setup (includes cloud API option).
+
+### Load Chrome extension manually
+
+Open `chrome://extensions` > Enable Developer Mode > Load unpacked > select the extension directory shown by `agenthandover doctor`.
+
+### Homebrew
+
 ```bash
 brew tap sandroandric/agenthandover
 brew install --HEAD agenthandover
 ```
 
-**Source build** (requires Rust, Node.js 18+, Python 3.11+):
+### Source build (requires Rust, Node.js 18+, Python 3.11+)
+
 ```bash
-git clone https://github.com/sandroandric/AgentHandover.git && cd AgentHandover
+git clone https://github.com/sandroandric/OpenMimic.git && cd OpenMimic
 just build-all           # Daemon, CLI, worker venv, extension, app
 ./scripts/setup.sh       # Native messaging host + VLM setup
 
@@ -194,61 +154,50 @@ sed -i '' "s|/usr/local/lib/agenthandover|$(pwd)/worker|" \
 
 </details>
 
-### First-time setup
+### Choose your vision model
 
-After install, three things need to happen once:
+AgentHandover defaults to local Qwen models via Ollama because they're free, fast, and private. You can use any of 6 supported backends:
 
-**1. Grant permissions**
+| Backend | How to use | Best for |
+|---------|-----------|----------|
+| **Ollama** (default) | `ollama pull qwen3.5:2b` | Local, free, private |
+| **MLX** | Apple Silicon native | Fastest on Mac |
+| **llama.cpp** | CPU/GPU flexible | Cross-platform local |
+| **OpenAI** | `mode = "remote"` in config | Highest quality (GPT-4o) |
+| **Anthropic** | `mode = "remote"` in config | Claude vision |
+| **Google** | `mode = "remote"` in config | Gemini vision |
 
-```bash
-agenthandover doctor
-```
+Switch models by editing `annotation_model` and `sop_model` in config, or run `agenthandover setup --vlm` for guided setup. Remote APIs require explicit opt-in and show a privacy warning.
 
-Fix any `FAIL` items. Usually:
-- **Accessibility** — System Settings → Privacy & Security → Accessibility → add `agenthandover-daemon`
-- **Screen Recording** — same location
+## The Menu Bar App
 
-**2. Pull VLM models** (~6 GB for default local models)
+AgentHandover lives in your menu bar. Click the icon and you'll see:
 
-```bash
-ollama pull qwen3.5:2b         # Scene annotation
-ollama pull qwen3.5:4b         # SOP generation
-ollama pull all-minilm:l6-v2   # Task embeddings
-```
+- **Status** - whether the daemon and worker are running, with a green/yellow/red indicator
+- **Today's stats** - events captured, annotations completed, procedures generated
+- **Attention items** - Focus Q&A questions waiting for answers, draft procedures ready for review
+- **Record button** - one click to start a focus recording, name it, perform the workflow, stop
+- **Workflows** - browse all your procedures, approve drafts, see confidence and observation counts
+- **Digest** - daily summary of what was learned, what changed, what needs your attention
 
-Or: `agenthandover setup --vlm` for guided setup (includes cloud API option).
+### Review and approve
 
-**3. Load Chrome extension** (recommended — adds CSS selectors, ARIA labels, and form field IDs to procedures)
+Generated procedures appear as drafts in the Workflows view. Review the procedure - strategy, steps, guardrails, everything. Click "Approve for Agents" when it looks good. One click.
 
-Open `chrome://extensions` → Enable Developer Mode → Load unpacked → select the extension directory shown by `agenthandover doctor`.
+No procedure reaches agents without your sign-off. The system suggests promotions based on evidence (observation count, confidence, execution success rate) but never auto-promotes.
 
-## Usage
+## For Agent Developers
 
-### CLI quick reference
-
-| Command | Description |
-|---------|-------------|
-| `agenthandover status` | Service health and stats |
-| `agenthandover start all` | Start daemon + worker |
-| `agenthandover stop all` | Stop services |
-| `agenthandover focus start "title"` | Record a workflow |
-| `agenthandover focus stop` | Stop recording, generate SOP |
-| `agenthandover sops list` | List all SOPs |
-| `agenthandover sops drafts` | List SOPs awaiting review |
-| `agenthandover sops approve <slug>` | Approve a draft for export |
-| `agenthandover sops promote <slug> <state>` | Promote lifecycle (e.g., `reviewed`, `agent_ready`) |
-| `agenthandover doctor` | Pre-flight health check |
-| `agenthandover watch` | Live dashboard |
-| `agenthandover export --format claude-skill` | Re-export as Claude Code skills |
-| `agenthandover logs worker -f` | Follow worker logs |
-
-### Query API (for agent developers)
+### Query API
 
 The worker runs a local HTTP API on port 9477:
 
 ```bash
-# Discover agent-ready procedures
+# Discover agent-ready procedures (only returns executable ones)
 curl http://localhost:9477/ready
+
+# Discover ALL procedures with readiness info (includes drafts, blocked_by reasons)
+curl http://localhost:9477/available
 
 # Get a full handoff bundle for execution
 curl http://localhost:9477/bundle/file-expense-report
@@ -265,12 +214,75 @@ curl -X POST http://localhost:9477/curation/promote \
   -d '{"slug": "file-expense-report", "to_state": "agent_ready"}'
 ```
 
-## Architecture
+`/ready` returns only procedures that pass all readiness gates. If it's in the response, an agent can execute it. `/available` returns every procedure with its full readiness assessment, including `blocked_by` reasons - use it for browsing, dashboards, and agent discovery of draft work.
+
+### Export formats
+
+Approved procedures are compiled into target-specific formats from a single canonical source:
+
+| Format | Location | Used by |
+|--------|----------|---------|
+| **SKILL.md** | `~/.openclaw/workspace/memory/apprentice/sops/` | OpenClaw agents |
+| **Claude Code Skill** | `~/.claude/skills/<slug>/SKILL.md` | Claude Code (`/skill-name`) |
+| **v3 Procedure JSON** | `~/.agenthandover/knowledge/procedures/` | Any agent via Query API |
+
+### CLI reference
+
+| Command | Description |
+|---------|-------------|
+| `agenthandover status` | Service health and stats |
+| `agenthandover start all` | Start daemon + worker |
+| `agenthandover stop all` | Stop services |
+| `agenthandover focus start "title"` | Record a workflow |
+| `agenthandover focus stop` | Stop recording, generate procedure |
+| `agenthandover sops list` | List all procedures |
+| `agenthandover sops drafts` | List procedures awaiting review |
+| `agenthandover sops approve <slug>` | Approve a draft for export |
+| `agenthandover sops promote <slug> <state>` | Promote lifecycle (e.g., `reviewed`, `agent_ready`) |
+| `agenthandover doctor` | Pre-flight health check |
+| `agenthandover watch` | Live dashboard |
+| `agenthandover export --format claude-skill` | Re-export as Claude Code skills |
+| `agenthandover logs worker -f` | Follow worker logs |
+
+<details>
+<summary><strong>How the lifecycle works</strong></summary>
+
+Each procedure moves through a lifecycle with your approval at each stage:
+
+```
+Observed -> Draft -> Reviewed -> Verified -> Agent Ready
+```
+
+A procedure must pass multiple readiness gates before agents can use it:
+
+| Gate | What it checks | Who decides |
+|------|---------------|-------------|
+| **Lifecycle** | Has the human reviewed and promoted it through each stage? | Human |
+| **Trust level** | Is the agent authorized to execute (not just observe or draft)? | Human (via trust suggestions) |
+| **Freshness** | Has the procedure been observed recently? Stale procedures auto-demote. | System |
+| **Preflight** | Are required apps running? Any blocked domains? Steps present? | System |
+| **Evidence** | How many observations? Any contradictions? What's the confidence? | System |
+| **Execution history** | Has it succeeded when agents tried it before? 3+ failures auto-demote. | System |
+
+All six must pass. A procedure with lifecycle=agent_ready but low freshness won't execute. A fresh procedure with trust=observe won't execute either. The system is truthful about readiness - it will never tell an agent a procedure is ready when it isn't.
+
+The menu bar app surfaces:
+- **Draft procedures** to approve or reject
+- **Trust suggestions** - earned enough evidence for higher agent permissions
+- **Lifecycle upgrades** - ready for promotion based on observation evidence
+- **Merge candidates** - similar procedures that might be duplicates
+- **Drift alerts** - procedures whose observed behavior has changed
+- **Stale alerts** - procedures not seen recently
+
+</details>
+
+<details>
+<summary><strong>Architecture</strong></summary>
 
 ```
 ┌──────────────────────────────────────────────────────┐
 │              Menu Bar App (SwiftUI)                   │
-│   Status · Focus recording · Review queue · Digest   │
+│   Status · Focus recording · Workflows · Digest      │
 └───────────────────────┬──────────────────────────────┘
                         │ trigger files (JSON)
                         ▼
@@ -290,13 +302,16 @@ Chrome Extension ──→ Daemon (Rust) ──SQLite WAL──→ Worker (Pytho
 
 | Component | Language | Role |
 |-----------|----------|------|
-| **Daemon** | Rust | Always-on observer — screenshots, OS events, clipboard, dHash dedup |
-| **Worker** | Python | Pipeline — VLM annotation, classification, segmentation, variant alignment, SOP generation, behavioral synthesis, evidence extraction, lifecycle, curation |
-| **Extension** | TypeScript | Chrome MV3 — DOM snapshots, click intent, dwell/scroll tracking |
+| **Daemon** | Rust | Always-on observer - screenshots, OS events, clipboard, dHash dedup |
+| **Worker** | Python | Pipeline - VLM annotation, classification, segmentation, variant alignment, SOP generation, behavioral synthesis, evidence extraction, lifecycle, curation |
+| **Extension** | TypeScript | Chrome MV3 - DOM snapshots, click intent, dwell/scroll tracking |
 | **CLI** | Rust | Service management, focus recording, SOP approval, lifecycle promotion |
-| **App** | SwiftUI | Menu bar — status, focus recording, review queue, daily digest |
+| **App** | SwiftUI | Menu bar - status, focus recording, workflows, daily digest |
 
-### Processing budget
+</details>
+
+<details>
+<summary><strong>Processing budget</strong></summary>
 
 AgentHandover uses ~40% of GPU time per work hour. 36 minutes of headroom remain for your own GPU tasks.
 
@@ -308,14 +323,33 @@ AgentHandover uses ~40% of GPU time per work hour. 36 minutes of headroom remain
 | SOP generation | 2.4 min | Thinking mode, enriched with variant analysis |
 | Behavioral synthesis | 0.5 min | Daily batch only, when 3+ observations accumulate |
 
+</details>
+
+<details>
+<summary><strong>Why not just screen recording?</strong></summary>
+
+Screen recording gives you pixels. AgentHandover gives you understanding.
+
+| | Screen recording | AgentHandover |
+|---|---|---|
+| **What it captures** | Raw video frames | Structured intent + DOM context |
+| **What it knows** | Nothing - just pixels | App context, task purpose, step sequence, CSS selectors, form field IDs, ARIA labels, verification criteria |
+| **How it handles noise** | Records everything equally | Classifies activity into 8 types and filters noise automatically |
+| **How it handles interruptions** | Breaks the recording | Tracks task continuity across interruptions and reconnects the workflow |
+| **What happens with repetition** | Multiple identical recordings | Demonstrations are aligned and merged into one canonical procedure with typed variables and confidence scores |
+| **What the output looks like** | A video file | A structured procedure with steps, strategy, selection criteria, guardrails, timing, DOM hints, and verification criteria |
+| **Can an agent use it?** | No | Yes - with lifecycle gates, readiness checks, and execution monitoring |
+
+</details>
+
 ## Privacy
 
 AgentHandover is designed to never leave your machine:
 
 - **Local-first.** All VLM inference runs locally via Ollama by default. Cloud APIs are opt-in with explicit consent and a privacy warning.
-- **Screenshots are temporary.** Raw JPEGs are deleted immediately after the vision model annotates them. Only the structured annotation (~500 bytes) is kept — never the screenshot itself.
+- **Screenshots are temporary.** Raw JPEGs are deleted immediately after the vision model annotates them. Only the structured annotation (~500 bytes) is kept - never the screenshot itself.
 - **Auto-redaction.** API keys, tokens, passwords, and credit card numbers are detected and scrubbed before storage.
-- **Secure field exclusion.** Password and credit card inputs are dropped entirely — never captured, never stored.
+- **Secure field exclusion.** Password and credit card inputs are dropped entirely - never captured, never stored.
 - **Encryption at rest.** Artifacts use zstd compression + XChaCha20-Poly1305.
 - **Configurable retention.** Raw events pruned after 14 days, episodes after 90 days. Valuable evidence (content patterns, engagement signals, timing) is extracted and stored permanently on procedures before raw events expire.
 - **No telemetry.** Pipeline metrics are local-only JSON files. Nothing phones home. Ever.
@@ -325,7 +359,7 @@ AgentHandover is designed to never leave your machine:
 Config lives at `~/Library/Application Support/agenthandover/config.toml`.
 
 <details>
-<summary>Full configuration reference</summary>
+<summary><strong>Full configuration reference</strong></summary>
 
 ### Observer
 
@@ -343,7 +377,7 @@ Config lives at `~/Library/Application Support/agenthandover/config.toml`.
 | `annotation_model` | qwen3.5:2b | Any Ollama model name, or cloud model ID |
 | `sop_model` | qwen3.5:4b | SOP generation model |
 | `mode` | local | `local` (Ollama) or `remote` (cloud API) |
-| `provider` | — | For remote: `openai`, `anthropic`, or `google` |
+| `provider` | - | For remote: `openai`, `anthropic`, or `google` |
 | `max_jobs_per_day` | 50 | VLM inference budget |
 | `max_compute_minutes_per_day` | 20 | GPU time budget |
 
@@ -389,14 +423,14 @@ agenthandover logs worker   # Worker-specific errors
 <details>
 <summary>No events being captured</summary>
 
-- Verify Accessibility permission: System Settings → Privacy & Security → Accessibility
+- Verify Accessibility permission: System Settings > Privacy & Security > Accessibility
 - Check `agenthandover status` for daemon health
 - Ensure Chrome extension is loaded and enabled
 
 </details>
 
 <details>
-<summary>No SOPs being generated</summary>
+<summary>No procedures being generated</summary>
 
 - **Passive mode** requires 2+ similar demonstrations of the same workflow within a 24-hour window
 - Verify Ollama is running: `ollama list`
