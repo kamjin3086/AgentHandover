@@ -74,6 +74,64 @@ def procedure_to_sop_template(procedure: dict) -> dict:
     }
 
 
+def render_voice_style_section(procedure: dict) -> list[str]:
+    """Render voice/style guidance for agent-facing exports.
+
+    Returns markdown lines that tell the agent HOW to write (tone,
+    formality, sentence length) — not just WHAT to do.  Returns empty
+    list if no style data is available.
+    """
+    lines: list[str] = []
+    vp = procedure.get("voice_profile", {})
+    samples = procedure.get("content_samples", [])
+
+    if not vp and not samples:
+        return lines
+
+    # Only render if we have moderate+ confidence (not one-shot guesses)
+    confidence = vp.get("style_confidence", "low")
+    if confidence == "low" and vp.get("sample_count", 0) < 3:
+        return lines
+
+    lines.append("## Voice & Style")
+    lines.append("")
+    lines.append("When producing text output for this workflow, match the user's writing style:")
+    lines.append("")
+
+    if vp.get("formality"):
+        lines.append(f"- **Tone**: {vp['formality']}")
+    if vp.get("avg_sentence_length"):
+        length = vp["avg_sentence_length"]
+        if length < 10:
+            lines.append("- **Sentences**: short and punchy")
+        elif length > 20:
+            lines.append("- **Sentences**: longer, detailed")
+        else:
+            lines.append("- **Sentences**: medium length")
+    if vp.get("uses_emoji"):
+        lines.append("- **Emoji**: yes, the user uses emoji in this context")
+    if vp.get("exclamation_rate", 0) > 0.2:
+        lines.append("- **Exclamation marks**: frequent")
+    if vp.get("vocabulary_richness", 0) > 0.7:
+        lines.append("- **Vocabulary**: varied and rich")
+    elif vp.get("vocabulary_richness", 0) < 0.4:
+        lines.append("- **Vocabulary**: simple and direct")
+
+    # Content samples — concrete examples of how the user writes
+    if samples:
+        lines.append("")
+        lines.append("**Example text from the user** (match this style):")
+        for s in samples[:3]:
+            text = s.get("text", "")
+            if text:
+                # Indent as blockquote
+                lines.append(f"> {text[:200]}")
+                lines.append("")
+
+    lines.append("")
+    return lines
+
+
 class SOPExportAdapter(ABC):
     """Abstract base for SOP export adapters.
 

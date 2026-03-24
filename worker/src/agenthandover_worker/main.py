@@ -466,6 +466,10 @@ def _process_annotations(
                 except Exception:
                     logger.debug("Activity classification failed", exc_info=True)
 
+            # Attach visual text proxy for future vector embedding
+            if result.visual_text_proxy:
+                result.annotation["_visual_text_proxy"] = result.visual_text_proxy
+
             db.save_annotation(
                 event_id,
                 json.dumps(result.annotation),
@@ -2153,9 +2157,10 @@ def _process_passive_discovery(
         except Exception:
             logger.debug("Continuity tracking failed", exc_info=True)
 
-    # Step 3: Persist segments to DB
+    # Step 3: Persist segments to DB (including per-frame embeddings)
     for seg in seg_result.segments:
         event_ids = [f.event_id for f in seg.frames]
+        frame_embeddings = [f.embedding for f in seg.frames if f.embedding]
         db.save_task_segment(
             segment_id=seg.segment_id,
             cluster_id=seg.cluster_id,
@@ -2164,6 +2169,7 @@ def _process_passive_discovery(
             apps=seg.apps_involved,
             start_time=seg.start_time,
             end_time=seg.end_time,
+            embeddings=frame_embeddings if frame_embeddings else None,
         )
 
     # Step 4: Query DB for pending clusters (sop_generated = 0)
@@ -4159,7 +4165,7 @@ def main(argv: list[str] | None = None) -> None:
 
     evidence_tracker = EvidenceTracker(knowledge_base=knowledge_base)
     lifecycle_manager = LifecycleManager(knowledge_base)
-    procedure_writer = ProcedureWriter(kb=knowledge_base, evidence=evidence_tracker, lifecycle_manager=lifecycle_manager)
+    procedure_writer = ProcedureWriter(kb=knowledge_base, evidence=evidence_tracker, lifecycle_manager=lifecycle_manager, vector_kb=vector_kb)
     kb_export_adapter = KnowledgeBaseExportAdapter(knowledge_base)
     privacy_checker = PrivacyZoneChecker()
     daily_processor = DailyBatchProcessor(knowledge_base=knowledge_base)
@@ -4196,11 +4202,11 @@ def main(argv: list[str] | None = None) -> None:
     execution_monitor = ExecutionMonitor(knowledge_base, escalation_handler=escalation_handler)
     correction_detector = CorrectionDetector(knowledge_base, llm_reasoner=llm_reasoner)
     trust_advisor = TrustAdvisor(knowledge_base)
-    session_linker = SessionLinker(knowledge_base, llm_reasoner=llm_reasoner)
+    session_linker = SessionLinker(knowledge_base, llm_reasoner=llm_reasoner, vector_kb=vector_kb)
     digest_generator = DigestGenerator(knowledge_base)
     continuity_tracker = None
     if feature_flags["continuity_tracking"]:
-        procedure_matcher_obj = ProcedureMatcher(kb=knowledge_base)
+        procedure_matcher_obj = ProcedureMatcher(kb=knowledge_base, vector_kb=vector_kb)
         continuity_tracker = ContinuityTracker(
             kb=knowledge_base,
             matcher=procedure_matcher_obj,
@@ -4481,7 +4487,44 @@ def main(argv: list[str] | None = None) -> None:
             stale_skip_count=v2_cfg["stale_skip_count"],
             sliding_window_max_age_sec=v2_cfg["sliding_window_max_age_sec"],
         )
-        scene_annotator = SceneAnnotator(config=ann_config)
+        # Initialize image embedder (SigLIP via mlx-embeddings, optional)
+        # Only if user opted in via config.toml [embedding] image_embeddings = true
+        _image_embedder = None
+        _image_emb_enabled = False
+        try:
+            import platform as _platform
+            import tomllib as _tomllib
+            _cfg_path = (
+                Path.home() / "Library" / "Application Support" / "agenthandover" / "config.toml"
+                if _platform.system() == "Darwin"
+                else Path.home() / ".config" / "agenthandover" / "config.toml"
+            )
+            if _cfg_path.is_file():
+                with open(_cfg_path, "rb") as _cf:
+                    _emb_cfg = _tomllib.load(_cf).get("embedding", {})
+                    _image_emb_enabled = _emb_cfg.get("image_embeddings", False)
+        except Exception:
+            pass
+
+        if _image_emb_enabled:
+            try:
+                from agenthandover_worker.vector_kb import ImageEmbedder
+                _image_embedder = ImageEmbedder()
+                if _image_embedder.available:
+                    logger.info("Image embedder enabled (SigLIP %dd)", _image_embedder.DIM)
+                else:
+                    logger.info("Image embeddings enabled but mlx-embeddings not installed")
+                    _image_embedder = None
+            except Exception:
+                logger.debug("Image embedder init failed", exc_info=True)
+        else:
+            logger.info("Image embeddings disabled (enable in config.toml [embedding] image_embeddings = true)")
+
+        scene_annotator = SceneAnnotator(
+            config=ann_config,
+            image_embedder=_image_embedder,
+            vector_kb=vector_kb,
+        )
 
         diff_config = DiffConfig(
             model=v2_cfg["annotation_model"],
@@ -4511,6 +4554,7 @@ def main(argv: list[str] | None = None) -> None:
             config=seg_config,
             llm_reasoner=llm_reasoner,
             cluster_label_store=knowledge_base.root / "observations" / "cluster_labels.json",
+            vector_kb=vector_kb,
         )
 
         logger.info(
@@ -4578,6 +4622,7 @@ def main(argv: list[str] | None = None) -> None:
                 procedure_curator=procedure_curator,
                 runtime_validator=runtime_validator,
                 ops_telemetry=ops_telemetry,
+                vector_kb=vector_kb,
             )
             query_api_server.start()
             logger.info(
@@ -4648,6 +4693,41 @@ def main(argv: list[str] | None = None) -> None:
         v2_diffs_today=total_v2_diffs,
     )
 
+    # Initialize vector KB for semantic search and embedding storage
+    vector_kb = None
+    try:
+        from agenthandover_worker.vector_kb import VectorKB, VectorKBConfig
+        vkb_config = VectorKBConfig(
+            ollama_host=v2_cfg["ollama_host"] if v2_cfg else "http://localhost:11434",
+        )
+        vector_kb = VectorKB(args.db_path, vkb_config)
+        # Health check: verify embedding model is available
+        try:
+            test_emb = vector_kb.compute_embeddings(["health check"])
+            if test_emb and test_emb[0]:
+                logger.info(
+                    "Vector KB ready (model=%s, dim=%d, vectors=%d)",
+                    vkb_config.embedding_model, len(test_emb[0]),
+                    vector_kb.count(),
+                )
+            else:
+                logger.warning(
+                    "Vector KB model '%s' returned empty embeddings — "
+                    "run 'ollama pull %s' to enable semantic search",
+                    vkb_config.embedding_model, vkb_config.embedding_model,
+                )
+                vector_kb = None
+        except ConnectionError:
+            logger.warning(
+                "Vector KB model '%s' not available — "
+                "run 'ollama pull %s' to enable semantic search",
+                vkb_config.embedding_model, vkb_config.embedding_model,
+            )
+            vector_kb.close()
+            vector_kb = None
+    except Exception:
+        logger.debug("Vector KB initialization failed — semantic search disabled", exc_info=True)
+
     with WorkerDB(args.db_path) as db:
         logger.info("Connected to database, entering main loop")
 
@@ -4680,6 +4760,10 @@ def main(argv: list[str] | None = None) -> None:
         _write_sops_index(db, knowledge_base, force=True)
 
         while not shutdown_flag[0]:
+            # Reset vector KB embedding budget each cycle
+            if vector_kb is not None:
+                vector_kb.reset_cycle_budget()
+
             try:
                 # Process retry and approval triggers first
                 _process_retry_triggers(
@@ -5335,6 +5419,25 @@ def main(argv: list[str] | None = None) -> None:
                                 logger.debug("Digest generation failed", exc_info=True)
                     except Exception:
                         logger.debug("Daily batch failed", exc_info=True)
+
+                    # Preserve OCR text from soon-to-expire events
+                    try:
+                        pcount, pitems = db.preserve_ocr_text(retention_days=14)
+                        if pcount:
+                            logger.info("Preserved %d texts before expiry", pcount)
+                        # Embed preserved texts in vector KB
+                        if pitems and vector_kb is not None:
+                            try:
+                                vk_items = [
+                                    ("preserved_text", f"{eid}:{src}", txt[:2000])
+                                    for eid, src, txt in pitems
+                                ]
+                                vector_kb.upsert_batch(vk_items)
+                            except Exception:
+                                logger.debug("Preserved text embedding failed", exc_info=True)
+                    except Exception:
+                        logger.debug("OCR text preservation failed", exc_info=True)
+
                     _last_daily_batch = today_str
 
                 # Staleness check — once per day (86400s)

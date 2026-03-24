@@ -63,6 +63,9 @@ _V3_SECTIONS = {
     "last_synthesized": lambda: None,
     "execution_hints": dict,
     "evidence_summary": lambda: None,
+    # Style & voice capture (future fine-tuning / personalization)
+    "voice_profile": dict,
+    "content_samples": list,
 }
 
 
@@ -221,6 +224,10 @@ def sop_to_procedure(sop_template: dict) -> dict:
         "behavioral_confidence": sop_template.get("behavioral_confidence", None),
         "last_synthesized": sop_template.get("last_synthesized", None),
         "execution_hints": sop_template.get("execution_hints", {}),
+
+        # Style & voice (future personalization / fine-tuning)
+        "voice_profile": sop_template.get("voice_profile", {}),
+        "content_samples": sop_template.get("content_samples", []),
 
         # Metadata
         "preconditions": sop_template.get("preconditions", []),
@@ -602,6 +609,9 @@ def upgrade_v2_to_v3(sop_json: dict) -> dict:
         "behavioral_confidence": None,
         "last_synthesized": None,
         "execution_hints": {},
+        # Style & voice (empty on upgrade — populated by future analysis)
+        "voice_profile": {},
+        "content_samples": [],
         "preconditions": sop_json.get("preconditions", []),
         "postconditions": sop_json.get("postconditions", []),
         "exceptions_seen": sop_json.get("exceptions_seen", []),

@@ -30,6 +30,11 @@ export const MAX_TABLE_ROWS = 50;
 /** Maximum character length for innerText on any single node. */
 export const MAX_TEXT_LENGTH = 500;
 
+/** Maximum character length for input/textarea values.
+ *  Higher than MAX_TEXT_LENGTH because user-produced text is the most
+ *  valuable signal for workflow learning and future fine-tuning. */
+export const MAX_INPUT_TEXT_LENGTH = 2000;
+
 /** Maximum recursion depth when walking the DOM tree. */
 export const MAX_TREE_DEPTH = 30;
 
@@ -389,9 +394,10 @@ export function extractNodeInfo(element: Element): DomNode {
     if (!node.ariaLabel && element.placeholder) {
       node.name = element.placeholder;
     }
-    // Capture value for non-password inputs.
+    // Capture value for non-password inputs — use higher limit for
+    // user-produced text (most valuable for workflow learning).
     if (element.type !== 'password' && element.value) {
-      node.innerText = truncateText(element.value);
+      node.innerText = truncateText(element.value, MAX_INPUT_TEXT_LENGTH);
     }
   } else if (element instanceof HTMLSelectElement) {
     node.state = {
@@ -413,6 +419,10 @@ export function extractNodeInfo(element: Element): DomNode {
     };
     if (!node.ariaLabel && element.placeholder) {
       node.name = element.placeholder;
+    }
+    // Capture textarea value — user-produced text, use higher limit.
+    if (element.value) {
+      node.innerText = truncateText(element.value, MAX_INPUT_TEXT_LENGTH);
     }
   }
 

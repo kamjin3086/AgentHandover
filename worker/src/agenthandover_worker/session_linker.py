@@ -22,6 +22,7 @@ from agenthandover_worker.knowledge_base import KnowledgeBase
 
 if TYPE_CHECKING:
     from agenthandover_worker.llm_reasoning import LLMReasoner
+    from agenthandover_worker.vector_kb import VectorKB
 
 logger = logging.getLogger(__name__)
 
@@ -60,9 +61,11 @@ class SessionLinker:
         self,
         knowledge_base: KnowledgeBase,
         llm_reasoner: "LLMReasoner | None" = None,
+        vector_kb: "VectorKB | None" = None,
     ) -> None:
         self._kb = knowledge_base
         self._llm_reasoner = llm_reasoner
+        self._vector_kb = vector_kb
         self._links: list[LinkedTask] = []
         self._load_links()
 
@@ -241,7 +244,19 @@ class SessionLinker:
         return " ".join(tokens)
 
     def _intent_similarity(self, a: str, b: str) -> float:
-        """Jaccard similarity on normalized tokens."""
+        """Semantic similarity via vector KB, with Jaccard fallback."""
+        if self._vector_kb is not None:
+            try:
+                from agenthandover_worker.vector_kb import VectorKB
+                embs = self._vector_kb.compute_embeddings([a, b])
+                if len(embs) == 2 and embs[0] and embs[1]:
+                    return VectorKB.cosine_similarity(embs[0], embs[1])
+            except Exception:
+                logger.debug("Vector similarity failed, falling back to Jaccard")
+        return self._jaccard_similarity(a, b)
+
+    def _jaccard_similarity(self, a: str, b: str) -> float:
+        """Jaccard similarity on normalized tokens (fallback)."""
         tokens_a = set(self._normalize_intent(a).split())
         tokens_b = set(self._normalize_intent(b).split())
         if not tokens_a and not tokens_b:

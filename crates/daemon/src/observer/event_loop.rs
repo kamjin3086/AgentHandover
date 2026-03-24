@@ -862,8 +862,11 @@ fn redact_event(event: &mut Event, redactor: &Redactor) {
         EventKind::ClickIntent { target_description } => {
             *target_description = redactor.redact(target_description);
         }
-        EventKind::ClipboardChange { content_hash, .. } => {
+        EventKind::ClipboardChange { content_hash, content_preview, .. } => {
             *content_hash = redactor.redact(content_hash);
+            if let Some(preview) = content_preview {
+                *preview = redactor.redact(preview);
+            }
         }
         EventKind::PasteDetected { matched_copy_hash } => {
             if let Some(hash) = matched_copy_hash {

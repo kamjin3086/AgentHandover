@@ -33,6 +33,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from agenthandover_worker.llm_reasoning import LLMReasoner
+    from agenthandover_worker.vector_kb import VectorKB
 
 logger = logging.getLogger(__name__)
 
@@ -45,8 +46,8 @@ logger = logging.getLogger(__name__)
 class SegmenterConfig:
     """Configuration for the task segmenter."""
 
-    # Embedding model (CPU-only, ~45MB, ~1ms per embedding)
-    embedding_model: str = "all-minilm:l6-v2"
+    # Embedding model — nomic-embed-text (768d, much better quality than minilm)
+    embedding_model: str = "nomic-embed-text"
     ollama_host: str = "http://localhost:11434"
 
     # Clustering
@@ -554,10 +555,12 @@ class TaskSegmenter:
         config: SegmenterConfig | None = None,
         llm_reasoner: "LLMReasoner | None" = None,
         cluster_label_store: Path | None = None,
+        vector_kb: "VectorKB | None" = None,
     ) -> None:
         self.config = config or SegmenterConfig()
         self._llm_reasoner = llm_reasoner
         self._cluster_label_store = cluster_label_store
+        self._vector_kb = vector_kb
         self._label_cache: dict = {}
         self._load_label_cache()
 
@@ -754,8 +757,20 @@ class TaskSegmenter:
 
         result.total_frames_processed = len(frames)
 
-        # Step 2: Compute embeddings for all what_doing strings
-        texts = [f.what_doing if f.what_doing else f.app for f in frames]
+        # Step 2: Compute embeddings — include app, location, and visual
+        # proxy when available for richer semantic representation
+        texts = []
+        for f in frames:
+            parts = [f.what_doing or f.app]
+            if f.app and f.what_doing:
+                parts.append(f.app)
+            if f.location:
+                parts.append(f.location)
+            # Include visual text proxy if present in annotation
+            proxy = f.annotation.get("_visual_text_proxy", "") if f.annotation else ""
+            if proxy and len(proxy) > 20:
+                parts.append(proxy[:500])
+            texts.append(" | ".join(parts))
         try:
             embed_start = time.monotonic()
             embeddings = _compute_embeddings(
@@ -773,6 +788,29 @@ class TaskSegmenter:
                 "Computed %d embeddings in %.1fs",
                 len(embeddings), result.embedding_time_seconds,
             )
+
+            # Store annotation embeddings in vector KB (piggybacks on
+            # the embed call — zero extra Ollama cost)
+            if self._vector_kb and embeddings:
+                try:
+                    items = [
+                        ("annotation", frames[i].event_id, texts[i])
+                        for i in range(len(frames))
+                        if i < len(embeddings) and embeddings[i]
+                    ]
+                    valid_embs = [
+                        embeddings[i]
+                        for i in range(len(frames))
+                        if i < len(embeddings) and embeddings[i]
+                    ]
+                    stored = self._vector_kb.upsert_batch(
+                        items, embeddings=valid_embs,
+                    )
+                    if stored:
+                        logger.debug("Stored %d annotation vectors in KB", stored)
+                except Exception:
+                    logger.debug("Vector KB storage failed", exc_info=True)
+
         except ConnectionError as exc:
             logger.warning("Embedding failed (Ollama not reachable): %s", exc)
             # Fall back to app-based clustering (no embeddings)

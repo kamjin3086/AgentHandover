@@ -38,6 +38,7 @@ class ProfileBuilder:
             "working_hours": self._infer_working_hours(summaries),
             "accounts": self._infer_accounts(summaries),
             "communication_style": self._infer_communication_style(summaries),
+            "writing_style": self._aggregate_writing_style(),
         }
         self._kb.update_profile(profile)
         return self._kb.get_profile()
@@ -260,3 +261,17 @@ class ProfileBuilder:
             ],
             "avg_comm_minutes_per_day": avg_per_day,
         }
+
+    def _aggregate_writing_style(self) -> dict:
+        """Aggregate voice profiles across all procedures.
+
+        Returns a user-level style profile with confidence that
+        strengthens over sessions (not one-shot).
+        """
+        try:
+            from agenthandover_worker.style_analyzer import aggregate_user_style
+            procedures = self._kb.list_procedures()
+            return aggregate_user_style(procedures)
+        except Exception:
+            logger.debug("Writing style aggregation failed", exc_info=True)
+            return {}

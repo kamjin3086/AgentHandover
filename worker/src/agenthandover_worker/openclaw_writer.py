@@ -97,6 +97,10 @@ class OpenClawWriter(SOPExportAdapter):
         # Append v3-only sections
         extra_lines: list[str] = []
 
+        # Voice & style guidance (tells agent HOW to write)
+        from agenthandover_worker.export_adapter import render_voice_style_section
+        extra_lines.extend(render_voice_style_section(procedure))
+
         # Strategy section (behavioral synthesis)
         strategy = procedure.get("strategy")
         if strategy:

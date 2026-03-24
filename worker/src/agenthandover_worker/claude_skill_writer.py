@@ -98,6 +98,10 @@ class ClaudeSkillWriter(SOPExportAdapter):
         # Append v3-only sections before the footer
         extra_lines = []
 
+        # Voice & style guidance
+        from agenthandover_worker.export_adapter import render_voice_style_section
+        extra_lines.extend(render_voice_style_section(procedure))
+
         # Strategy section (behavioral synthesis)
         strategy = procedure.get("strategy")
         if strategy:

@@ -84,17 +84,43 @@ class ProcedureMatcher:
     catch partial matches as supporting evidence for continuity.
     """
 
-    def __init__(self, kb: KnowledgeBase, match_threshold: float = 0.50) -> None:
+    def __init__(
+        self,
+        kb: KnowledgeBase,
+        match_threshold: float = 0.50,
+        vector_kb=None,
+    ) -> None:
         self._kb = kb
         self._match_threshold = match_threshold
+        self._vector_kb = vector_kb
         self._proc_fingerprints: list[tuple[str, dict]] | None = None  # cache
 
     def match_segment(self, segment: TaskSegment) -> list[tuple[str, float]]:
         """Find procedure candidates for a single segment.
 
-        Returns [(slug, similarity)] sorted descending by similarity,
-        filtered to only include matches above the threshold.
+        Tries vector similarity first (semantic match), falls back to
+        structural fingerprints.  Returns [(slug, similarity)] sorted
+        descending, filtered to only matches above threshold.
         """
+        # Try vector search first — catches semantic matches that
+        # structural fingerprints miss ("deploy staging" = "push to stage")
+        if self._vector_kb is not None:
+            try:
+                query = segment.task_label or ""
+                if not query and segment.frames:
+                    query = segment.frames[0].what_doing or segment.frames[0].app
+                if query:
+                    results = self._vector_kb.search(
+                        query,
+                        top_k=5,
+                        source_types=["procedure"],
+                        min_score=self._match_threshold,
+                    )
+                    if results:
+                        return [(r.source_id, r.score) for r in results]
+            except Exception:
+                pass  # fall through to fingerprint matching
+
         if self._proc_fingerprints is None:
             self._refresh_procedure_fingerprints()
 

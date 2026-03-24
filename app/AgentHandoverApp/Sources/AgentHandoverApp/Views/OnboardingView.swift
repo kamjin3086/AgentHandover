@@ -57,6 +57,7 @@ struct OnboardingView: View {
     @State private var customModelName: String = ""
     @State private var apiKeyValidating = false
     @State private var apiKeyValid: Bool? = nil
+    @State private var enableImageEmbeddings = false
     @State private var remoteConsentGiven = false
 
     // Focus recording from onboarding
@@ -1097,12 +1098,38 @@ struct OnboardingView: View {
                         }
 
                         VStack(alignment: .leading, spacing: 6) {
-                            modelRow("qwen3.5:2b", "2.7 GB", "Screen annotation -reads your screen and describes what you\u{2019}re doing")
-                            modelRow("qwen3.5:4b", "3.4 GB", "SOP generation -writes step-by-step procedures from observations")
-                            modelRow("all-minilm:l6-v2", "45 MB", "Task matching -groups similar work together")
+                            modelRow("qwen3.5:2b", "2.7 GB", "Screen annotation - reads your screen and describes what you're doing")
+                            modelRow("qwen3.5:4b", "3.4 GB", "SOP generation - writes step-by-step procedures from observations")
+                            modelRow("nomic-embed-text", "274 MB", "Semantic search - finds similar workflows by meaning")
                         }
 
-                        Button("Pull All Recommended Models") {
+                        // Image embeddings toggle
+                        HStack(spacing: 10) {
+                            Toggle("", isOn: $enableImageEmbeddings)
+                                .toggleStyle(.switch)
+                                .labelsHidden()
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Visual search (optional)")
+                                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                    .foregroundColor(darkNavy)
+                                Text("Embeds screenshots so agents can find visually similar screens. Downloads ~1 GB SigLIP model on first use. Requires Apple Silicon.")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(darkNavy.opacity(0.5))
+                                    .lineLimit(3)
+                            }
+                        }
+                        .padding(12)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10)
+                                .fill(enableImageEmbeddings ? goldenYellow.opacity(0.15) : lightGray)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10)
+                                .stroke(enableImageEmbeddings ? warmOrange.opacity(0.5) : darkNavy.opacity(0.1), lineWidth: 1)
+                        )
+
+                        Button("Pull All Models") {
                             pullOllamaModel()
                         }
                         .font(.system(size: 14, weight: .bold, design: .rounded))
@@ -1115,7 +1142,7 @@ struct OnboardingView: View {
                         )
                         .buttonStyle(.plain)
 
-                        Text("Or use any Ollama-compatible model -edit annotation_model and sop_model in config.toml after setup.")
+                        Text("Or use any Ollama-compatible model - edit annotation_model and sop_model in config.toml after setup.")
                             .font(.system(size: 11))
                             .foregroundColor(darkNavy.opacity(0.4))
                             .frame(maxWidth: 380)
@@ -2028,7 +2055,7 @@ struct OnboardingView: View {
         let models = [
             ("qwen3.5:2b", "scene annotation"),
             ("qwen3.5:4b", "SOP generation"),
-            ("all-minilm:l6-v2", "embeddings"),
+            ("nomic-embed-text", "semantic search"),
         ]
 
         DispatchQueue.global(qos: .userInitiated).async {
@@ -2080,12 +2107,48 @@ struct OnboardingView: View {
                 }
             }
 
+            // Save embedding config
+            let imageEmbEnabled = self.enableImageEmbeddings
+            self.saveEmbeddingConfig(imageEmbeddings: imageEmbEnabled)
+
             DispatchQueue.main.async {
                 vlmPullInProgress = false
                 vlmPullOutput = "All models downloaded successfully!"
                 appState.vlmAvailable = true
             }
         }
+    }
+
+    private func saveEmbeddingConfig(imageEmbeddings: Bool) {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let configDir = home
+            .appendingPathComponent("Library/Application Support/agenthandover")
+        let configPath = configDir.appendingPathComponent("config.toml")
+
+        try? FileManager.default.createDirectory(at: configDir, withIntermediateDirectories: true)
+
+        var content = (try? String(contentsOf: configPath, encoding: .utf8)) ?? ""
+
+        let embeddingSection = """
+
+        [embedding]
+        model = "nomic-embed-text"
+        image_embeddings = \(imageEmbeddings)
+
+        """
+
+        // Remove existing [embedding] section if present
+        if let range = content.range(of: "[embedding]") {
+            let afterSection = content[range.lowerBound...]
+            if let nextSection = afterSection.range(of: "\n[", range: content.index(after: range.lowerBound)..<content.endIndex) {
+                content.removeSubrange(range.lowerBound..<nextSection.lowerBound)
+            } else {
+                content.removeSubrange(range.lowerBound..<content.endIndex)
+            }
+        }
+
+        content += embeddingSection
+        try? content.write(to: configPath, atomically: true, encoding: .utf8)
     }
 }
 

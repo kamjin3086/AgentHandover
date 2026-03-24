@@ -123,7 +123,7 @@ Fix any `FAIL` items from `doctor`. Usually:
 ```bash
 ollama pull qwen3.5:2b         # Scene annotation
 ollama pull qwen3.5:4b         # SOP generation
-ollama pull all-minilm:l6-v2   # Task embeddings
+ollama pull nomic-embed-text   # Semantic search (768d)
 ```
 
 Or: `agenthandover setup --vlm` for guided setup (includes cloud API option).
@@ -216,9 +216,14 @@ curl http://localhost:9477/curation/queue
 curl -X POST http://localhost:9477/curation/promote \
   -H 'Content-Type: application/json' \
   -d '{"slug": "file-expense-report", "to_state": "agent_ready"}'
+
+# Semantic search -- find procedures and observations by meaning
+curl -X POST http://localhost:9477/search/semantic \
+  -H 'Content-Type: application/json' \
+  -d '{"query": "deploy to production", "limit": 5}'
 ```
 
-`/ready` returns only procedures that pass all readiness gates. If it's in the response, an agent can execute it. `/available` returns every procedure with its full readiness assessment, including `blocked_by` reasons - use it for browsing, dashboards, and agent discovery of draft work.
+`/ready` returns only procedures that pass all readiness gates. If it's in the response, an agent can execute it. `/available` returns every procedure with its full readiness assessment, including `blocked_by` reasons - use it for browsing, dashboards, and agent discovery of draft work. `/search/semantic` finds procedures and observations by semantic similarity (powered by nomic-embed-text) - agents can use it to discover relevant workflows even with different wording.
 
 ### Export formats
 
@@ -229,6 +234,36 @@ Approved procedures are compiled into target-specific formats from a single cano
 | **SKILL.md** | `~/.openclaw/workspace/memory/apprentice/sops/` | OpenClaw agents |
 | **Claude Code Skill** | `~/.claude/skills/<slug>/SKILL.md` | Claude Code (`/skill-name`) |
 | **v3 Procedure JSON** | `~/.agenthandover/knowledge/procedures/` | Any agent via Query API |
+
+### Connect your agent
+
+```bash
+# Claude Code — procedures appear as /slash-commands
+agenthandover connect claude-code
+
+# Codex — generates AGENTS.md in current directory
+agenthandover connect codex
+
+# OpenClaw — verifies sync path and status
+agenthandover connect openclaw
+
+# Any MCP-compatible agent (Claude Code, Cursor, Windsurf, etc.)
+agenthandover connect mcp
+```
+
+**MCP server** is the most powerful integration — one config, any agent. Add to your Claude Code settings:
+
+```json
+{
+  "mcpServers": {
+    "agenthandover": {
+      "command": "agenthandover-mcp"
+    }
+  }
+}
+```
+
+The MCP server exposes 5 tools: `list_ready_procedures`, `list_all_procedures`, `get_procedure`, `search_procedures` (semantic), and `get_user_profile`.
 
 ### CLI reference
 
@@ -243,6 +278,7 @@ Approved procedures are compiled into target-specific formats from a single cano
 | `agenthandover sops drafts` | List procedures awaiting review |
 | `agenthandover sops approve <slug>` | Approve a draft for export |
 | `agenthandover sops promote <slug> <state>` | Promote lifecycle (e.g., `reviewed`, `agent_ready`) |
+| `agenthandover connect <agent>` | Set up agent integration |
 | `agenthandover doctor` | Pre-flight health check |
 | `agenthandover watch` | Live dashboard |
 | `agenthandover export --format claude-skill` | Re-export as Claude Code skills |

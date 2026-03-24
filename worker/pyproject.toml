@@ -22,6 +22,10 @@ vlm = [
     "mlx-vlm>=0.1; platform_machine == 'arm64' and sys_platform == 'darwin'",
     "llama-cpp-python>=0.2; platform_machine != 'arm64' or sys_platform != 'darwin'",
 ]
+embeddings-apple = [
+    "mlx-embeddings>=0.0.4; platform_machine == 'arm64' and sys_platform == 'darwin'",
+]
+mcp = ["mcp>=1.0"]
 vlm-all = [
     "mlx-vlm>=0.1; platform_machine == 'arm64' and sys_platform == 'darwin'",
     "llama-cpp-python>=0.2",
@@ -29,11 +33,14 @@ vlm-all = [
     "openai>=1.0",
     "anthropic>=0.39",
     "google-genai>=1.0",
+    "mlx-embeddings>=0.0.4; platform_machine == 'arm64' and sys_platform == 'darwin'",
 ]
 
 [project.scripts]
 agenthandover-worker = "agenthandover_worker.main:main"
 agenthandover-setup-vlm = "agenthandover_worker.setup_vlm:main"
+agenthandover-mcp = "agenthandover_worker.mcp_server:main"
+agenthandover-connect = "agenthandover_worker.agent_connect:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/agenthandover_worker"]

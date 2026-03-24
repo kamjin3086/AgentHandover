@@ -134,6 +134,7 @@ Rules:
 - "confidence" should be 0.0-1.0 reflecting how well the sessions support analysis
 - If you cannot determine something, use empty arrays or null values
 - Base everything on OBSERVED patterns, do not speculate
+{voice_guidance}
 
 Respond with ONLY the JSON object."""
 
@@ -620,6 +621,26 @@ class BehavioralSynthesizer:
             if len(ev_lines) > 1:
                 evidence_context = "\n".join(ev_lines)
 
+        # Build voice guidance from existing voice_profile
+        voice_guidance = ""
+        vp = procedure.get("voice_profile", {})
+        if vp and vp.get("formality"):
+            parts = [
+                f"- The user's writing style is {vp['formality']}"
+                f" (formality score: {vp.get('formality_score', 0):.1f})",
+            ]
+            if vp.get("avg_sentence_length"):
+                parts.append(
+                    f"- Average sentence length: {vp['avg_sentence_length']:.0f} words"
+                )
+            if vp.get("uses_emoji"):
+                parts.append("- The user uses emoji/emoticons in their writing")
+            parts.append(
+                "- content_templates should MATCH this style — "
+                "if the user writes casually, templates should be casual"
+            )
+            voice_guidance = "\nUSER WRITING STYLE:\n" + "\n".join(parts)
+
         return BEHAVIORAL_SYNTHESIS_PROMPT.format(
             observation_count=len(observations),
             title=title,
@@ -629,6 +650,7 @@ class BehavioralSynthesizer:
             session_context=session_context or "(no cross-day context available)",
             continuity_context=continuity_context or "(no continuity context available)",
             evidence_context=evidence_context or "(no extracted evidence available)",
+            voice_guidance=voice_guidance,
         )
 
     @staticmethod

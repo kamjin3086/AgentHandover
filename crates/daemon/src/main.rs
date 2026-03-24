@@ -412,6 +412,7 @@ async fn main() -> Result<()> {
                                     byte_size: change.byte_size,
                                     high_entropy: change.high_entropy,
                                     content_hash: change.content_hash,
+                                    content_preview: change.content_preview,
                                 },
                                 window: None,
                                 display_topology: vec![],

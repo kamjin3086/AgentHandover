@@ -74,6 +74,10 @@ class GenericWriter(SOPExportAdapter):
         # Append v3-only sections (including behavioral fields)
         extra_lines: list[str] = []
 
+        # Voice & style guidance
+        from agenthandover_worker.export_adapter import render_voice_style_section
+        extra_lines.extend(render_voice_style_section(procedure))
+
         # Strategy
         strategy = procedure.get("strategy")
         if strategy:

@@ -47,7 +47,7 @@ fn test_event_kind_variants() {
         EventKind::ClickIntent { target_description: "Export CSV button".into() },
         EventKind::DwellSnapshot,
         EventKind::ScrollReadSnapshot,
-        EventKind::ClipboardChange { content_types: vec!["text/plain".into()], byte_size: 42, high_entropy: false, content_hash: "abc123".into() },
+        EventKind::ClipboardChange { content_types: vec!["text/plain".into()], byte_size: 42, high_entropy: false, content_hash: "abc123".into(), content_preview: Some("hello world".into()) },
         EventKind::PasteDetected { matched_copy_hash: Some("abc123".into()) },
         EventKind::SecureFieldFocus,
         EventKind::AppSwitch { from_app: "Safari".into(), to_app: "Terminal".into() },

@@ -38,6 +38,9 @@ pub struct ClipboardChangeEvent {
     pub high_entropy: bool,
     pub content_hash: String,
     pub timestamp: DateTime<Utc>,
+    /// First 500 chars of plaintext clipboard content.
+    /// None for non-text types or high-entropy content (potential secrets).
+    pub content_preview: Option<String>,
 }
 
 /// Tracks recent clipboard hashes for paste detection.
@@ -131,8 +134,9 @@ fn get_pasteboard_data_for_type(_type_name: &str) -> Option<Vec<u8>> {
     Some(data)
 }
 
-/// Capture current clipboard metadata without storing the actual content.
-/// This is the privacy-safe approach: we hash the content but never store it.
+/// Capture current clipboard metadata, including a text preview for
+/// non-secret plaintext content.  High-entropy data (potential passwords
+/// or tokens) never gets a content preview.
 pub fn capture_clipboard_meta() -> Option<ClipboardChangeEvent> {
     let types = get_pasteboard_types();
     if types.is_empty() {
@@ -141,30 +145,51 @@ pub fn capture_clipboard_meta() -> Option<ClipboardChangeEvent> {
 
     // Get data for the first available type to compute hash and size.
     // Prefer plaintext types for entropy analysis.
-    let preferred_types = [
+    let plaintext_types = [
         "public.utf8-plain-text",
         "public.plain-text",
         "NSStringPboardType",
     ];
 
-    let data_type = preferred_types
+    let data_type = plaintext_types
         .iter()
         .find(|&&t| types.iter().any(|existing| existing == t))
         .copied()
         .or(types.first().map(|s| s.as_str()));
 
-    let (byte_size, content_hash, high_entropy) = if let Some(dt) = data_type {
+    let is_plaintext = data_type
+        .map(|dt| plaintext_types.contains(&dt))
+        .unwrap_or(false);
+
+    let (byte_size, content_hash, high_entropy, content_preview) = if let Some(dt) = data_type {
         match get_pasteboard_data_for_type(dt) {
             Some(data) => {
                 let size = data.len() as u64;
                 let hash = hash_content(&data);
                 let entropy = is_high_entropy(&data);
-                (size, hash, entropy)
+
+                // Store text preview only for plaintext, non-secret content.
+                // Uses char boundary-safe truncation to avoid panic on
+                // multi-byte UTF-8 (emoji, CJK, etc.).
+                let preview = if is_plaintext && !entropy {
+                    std::str::from_utf8(&data)
+                        .ok()
+                        .map(|s| {
+                            let trimmed = s.trim();
+                            let truncated: String = trimmed.chars().take(500).collect();
+                            truncated
+                        })
+                        .filter(|s| !s.is_empty())
+                } else {
+                    None
+                };
+
+                (size, hash, entropy, preview)
             }
-            None => (0, String::new(), false),
+            None => (0, String::new(), false, None),
         }
     } else {
-        (0, String::new(), false)
+        (0, String::new(), false, None)
     };
 
     Some(ClipboardChangeEvent {
@@ -173,6 +198,7 @@ pub fn capture_clipboard_meta() -> Option<ClipboardChangeEvent> {
         high_entropy,
         content_hash,
         timestamp: Utc::now(),
+        content_preview,
     })
 }
 

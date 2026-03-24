@@ -158,6 +158,8 @@ class QueryAPIHandler(http.server.BaseHTTPRequestHandler):
                 self._handle_curation_dismiss_merge()
             elif path == "/curation/dismiss-drift":
                 self._handle_curation_dismiss_drift()
+            elif path == "/search/semantic":
+                self._handle_semantic_search()
             else:
                 self._send_error(404, f"Not found: {path}")
         except Exception:
@@ -270,6 +272,58 @@ class QueryAPIHandler(http.server.BaseHTTPRequestHandler):
             "query": query,
             "results": serialized,
             "count": len(serialized),
+        })
+
+    def _handle_semantic_search(self) -> None:
+        """POST /search/semantic — vector similarity search across the KB."""
+        vector_kb = getattr(self.server, "vector_kb", None)
+        if vector_kb is None:
+            self._send_error(
+                501,
+                "Semantic search not available — no vector KB configured",
+            )
+            return
+
+        content_length = int(self.headers.get("Content-Length", 0))
+        if content_length == 0:
+            self._send_error(400, "Request body is required")
+            return
+
+        raw = self.rfile.read(content_length)
+        try:
+            body = json.loads(raw)
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            self._send_error(400, f"Invalid JSON: {exc}")
+            return
+
+        query = body.get("query", "")
+        if not query:
+            self._send_error(400, "Missing 'query' field")
+            return
+
+        top_k = body.get("limit", 10)
+        source_types = body.get("source_types")
+        min_score = body.get("min_score", 0.3)
+
+        results = vector_kb.search(
+            query,
+            top_k=top_k,
+            source_types=source_types,
+            min_score=min_score,
+        )
+
+        self._send_json({
+            "query": query,
+            "results": [
+                {
+                    "source_type": r.source_type,
+                    "source_id": r.source_id,
+                    "score": r.score,
+                    "model": r.model,
+                }
+                for r in results
+            ],
+            "count": len(results),
         })
 
     def _handle_bundle(self, slug: str) -> None:
@@ -818,6 +872,7 @@ class QueryAPIServer:
         procedure_curator: Any = None,
         runtime_validator: Any = None,
         ops_telemetry: Any = None,
+        vector_kb: Any = None,
     ) -> None:
         self._knowledge_base = knowledge_base
         self._port = port
@@ -828,6 +883,7 @@ class QueryAPIServer:
         self._procedure_curator = procedure_curator
         self._runtime_validator = runtime_validator
         self._ops_telemetry = ops_telemetry
+        self._vector_kb = vector_kb
         self._httpd: http.server.HTTPServer | None = None
         self._thread: threading.Thread | None = None
         self._running = False
@@ -852,6 +908,7 @@ class QueryAPIServer:
         self._httpd.procedure_curator = self._procedure_curator  # type: ignore[attr-defined]
         self._httpd.runtime_validator = self._runtime_validator  # type: ignore[attr-defined]
         self._httpd.ops_telemetry = self._ops_telemetry  # type: ignore[attr-defined]
+        self._httpd.vector_kb = self._vector_kb  # type: ignore[attr-defined]
 
         self._thread = threading.Thread(
             target=self._httpd.serve_forever,

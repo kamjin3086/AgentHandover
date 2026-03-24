@@ -323,6 +323,7 @@ class EvidenceExtractor:
                                 "type": "text_input",
                                 "field": field_name,
                                 "value_preview": value[:100],
+                                "full_value": value[:10_000],
                                 "timestamp": ev.get("timestamp", ""),
                             })
 

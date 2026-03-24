@@ -62,6 +62,7 @@ class AnnotationResult:
     annotation: dict | None = None
     error: str | None = None
     inference_time_seconds: float = 0.0
+    visual_text_proxy: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -349,8 +350,15 @@ class SceneAnnotator:
     Designed to run in a dedicated thread within the worker process.
     """
 
-    def __init__(self, config: AnnotationConfig | None = None) -> None:
+    def __init__(
+        self,
+        config: AnnotationConfig | None = None,
+        image_embedder=None,
+        vector_kb=None,
+    ) -> None:
         self.config = config or AnnotationConfig()
+        self._image_embedder = image_embedder
+        self._vector_kb = vector_kb
         self._stale = _StaleTracker()
         self._stats = {
             "annotated": 0,
@@ -488,6 +496,18 @@ class SceneAnnotator:
             except Exception:
                 pass
 
+        # --- Embed screenshot before deletion (SigLIP image embedding) ---
+        if self._image_embedder and self._vector_kb and screenshot_path:
+            try:
+                vec = self._image_embedder.embed_image(screenshot_path)
+                if vec:
+                    self._vector_kb.upsert(
+                        "visual", event_id, f"image:{event_id}",
+                        embedding=vec,
+                    )
+            except Exception:
+                logger.debug("Image embedding failed for %s", event_id, exc_info=True)
+
         # --- Delete screenshot after VLM processing (success or failure) ---
         # The raw JPEG has no further value — only the structured annotation
         # matters. Leaving unencrypted JPEGs on disk after failed annotations
@@ -503,16 +523,76 @@ class SceneAnnotator:
                 inference_time_seconds=inference_time,
             )
 
+        # --- Build visual text proxy (only for successful annotations) ---
+        # Combines VLM annotation + OCR text into an embeddable text
+        # representation.  Stored in annotation JSON so future vector-KB
+        # pipelines can embed it even after the screenshot is gone.
+        visual_proxy = self._build_visual_text_proxy(event, annotation)
+
         # --- Update stale tracker ---
         self._stale.update(annotation)
 
         self._stats["annotated"] += 1
-        return AnnotationResult(
+        result = AnnotationResult(
             event_id=event_id,
             status="completed",
             annotation=annotation,
             inference_time_seconds=inference_time,
         )
+        if visual_proxy:
+            result.visual_text_proxy = visual_proxy
+        return result
+
+    # ------------------------------------------------------------------
+    # Visual text proxy
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _build_visual_text_proxy(
+        event: dict, annotation: dict | None,
+    ) -> str | None:
+        """Build an embeddable text representation of a visual frame.
+
+        Combines VLM annotation fields (what_doing, app, location,
+        ui_elements) with OCR text from event metadata.  The resulting
+        string can be embedded via nomic-embed-text as a stand-in for
+        the deleted screenshot, enabling future visual similarity search.
+        """
+        parts: list[str] = []
+
+        # From VLM annotation
+        if annotation:
+            wd = annotation.get("what_doing", "")
+            if wd:
+                parts.append(f"Activity: {wd}")
+            app = annotation.get("app", "")
+            loc = annotation.get("location", "")
+            if app:
+                parts.append(f"App: {app}")
+            if loc:
+                parts.append(f"Location: {loc}")
+            ui_els = annotation.get("ui_elements_visible", [])
+            if ui_els:
+                parts.append(f"UI: {', '.join(str(e) for e in ui_els[:10])}")
+
+        # From OCR (stored in event metadata by daemon)
+        metadata_raw = event.get("metadata_json", "{}")
+        try:
+            metadata = json.loads(metadata_raw) if isinstance(metadata_raw, str) else metadata_raw
+        except (json.JSONDecodeError, TypeError):
+            metadata = {}
+
+        ocr_data = metadata.get("ocr", {})
+        if isinstance(ocr_data, dict):
+            ocr_text = ocr_data.get("full_text", "")
+            if ocr_text:
+                # Cap at 2000 chars — enough for embedding, not wasteful
+                parts.append(f"OCR: {ocr_text[:2000]}")
+
+        if not parts:
+            return None
+
+        return "\n".join(parts)
 
     # ------------------------------------------------------------------
     # Screenshot cleanup

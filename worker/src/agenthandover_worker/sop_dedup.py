@@ -254,13 +254,18 @@ def find_matching_sop(
     new_sop: dict,
     existing_sops: list[dict],
     threshold: float = _DEFAULT_THRESHOLD,
+    vector_kb=None,
 ) -> int | None:
-    """Find an existing SOP that matches the new one by structural fingerprint.
+    """Find an existing SOP that matches the new one.
+
+    Tries semantic similarity via vector_kb first (catches "deploy staging"
+    = "push to stage"), then falls back to structural fingerprints.
 
     Args:
         new_sop: The newly generated SOP template.
         existing_sops: List of previously generated SOP templates.
         threshold: Minimum similarity score to consider a match (0.0–1.0).
+        vector_kb: Optional VectorKB for semantic matching.
 
     Returns:
         Index into ``existing_sops`` of the best match, or ``None`` if no
@@ -268,6 +273,37 @@ def find_matching_sop(
     """
     if not existing_sops:
         return None
+
+    # Try semantic match first via vector KB
+    if vector_kb is not None:
+        try:
+            title = new_sop.get("title", "")
+            desc = new_sop.get("description", "")
+            query = f"{title} | {desc}" if desc else title
+            if query:
+                results = vector_kb.search(
+                    query,
+                    top_k=3,
+                    source_types=["procedure"],
+                    min_score=threshold,
+                )
+                if results:
+                    # Map vector result (slug) back to index in existing_sops
+                    slug_to_idx = {
+                        s.get("slug", ""): i for i, s in enumerate(existing_sops)
+                    }
+                    for r in results:
+                        if r.source_id in slug_to_idx:
+                            logger.info(
+                                "SOP dedup (semantic): match found "
+                                "(score=%.2f, '%s' matches '%s')",
+                                r.score,
+                                new_sop.get("slug", "?"),
+                                r.source_id,
+                            )
+                            return slug_to_idx[r.source_id]
+        except Exception:
+            pass  # fall through to fingerprint matching
 
     new_fp = compute_fingerprint(new_sop)
 

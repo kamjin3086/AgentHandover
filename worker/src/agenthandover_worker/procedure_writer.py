@@ -30,10 +30,12 @@ class ProcedureWriter:
         kb: KnowledgeBase,
         evidence: EvidenceTracker,
         lifecycle_manager=None,
+        vector_kb=None,
     ) -> None:
         self._kb = kb
         self._evidence = evidence
         self._lifecycle = lifecycle_manager
+        self._vector_kb = vector_kb
 
     def write_procedure(
         self,
@@ -80,8 +82,13 @@ class ProcedureWriter:
         # Save to knowledge base
         path = self._kb.save_procedure(procedure)
 
-        # Add evidence from this observation
+        # Embed procedure in vector KB for semantic search
         slug = procedure["id"]
+        self._embed_procedure(procedure)
+
+        # Analyze writing style from user-produced text
+        self._analyze_style(procedure)
+
         self._evidence.add_observation(
             slug,
             ObservationEvidence(
@@ -264,6 +271,53 @@ class ProcedureWriter:
                     existing_services.add(service)
 
         env["accounts"] = accounts
+
+    # ------------------------------------------------------------------
+    # Vector KB embedding
+    # ------------------------------------------------------------------
+
+    def _embed_procedure(self, procedure: dict) -> None:
+        """Embed procedure content in vector KB for semantic search."""
+        if self._vector_kb is None:
+            return
+        try:
+            slug = procedure.get("id", "")
+            title = procedure.get("title", "")
+            desc = procedure.get("description", "")
+            strategy = procedure.get("strategy") or ""
+            steps = procedure.get("steps", [])
+            step_summary = "; ".join(
+                s.get("action", s.get("description", ""))
+                for s in steps[:15]
+                if isinstance(s, dict)
+            )
+            text = f"{title} | {desc} | {step_summary} | {strategy}"
+            self._vector_kb.upsert("procedure", slug, text[:3000])
+        except Exception:
+            logger.debug("Procedure embedding failed for %s", procedure.get("id"), exc_info=True)
+
+    def _analyze_style(self, procedure: dict) -> None:
+        """Analyze user writing style and populate voice_profile + content_samples."""
+        try:
+            from agenthandover_worker.style_analyzer import analyze_procedure_style
+            voice_profile, content_samples = analyze_procedure_style(procedure)
+            if voice_profile:
+                existing_vp = procedure.get("voice_profile", {})
+                existing_vp.update(voice_profile)
+                procedure["voice_profile"] = existing_vp
+            if content_samples:
+                procedure["content_samples"] = content_samples
+            # Re-save with style data
+            if voice_profile or content_samples:
+                self._kb.save_procedure(procedure)
+                logger.debug(
+                    "Style analysis for '%s': %s, %d samples",
+                    procedure.get("id"),
+                    voice_profile.get("formality", "unknown"),
+                    len(content_samples),
+                )
+        except Exception:
+            logger.debug("Style analysis failed for %s", procedure.get("id"), exc_info=True)
 
     # ------------------------------------------------------------------
     # Evidence pre-population

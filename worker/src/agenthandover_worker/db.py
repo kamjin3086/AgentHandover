@@ -936,10 +936,18 @@ class WorkerDB:
             "  start_time TEXT,"
             "  end_time TEXT,"
             "  sop_generated INTEGER NOT NULL DEFAULT 0,"
+            "  embeddings_json TEXT,"
             "  created_at TEXT NOT NULL DEFAULT "
             "    (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
             ")"
         )
+        # Add column if table already exists without it
+        try:
+            write_conn.execute(
+                "ALTER TABLE task_segments ADD COLUMN embeddings_json TEXT"
+            )
+        except sqlite3.OperationalError:
+            pass  # Column already exists
 
     def save_task_segment(
         self,
@@ -950,17 +958,24 @@ class WorkerDB:
         apps: list[str],
         start_time: str,
         end_time: str,
+        embeddings: list[list[float]] | None = None,
     ) -> bool:
         """Persist a task segment from the segmenter.
 
         Uses INSERT ... ON CONFLICT DO UPDATE to upsert metadata while
         preserving ``sop_generated`` and ``created_at`` on existing rows.
+
+        *embeddings* — per-frame embedding vectors. Persisted so future
+        vector-KB / fine-tuning pipelines can reuse them without
+        recomputing via Ollama.
         """
         import json as _json
 
         db_path = self._get_writable_path()
         if not db_path:
             return False
+
+        embeddings_str = _json.dumps(embeddings) if embeddings else None
 
         write_conn = sqlite3.connect(db_path)
         try:
@@ -969,8 +984,8 @@ class WorkerDB:
             write_conn.execute(
                 "INSERT INTO task_segments "
                 "(segment_id, cluster_id, task_label, event_ids_json, "
-                " frame_count, apps_json, start_time, end_time) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+                " frame_count, apps_json, start_time, end_time, embeddings_json) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT(segment_id) DO UPDATE SET "
                 " cluster_id = excluded.cluster_id,"
                 " task_label = excluded.task_label,"
@@ -978,7 +993,8 @@ class WorkerDB:
                 " frame_count = excluded.frame_count,"
                 " apps_json = excluded.apps_json,"
                 " start_time = excluded.start_time,"
-                " end_time = excluded.end_time",
+                " end_time = excluded.end_time,"
+                " embeddings_json = excluded.embeddings_json",
                 (
                     segment_id,
                     cluster_id,
@@ -988,6 +1004,7 @@ class WorkerDB:
                     _json.dumps(apps),
                     start_time,
                     end_time,
+                    embeddings_str,
                 ),
             )
             write_conn.commit()
@@ -1492,6 +1509,141 @@ class WorkerDB:
             return False
         finally:
             write_conn.close()
+
+    # ------------------------------------------------------------------
+    # OCR text preservation (pre-expiry extraction)
+    # ------------------------------------------------------------------
+
+    def _ensure_preserved_text_table(
+        self, write_conn: "sqlite3.Connection",
+    ) -> None:
+        """Create the preserved_text table for long-term text storage.
+
+        Uses a composite PK (event_id, source) so one event can have
+        both 'ocr' and 'visual_proxy' entries without key collision.
+        """
+        write_conn.execute(
+            "CREATE TABLE IF NOT EXISTS preserved_text ("
+            "  event_id TEXT NOT NULL,"
+            "  source TEXT NOT NULL,"  # 'ocr', 'visual_proxy'
+            "  timestamp TEXT NOT NULL,"
+            "  text_content TEXT NOT NULL,"
+            "  app TEXT DEFAULT '',"
+            "  created_at TEXT NOT NULL DEFAULT "
+            "    (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),"
+            "  PRIMARY KEY (event_id, source)"
+            ")"
+        )
+        write_conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_preserved_text_ts "
+            "ON preserved_text(timestamp)"
+        )
+
+    def preserve_ocr_text(
+        self, retention_days: int = 14,
+    ) -> tuple[int, list[tuple[str, str, str]]]:
+        """Extract and persist OCR text from events nearing expiry.
+
+        Scans processed events that will expire within the next 2 days
+        and saves their OCR text + visual_text_proxy to a permanent
+        table that survives event purging.
+
+        Returns (count, preserved_items) where preserved_items is a list
+        of (event_id, source, text_content) tuples for downstream embedding.
+        """
+        import json as _json
+
+        db_path = self._get_writable_path()
+        if not db_path:
+            return 0, []
+
+        write_conn = sqlite3.connect(db_path)
+        count = 0
+        preserved_items: list[tuple[str, str, str]] = []
+        try:
+            write_conn.execute("PRAGMA busy_timeout = 5000;")
+            self._ensure_preserved_text_table(write_conn)
+
+            # Find processed events nearing expiry that haven't been
+            # preserved yet.  Uses the write connection for both read and
+            # write to ensure consistency (read snapshot can't see our
+            # own inserts within this batch).
+            expiry_window = f"-{retention_days - 2} days"
+            cur = write_conn.execute(
+                "SELECT id, timestamp, metadata_json, "
+                "  scene_annotation_json, window_json "
+                "FROM events "
+                "WHERE processed = 1 "
+                "  AND datetime(timestamp) < datetime('now', ?) "
+                "  AND id NOT IN (SELECT event_id FROM preserved_text) "
+                "LIMIT 500",
+                (expiry_window,),
+            )
+            columns = [d[0] for d in cur.description]
+
+            for row in cur.fetchall():
+                row_dict = dict(zip(columns, row))
+                event_id = row_dict["id"]
+                ts = row_dict["timestamp"]
+
+                # Extract app name
+                app = ""
+                wj = row_dict.get("window_json", "")
+                if wj:
+                    try:
+                        w = _json.loads(wj)
+                        app = w.get("app_id", "") or w.get("app_name", "")
+                    except (TypeError, _json.JSONDecodeError):
+                        pass
+
+                texts_to_save: list[tuple[str, str]] = []
+
+                # OCR text from metadata
+                meta_raw = row_dict.get("metadata_json", "{}")
+                if meta_raw:
+                    try:
+                        meta = _json.loads(meta_raw) if isinstance(meta_raw, str) else meta_raw
+                        ocr = meta.get("ocr", {})
+                        if isinstance(ocr, dict):
+                            full_text = ocr.get("full_text", "")
+                            if full_text and len(full_text) > 10:
+                                texts_to_save.append(("ocr", full_text[:4000]))
+                    except (TypeError, _json.JSONDecodeError):
+                        pass
+
+                # Visual text proxy from annotation
+                ann_raw = row_dict.get("scene_annotation_json", "")
+                if ann_raw:
+                    try:
+                        ann = _json.loads(ann_raw) if isinstance(ann_raw, str) else ann_raw
+                        proxy = ann.get("_visual_text_proxy", "")
+                        if proxy and len(proxy) > 10:
+                            texts_to_save.append(("visual_proxy", proxy[:4000]))
+                    except (TypeError, _json.JSONDecodeError):
+                        pass
+
+                for source, text in texts_to_save:
+                    try:
+                        write_conn.execute(
+                            "INSERT OR IGNORE INTO preserved_text "
+                            "(event_id, source, timestamp, text_content, app) "
+                            "VALUES (?, ?, ?, ?, ?)",
+                            (event_id, source, ts, text, app),
+                        )
+                        count += 1
+                        preserved_items.append((event_id, source, text))
+                    except sqlite3.Error:
+                        pass
+
+            write_conn.commit()
+            if count > 0:
+                logger.info("Preserved %d OCR/proxy texts before expiry", count)
+        except sqlite3.Error as exc:
+            logger.error("Failed to preserve OCR text: %s", exc)
+        finally:
+            write_conn.close()
+
+        return count, preserved_items
 
     # ------------------------------------------------------------------
     # Lifecycle

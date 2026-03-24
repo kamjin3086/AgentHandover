@@ -33,6 +33,8 @@ pub enum EventKind {
         byte_size: u64,
         high_entropy: bool,
         content_hash: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        content_preview: Option<String>,
     },
     PasteDetected {
         matched_copy_hash: Option<String>,
