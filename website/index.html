@@ -6,7 +6,7 @@
     <title>AgentHandover - Work once. Hand over forever.</title>
     <link rel="icon" type="image/png" href="favicon.png">
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -15,636 +15,955 @@
             --orange: #EA9134;
             --yellow: #FFBD12;
             --cream: #FFF5E0;
-            --light: #F5F5F5;
+            --light: #F8F7F4;
             --green: #2ECC57;
-            --text: #d4d4d8;
-            --muted: #71717a;
-            --border: 2px;
-            --radius: 16px;
+            --red: #E74C3C;
+            --border: 2.5px;
+            --radius: 14px;
+            --radius-lg: 20px;
         }
 
         body {
-            font-family: 'Space Grotesk', sans-serif;
+            font-family: 'Space Grotesk', -apple-system, sans-serif;
             background: var(--navy);
-            color: var(--text);
+            color: var(--navy);
             overflow-x: hidden;
+            -webkit-font-smoothing: antialiased;
         }
 
-        /* ---- HERO ---- */
+        /* ============================================================
+           HERO — warm orange, full screen, mascot + floating terminal
+           ============================================================ */
         .hero {
             background: var(--orange);
             min-height: 100vh;
             display: flex;
-            flex-direction: column;
-            justify-content: center;
-            padding: 0 clamp(2rem, 8vw, 10rem);
+            align-items: center;
+            padding: 0 clamp(2rem, 6vw, 8rem);
             position: relative;
+            overflow: hidden;
         }
 
-        .mascot {
-            width: 100px;
-            height: 100px;
+        .hero-left {
+            flex: 1;
+            z-index: 2;
+            max-width: 600px;
+        }
+
+        .hero-right {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            z-index: 2;
+        }
+
+        .mascot-circle {
+            width: 90px;
+            height: 90px;
             background: var(--yellow);
             border-radius: 50%;
             border: 3px solid var(--navy);
             display: flex;
             align-items: center;
             justify-content: center;
-            margin-bottom: 2.5rem;
-            overflow: hidden;
+            margin-bottom: 2rem;
+            animation: float 6s ease-in-out infinite;
         }
 
-        .mascot img {
-            width: 72px;
-            height: 72px;
+        .mascot-circle img { width: 60px; height: 60px; }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-8px); }
         }
 
         .hero h1 {
-            font-size: clamp(3rem, 8vw, 5.5rem);
+            font-size: clamp(3.2rem, 7vw, 5.5rem);
             font-weight: 800;
-            line-height: 0.95;
-            letter-spacing: -0.04em;
+            line-height: 0.92;
+            letter-spacing: -0.05em;
             color: white;
             margin-bottom: 1.5rem;
         }
 
-        .hero h1 .line2 {
-            display: block;
-            color: var(--navy);
-        }
+        .hero h1 span { color: var(--navy); }
 
-        .hero p {
-            font-size: clamp(1rem, 2vw, 1.2rem);
-            line-height: 1.7;
-            color: rgba(255,255,255,0.85);
-            max-width: 560px;
+        .hero .sub {
+            font-size: clamp(1.05rem, 1.8vw, 1.2rem);
+            line-height: 1.75;
+            color: rgba(255,255,255,0.88);
             margin-bottom: 2.5rem;
+            max-width: 480px;
         }
 
-        .hero p strong { color: white; }
+        .hero .sub strong { color: white; }
 
-        .actions {
-            display: flex;
-            gap: 0.75rem;
-            flex-wrap: wrap;
-        }
+        .btn-row { display: flex; gap: 0.7rem; flex-wrap: wrap; }
 
-        .actions a {
+        .btn {
+            display: inline-block;
             text-decoration: none;
-            padding: 0.85rem 2.2rem;
+            padding: 0.9rem 2.2rem;
             border-radius: var(--radius);
             font-weight: 700;
             font-size: 0.95rem;
-            transition: all 0.2s;
             border: var(--border) solid var(--navy);
+            transition: transform 0.2s, box-shadow 0.2s;
+            cursor: pointer;
         }
 
-        .actions .dl {
-            background: white;
-            color: var(--navy);
-        }
-        .actions .dl:hover { transform: translateY(-2px); }
+        .btn:hover { transform: translateY(-2px); }
 
-        .actions .gh {
-            background: transparent;
-            color: var(--navy);
-        }
-        .actions .gh:hover {
-            background: rgba(24,25,31,0.1);
-            transform: translateY(-2px);
+        .btn-dark { background: var(--navy); color: white; }
+        .btn-dark:hover { box-shadow: 0 8px 30px rgba(24,25,31,0.3); }
+        .btn-ghost { background: transparent; color: var(--navy); }
+        .btn-ghost:hover { background: rgba(24,25,31,0.08); }
+        .btn-white { background: white; color: var(--navy); }
+        .btn-white:hover { box-shadow: 0 8px 30px rgba(0,0,0,0.1); }
+        .btn-orange { background: var(--orange); color: white; border-color: var(--orange); }
+        .btn-orange:hover { box-shadow: 0 8px 30px rgba(234,145,52,0.4); }
+
+        /* Floating terminal in hero */
+        .hero-terminal {
+            background: var(--navy);
+            border: 3px solid rgba(255,255,255,0.15);
+            border-radius: var(--radius-lg);
+            padding: 0;
+            width: 100%;
+            max-width: 440px;
+            overflow: hidden;
+            box-shadow: 0 40px 80px rgba(24,25,31,0.4);
+            animation: float 6s ease-in-out infinite;
+            animation-delay: -3s;
         }
 
-        /* ---- TICKER ---- */
+        .terminal-bar {
+            display: flex;
+            gap: 6px;
+            padding: 12px 16px;
+            border-bottom: 2px solid rgba(255,255,255,0.06);
+        }
+
+        .terminal-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            border: 2px solid rgba(255,255,255,0.15);
+        }
+
+        .terminal-dot:nth-child(1) { background: var(--red); border-color: var(--red); }
+        .terminal-dot:nth-child(2) { background: var(--yellow); border-color: var(--yellow); }
+        .terminal-dot:nth-child(3) { background: var(--green); border-color: var(--green); }
+
+        .terminal-body {
+            padding: 1.2rem 1.5rem 1.5rem;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.72rem;
+            line-height: 2;
+            color: #a1a1aa;
+        }
+
+        .terminal-body .t-orange { color: var(--orange); }
+        .terminal-body .t-yellow { color: var(--yellow); }
+        .terminal-body .t-green { color: var(--green); }
+        .terminal-body .t-white { color: white; }
+        .terminal-body .t-dim { color: #3f3f46; }
+        .terminal-body .t-bold { font-weight: 600; }
+
+        /* ============================================================
+           TICKER
+           ============================================================ */
         .ticker {
-            border-top: var(--border) solid var(--navy);
-            border-bottom: var(--border) solid rgba(255,255,255,0.08);
-            padding: 1.2rem 0;
+            background: var(--navy);
+            border-bottom: var(--border) solid rgba(255,255,255,0.06);
+            padding: 1rem 0;
             overflow: hidden;
             white-space: nowrap;
-            background: var(--navy);
         }
 
         .ticker-inner {
             display: inline-flex;
-            gap: 3rem;
-            animation: scroll-left 40s linear infinite;
+            gap: 2.5rem;
+            animation: scroll-left 45s linear infinite;
             font-family: 'JetBrains Mono', monospace;
-            font-size: 0.72rem;
-            letter-spacing: 0.06em;
+            font-size: 0.68rem;
+            letter-spacing: 0.07em;
             text-transform: uppercase;
             color: #3f3f46;
         }
 
-        .ticker-inner span.hl { color: var(--orange); }
+        .ticker-inner .hl { color: var(--orange); }
 
         @keyframes scroll-left {
             0% { transform: translateX(0); }
             100% { transform: translateX(-50%); }
         }
 
-        /* ---- SECTION ---- */
+        /* ============================================================
+           SECTIONS — alternating backgrounds for visual rhythm
+           ============================================================ */
+        .s-navy { background: var(--navy); color: white; }
+        .s-cream { background: var(--cream); color: var(--navy); }
+        .s-light { background: var(--light); color: var(--navy); }
+        .s-orange { background: var(--orange); color: white; }
+
         .sect {
-            padding: clamp(5rem, 10vw, 8rem) clamp(2rem, 8vw, 10rem);
+            padding: clamp(5rem, 10vw, 8rem) clamp(2rem, 6vw, 8rem);
         }
 
-        .sect-split {
+        .sect h2 {
+            font-size: clamp(2.2rem, 4.5vw, 3.2rem);
+            font-weight: 800;
+            letter-spacing: -0.04em;
+            line-height: 1.08;
+            margin-bottom: 1.2rem;
+        }
+
+        .sect h2 em { font-style: normal; color: var(--orange); }
+        .s-orange h2 em { color: var(--navy); }
+        .s-cream h2 em { color: var(--orange); }
+
+        .sect .lead {
+            font-size: 1.05rem;
+            line-height: 1.8;
+            max-width: 580px;
+            opacity: 0.7;
+            margin-bottom: 2.5rem;
+        }
+
+        .s-navy .lead { color: #a1a1aa; }
+
+        .grid-2 {
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 4rem;
             align-items: center;
         }
 
-        .sect h2 {
-            font-size: clamp(2rem, 4vw, 3rem);
-            font-weight: 800;
-            letter-spacing: -0.03em;
-            line-height: 1.1;
-            margin-bottom: 1.5rem;
-            color: white;
-        }
-
-        .sect h2 em {
-            font-style: normal;
-            color: var(--orange);
-        }
-
-        .sect p {
-            font-size: 1rem;
-            line-height: 1.8;
-            color: var(--muted);
-        }
-
-        .sect p strong { color: #a1a1aa; }
-
-        /* ---- DELIVERABLE CARD ---- */
-        .deliverable {
-            background: #0f1014;
-            border: var(--border) solid #2a2a30;
-            border-radius: var(--radius);
-            padding: 2rem 2.2rem;
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 0.78rem;
-            line-height: 2;
+        /* ============================================================
+           DELIVERABLE — the hero card showing what agents receive
+           ============================================================ */
+        .deliverable-card {
+            background: var(--navy);
+            border: 3px solid #2a2a32;
+            border-radius: var(--radius-lg);
+            overflow: hidden;
             max-width: 520px;
         }
 
-        .deliverable .title {
-            font-family: 'Space Grotesk', sans-serif;
-            font-size: 1.1rem;
-            font-weight: 700;
+        .del-header {
+            padding: 1.5rem 2rem 0;
+        }
+
+        .del-title {
+            font-size: 1.15rem;
+            font-weight: 800;
             color: white;
-            margin-bottom: 0.2rem;
         }
 
-        .deliverable .meta {
-            color: #52525b;
-            margin-bottom: 1rem;
-            font-size: 0.7rem;
-        }
-
-        .deliverable .label {
-            color: var(--orange);
-            font-weight: 500;
+        .del-meta {
+            font-family: 'JetBrains Mono', monospace;
             font-size: 0.68rem;
-            text-transform: uppercase;
-            letter-spacing: 0.1em;
-            margin-top: 0.8rem;
+            color: #52525b;
+            margin-top: 0.2rem;
         }
 
-        .deliverable .content {
+        .del-section {
+            padding: 0 2rem;
+            margin-top: 1rem;
+        }
+
+        .del-label {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.6rem;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            color: var(--orange);
+            font-weight: 600;
+            margin-bottom: 0.3rem;
+        }
+
+        .del-text {
+            font-size: 0.82rem;
+            line-height: 1.7;
             color: #a1a1aa;
         }
 
-        .deliverable .voice-tag {
-            display: inline-block;
-            background: rgba(234,145,52,0.1);
-            border: 1px solid rgba(234,145,52,0.3);
-            border-radius: 6px;
-            padding: 0.15rem 0.6rem;
-            font-size: 0.65rem;
-            color: var(--orange);
-            margin-right: 0.4rem;
+        .del-voice {
+            padding: 1rem 2rem;
+            margin-top: 1rem;
+            background: rgba(234,145,52,0.06);
+            border-top: 2px solid rgba(234,145,52,0.15);
         }
 
-        .deliverable .sample {
-            border-left: 3px solid var(--orange);
-            padding-left: 0.8rem;
-            color: #71717a;
-            font-style: italic;
-            margin: 0.3rem 0;
-        }
-
-        /* ---- PIPELINE ---- */
-        .pipe-viz {
+        .voice-tags {
             display: flex;
-            flex-direction: column;
-            gap: 0;
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 0.78rem;
-        }
-
-        .pipe-step {
-            display: flex;
-            align-items: center;
-            gap: 1rem;
-            padding: 0.65rem 0;
-            color: #52525b;
-            border-left: var(--border) solid #27272a;
-            padding-left: 1.2rem;
-            transition: all 0.3s;
-            cursor: default;
-        }
-
-        .pipe-step:hover {
-            color: var(--orange);
-            border-left-color: var(--orange);
-            background: linear-gradient(90deg, rgba(234,145,52,0.06) 0%, transparent 60%);
-        }
-
-        .pipe-num {
-            color: #27272a;
-            font-size: 0.62rem;
-            min-width: 1.2rem;
-        }
-
-        .pipe-step:hover .pipe-num { color: var(--orange); }
-
-        .pipe-step.new-tag::after {
-            content: 'new';
-            font-size: 0.5rem;
-            text-transform: uppercase;
-            letter-spacing: 0.1em;
-            background: var(--orange);
-            color: var(--navy);
-            padding: 0.1rem 0.4rem;
-            border-radius: 4px;
-            margin-left: auto;
-            font-weight: 600;
-        }
-
-        /* ---- CONNECT CARDS ---- */
-        .connect-grid {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 1rem;
-            margin-top: 2rem;
-        }
-
-        .connect-card {
-            background: #0f1014;
-            border: var(--border) solid #27272a;
-            border-radius: var(--radius);
-            padding: 1.5rem;
-            transition: all 0.2s;
-        }
-
-        .connect-card:hover {
-            border-color: var(--orange);
-        }
-
-        .connect-card h3 {
-            font-size: 0.95rem;
-            font-weight: 700;
-            color: white;
+            gap: 0.4rem;
+            flex-wrap: wrap;
             margin-bottom: 0.5rem;
         }
 
-        .connect-card p {
-            font-size: 0.82rem;
-            line-height: 1.6;
-            color: #71717a;
-        }
-
-        .connect-card .badge {
-            display: inline-block;
+        .vtag {
             font-family: 'JetBrains Mono', monospace;
             font-size: 0.62rem;
-            text-transform: uppercase;
-            letter-spacing: 0.08em;
-            padding: 0.2rem 0.5rem;
+            font-weight: 600;
+            padding: 0.25rem 0.65rem;
             border-radius: 6px;
-            margin-bottom: 0.8rem;
-        }
-
-        .badge-rec {
             background: rgba(234,145,52,0.15);
             color: var(--orange);
             border: 1px solid rgba(234,145,52,0.3);
         }
 
-        .badge-auto {
-            background: rgba(46,204,87,0.1);
-            color: var(--green);
-            border: 1px solid rgba(46,204,87,0.3);
-        }
-
-        .badge-gen {
-            background: rgba(255,255,255,0.05);
+        .del-sample {
+            font-size: 0.78rem;
+            font-style: italic;
             color: #71717a;
-            border: 1px solid #27272a;
+            border-left: 3px solid var(--orange);
+            padding-left: 0.8rem;
+            line-height: 1.6;
         }
 
-        /* ---- TRUST BAR ---- */
-        .trust-bar {
+        .del-footer {
+            padding: 0.8rem 2rem;
+            border-top: 2px solid #27272a;
             display: flex;
-            gap: 3px;
-            margin-top: 1.2rem;
+            justify-content: space-between;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.62rem;
+            color: #52525b;
         }
 
-        .trust-bar .stage {
-            flex: 1;
-            height: 38px;
+        .del-footer .conf { color: var(--green); font-weight: 600; }
+
+        /* ============================================================
+           FEATURES — big icon circles (matching app onboarding style)
+           ============================================================ */
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1.5rem;
+            margin-top: 2.5rem;
+        }
+
+        .feat {
+            background: white;
+            border: var(--border) solid var(--navy);
+            border-radius: var(--radius-lg);
+            padding: 2rem;
+            transition: transform 0.2s;
+        }
+
+        .feat:hover { transform: translateY(-4px); }
+
+        .feat-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 12px;
+            border: var(--border) solid var(--navy);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.3rem;
+            margin-bottom: 1rem;
+        }
+
+        .feat-icon.orange { background: rgba(234,145,52,0.12); }
+        .feat-icon.yellow { background: rgba(255,189,18,0.15); }
+        .feat-icon.green { background: rgba(46,204,87,0.12); }
+
+        .feat h3 {
+            font-size: 1rem;
+            font-weight: 700;
+            margin-bottom: 0.4rem;
+        }
+
+        .feat p {
+            font-size: 0.85rem;
+            line-height: 1.6;
+            color: #71717a;
+        }
+
+        /* ============================================================
+           PIPELINE — vertical timeline with nodes (matching app step 4)
+           ============================================================ */
+        .timeline {
+            display: flex;
+            flex-direction: column;
+            gap: 0;
+            position: relative;
+            max-width: 480px;
+        }
+
+        .tl-step {
+            display: flex;
+            align-items: center;
+            gap: 1.2rem;
+            padding: 0.6rem 0;
+            position: relative;
+        }
+
+        .tl-node {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            border: var(--border) solid var(--navy);
+            background: var(--light);
             display: flex;
             align-items: center;
             justify-content: center;
             font-family: 'JetBrains Mono', monospace;
-            font-size: 0.55rem;
+            font-size: 0.6rem;
+            font-weight: 600;
+            color: var(--navy);
+            flex-shrink: 0;
+            z-index: 2;
+            transition: all 0.2s;
+        }
+
+        .tl-step:hover .tl-node {
+            background: var(--orange);
+            border-color: var(--orange);
+            color: white;
+        }
+
+        .tl-node.highlight {
+            background: var(--orange);
+            color: white;
+            border-color: var(--orange);
+            width: 40px;
+            height: 40px;
+        }
+
+        .tl-line {
+            position: absolute;
+            left: 17px;
+            top: 36px;
+            bottom: -1px;
+            width: 3px;
+            background: var(--navy);
+            opacity: 0.12;
+            z-index: 1;
+        }
+
+        .tl-step:last-child .tl-line { display: none; }
+
+        .tl-text {
+            font-size: 0.88rem;
+            font-weight: 500;
+            color: var(--navy);
+        }
+
+        .tl-step:hover .tl-text { color: var(--orange); }
+
+        .tl-new {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.5rem;
             text-transform: uppercase;
             letter-spacing: 0.1em;
-            border-radius: 8px;
-            color: #52525b;
-            background: #0f1014;
-            border: var(--border) solid #27272a;
-            transition: all 0.3s;
-            cursor: default;
+            background: var(--yellow);
+            color: var(--navy);
+            padding: 0.12rem 0.45rem;
+            border-radius: 4px;
+            font-weight: 700;
+            margin-left: 0.5rem;
+            border: 1.5px solid var(--navy);
         }
 
-        .trust-bar .stage:hover {
-            border-color: #52525b;
-            color: #d4d4d8;
+        /* ============================================================
+           CONNECT CARDS
+           ============================================================ */
+        .connect-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 1rem;
+            margin-top: 2.5rem;
         }
 
-        .trust-bar .stage.active {
-            background: rgba(234,145,52,0.1);
-            border-color: var(--orange);
-            color: var(--orange);
+        .cc {
+            background: rgba(255,255,255,0.04);
+            border: var(--border) solid rgba(255,255,255,0.08);
+            border-radius: var(--radius-lg);
+            padding: 1.8rem;
+            transition: all 0.2s;
         }
 
-        /* ---- PRIVACY PILLS ---- */
-        .privacy-grid {
+        .cc:hover { border-color: var(--orange); transform: translateY(-3px); }
+
+        .cc-badge {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.58rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            padding: 0.25rem 0.6rem;
+            border-radius: 6px;
+            display: inline-block;
+            margin-bottom: 0.8rem;
+            font-weight: 600;
+        }
+
+        .cc-badge.rec { background: var(--orange); color: white; }
+        .cc-badge.auto { background: rgba(46,204,87,0.15); color: var(--green); border: 1px solid rgba(46,204,87,0.3); }
+        .cc-badge.gen { background: rgba(255,255,255,0.06); color: #71717a; border: 1px solid rgba(255,255,255,0.1); }
+
+        .cc h3 { font-size: 1rem; font-weight: 700; color: white; margin-bottom: 0.5rem; }
+        .cc p { font-size: 0.82rem; line-height: 1.6; color: #71717a; }
+
+        .mcp-code {
+            margin-top: 2rem;
+            background: rgba(0,0,0,0.3);
+            border: var(--border) solid rgba(255,255,255,0.06);
+            border-radius: var(--radius);
+            padding: 1.2rem 1.5rem;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.75rem;
+            line-height: 1.8;
+            color: #a1a1aa;
+            max-width: 440px;
+        }
+
+        .mcp-code .key { color: var(--orange); }
+
+        /* ============================================================
+           TRUST
+           ============================================================ */
+        .trust-row {
             display: flex;
-            flex-wrap: wrap;
-            gap: 0.5rem;
+            gap: 3px;
             margin-top: 1.5rem;
         }
 
-        .pill {
-            display: inline-flex;
+        .trust-stage {
+            flex: 1;
+            height: 44px;
+            display: flex;
             align-items: center;
-            gap: 0.4rem;
-            padding: 0.5rem 1rem;
-            background: #0f1014;
-            border: var(--border) solid #27272a;
-            border-radius: var(--radius);
-            font-size: 0.78rem;
-            color: #a1a1aa;
+            justify-content: center;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.58rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            border-radius: 10px;
+            border: var(--border) solid var(--navy);
+            color: #71717a;
+            background: white;
+            transition: all 0.2s;
+            cursor: default;
         }
 
-        .pill .dot {
-            width: 6px;
-            height: 6px;
+        .trust-stage:hover { background: var(--cream); color: var(--navy); }
+
+        .trust-stage.active {
+            background: var(--orange);
+            border-color: var(--orange);
+            color: white;
+            font-weight: 600;
+        }
+
+        /* ============================================================
+           PRIVACY STRIP
+           ============================================================ */
+        .privacy-pills {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.6rem;
+            margin-top: 2rem;
+        }
+
+        .ppill {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.55rem 1.1rem;
+            border: var(--border) solid var(--navy);
+            border-radius: 999px;
+            font-size: 0.8rem;
+            font-weight: 500;
+            background: white;
+        }
+
+        .ppill .dot {
+            width: 7px; height: 7px;
             border-radius: 50%;
             background: var(--green);
         }
 
-        /* ---- BOTTOM CTA ---- */
-        .bottom {
-            padding: 6rem clamp(2rem, 8vw, 10rem);
-            text-align: center;
-            background: var(--cream);
-            border-top: var(--border) solid var(--navy);
-        }
-
-        .bottom h2 {
-            font-size: clamp(2rem, 5vw, 3.5rem);
-            font-weight: 800;
-            letter-spacing: -0.03em;
-            margin-bottom: 0.8rem;
-            color: var(--navy);
-        }
-
-        .bottom p {
-            color: #71717a;
-            margin-bottom: 2.5rem;
-            font-size: 0.95rem;
-        }
-
-        .bottom .actions a { border-color: var(--navy); }
-        .bottom .actions .dl {
+        /* ============================================================
+           STATS STRIP
+           ============================================================ */
+        .stats {
+            display: flex;
+            justify-content: center;
+            gap: clamp(2rem, 6vw, 5rem);
+            padding: 3rem 2rem;
             background: var(--navy);
-            color: white;
-        }
-        .bottom .actions .gh {
-            color: var(--navy);
+            border-top: var(--border) solid rgba(255,255,255,0.06);
+            border-bottom: var(--border) solid rgba(255,255,255,0.06);
         }
 
-        /* ---- FOOTER ---- */
+        .stat {
+            text-align: center;
+        }
+
+        .stat-num {
+            font-size: clamp(2rem, 4vw, 3rem);
+            font-weight: 800;
+            color: var(--orange);
+            letter-spacing: -0.04em;
+        }
+
+        .stat-label {
+            font-size: 0.78rem;
+            color: #52525b;
+            margin-top: 0.2rem;
+            font-weight: 500;
+        }
+
+        /* ============================================================
+           CTA
+           ============================================================ */
+        .cta {
+            padding: 7rem clamp(2rem, 6vw, 8rem);
+            text-align: center;
+            background: var(--orange);
+        }
+
+        .cta h2 {
+            font-size: clamp(2.5rem, 5vw, 4rem);
+            font-weight: 800;
+            color: white;
+            letter-spacing: -0.04em;
+            margin-bottom: 0.5rem;
+        }
+
+        .cta h2 span { color: var(--navy); }
+
+        .cta p {
+            color: rgba(255,255,255,0.7);
+            margin-bottom: 2.5rem;
+            font-size: 1rem;
+        }
+
+        /* ============================================================
+           FOOTER
+           ============================================================ */
         footer {
-            padding: 2rem clamp(2rem, 8vw, 10rem);
+            padding: 1.5rem clamp(2rem, 6vw, 8rem);
+            background: var(--navy);
             border-top: var(--border) solid rgba(255,255,255,0.06);
             display: flex;
             justify-content: space-between;
             font-size: 0.75rem;
-            color: var(--muted);
-            background: var(--navy);
+            color: #52525b;
         }
 
-        footer a { text-decoration: none; color: #a1a1aa; }
+        footer a { text-decoration: none; color: #71717a; }
         footer a:hover { color: white; }
 
-        /* ---- RESPONSIVE ---- */
+        /* ============================================================
+           RESPONSIVE
+           ============================================================ */
         @media (max-width: 900px) {
-            .sect-split { grid-template-columns: 1fr; gap: 2.5rem; }
+            .hero { flex-direction: column; padding-top: 6rem; padding-bottom: 4rem; min-height: auto; }
+            .hero-right { margin-top: 3rem; }
+            .grid-2 { grid-template-columns: 1fr; gap: 2.5rem; }
+            .features-grid { grid-template-columns: 1fr 1fr; }
             .connect-grid { grid-template-columns: 1fr 1fr; }
-            footer { flex-direction: column; gap: 0.5rem; }
+            .stats { flex-wrap: wrap; gap: 2rem; }
         }
-        @media (max-width: 500px) {
+
+        @media (max-width: 550px) {
+            .features-grid { grid-template-columns: 1fr; }
             .connect-grid { grid-template-columns: 1fr; }
+            .hero-terminal { max-width: 100%; }
+            footer { flex-direction: column; gap: 0.5rem; }
         }
     </style>
 </head>
 <body>
 
-<!-- HERO (warm orange bg - matches app onboarding welcome screen) -->
+<!-- ================================================================
+     HERO
+     ================================================================ -->
 <section class="hero">
-    <div class="mascot">
-        <img src="favicon.png" alt="AgentHandover mascot">
+    <div class="hero-left">
+        <div class="mascot-circle">
+            <img src="favicon.png" alt="">
+        </div>
+        <h1>Work once.<br><span>Hand over forever.</span></h1>
+        <p class="sub">
+            <strong>AgentHandover</strong> watches how you work, captures the strategy and judgment behind your actions, learns your voice, and produces handoff documents that AI agents follow <strong>exactly the way you would.</strong>
+        </p>
+        <div class="btn-row">
+            <a href="https://github.com/sandroandric/AgentHandover/releases" class="btn btn-dark">Download for macOS</a>
+            <a href="https://github.com/sandroandric/AgentHandover" class="btn btn-ghost">GitHub</a>
+        </div>
     </div>
-    <h1>
-        Work once.<br>
-        <span class="line2">Hand over forever.</span>
-    </h1>
-    <p>
-        <strong>AgentHandover</strong> watches how you work, learns the strategy behind your actions, captures your voice and judgment, and produces handoff documents that AI agents can follow exactly the way you would. Not macros. Not recordings. <strong>Real understanding.</strong>
-    </p>
-    <div class="actions">
-        <a href="https://github.com/sandroandric/AgentHandover/releases" class="dl">Download for macOS</a>
-        <a href="https://github.com/sandroandric/AgentHandover" class="gh">GitHub</a>
+    <div class="hero-right">
+        <div class="hero-terminal">
+            <div class="terminal-bar">
+                <div class="terminal-dot"></div>
+                <div class="terminal-dot"></div>
+                <div class="terminal-dot"></div>
+            </div>
+            <div class="terminal-body">
+                <span class="t-dim">$</span> <span class="t-orange">agenthandover</span> sops list<br>
+                <span class="t-white t-bold">Reddit Community Marketing</span> <span class="t-green">agent-ready</span><br>
+                <span class="t-dim">&nbsp; 6 steps - 89% confidence - 4 sessions</span><br>
+                <span class="t-white t-bold">Deploy to Staging</span> <span class="t-yellow">reviewed</span><br>
+                <span class="t-dim">&nbsp; 8 steps - 92% confidence - 7 sessions</span><br>
+                <span class="t-white t-bold">Client Invoice Processing</span> <span class="t-dim">draft</span><br>
+                <span class="t-dim">&nbsp; 5 steps - 76% confidence - 2 sessions</span><br><br>
+                <span class="t-dim">$</span> <span class="t-orange">agenthandover</span> connect mcp<br>
+                <span class="t-green">MCP server ready.</span> <span class="t-dim">5 tools exposed.</span>
+            </div>
+        </div>
     </div>
 </section>
 
-<!-- TICKER -->
+<!-- ================================================================
+     TICKER
+     ================================================================ -->
 <div class="ticker">
     <div class="ticker-inner">
-        <span>learns your strategy, not just steps</span>
-        <span class="hl">captures your writing voice per workflow</span>
-        <span>semantic search via vector KB</span>
-        <span class="hl">connects any agent via MCP</span>
-        <span>runs 100% on your machine</span>
+        <span>strategy, not just steps</span>
+        <span class="hl">captures your writing voice</span>
+        <span>semantic vector search</span>
+        <span class="hl">MCP server for any agent</span>
+        <span>100% on your machine</span>
         <span class="hl">nothing leaves your laptop</span>
         <span>style strengthens over sessions</span>
-        <span class="hl">agents write like you, not like a robot</span>
+        <span class="hl">agents write like you</span>
         <span>screenshots deleted instantly</span>
         <span class="hl">every procedure needs your approval</span>
-        <span>optional image embeddings (SigLIP)</span>
-        <span class="hl">works with Claude Code, OpenClaw, Codex</span>
-        <!-- duplicate for seamless loop -->
-        <span>learns your strategy, not just steps</span>
-        <span class="hl">captures your writing voice per workflow</span>
-        <span>semantic search via vector KB</span>
-        <span class="hl">connects any agent via MCP</span>
-        <span>runs 100% on your machine</span>
+        <span>optional image embeddings</span>
+        <span class="hl">Claude Code + OpenClaw + Codex</span>
+        <span>strategy, not just steps</span>
+        <span class="hl">captures your writing voice</span>
+        <span>semantic vector search</span>
+        <span class="hl">MCP server for any agent</span>
+        <span>100% on your machine</span>
         <span class="hl">nothing leaves your laptop</span>
         <span>style strengthens over sessions</span>
-        <span class="hl">agents write like you, not like a robot</span>
+        <span class="hl">agents write like you</span>
         <span>screenshots deleted instantly</span>
         <span class="hl">every procedure needs your approval</span>
-        <span>optional image embeddings (SigLIP)</span>
-        <span class="hl">works with Claude Code, OpenClaw, Codex</span>
+        <span>optional image embeddings</span>
+        <span class="hl">Claude Code + OpenClaw + Codex</span>
     </div>
 </div>
 
-<!-- WHAT AGENTS GET -->
-<section class="sect">
-    <div class="sect-split">
+<!-- ================================================================
+     WHAT AGENTS GET — cream bg, deliverable card
+     ================================================================ -->
+<section class="sect s-cream">
+    <div class="grid-2">
         <div>
             <h2>This is what your<br>agent <em>actually gets</em>.</h2>
-            <p>
-                Not a list of clicks. A complete handoff with <strong>strategy</strong>, <strong>decision criteria</strong>, <strong>guardrails</strong>, and <strong>your voice</strong> -- so the agent doesn't just do the work, it does it the way you would. Style confidence builds across sessions. One reply is a guess. Twenty replies is a voice profile.
+            <p class="lead">
+                Not a list of clicks. A complete handoff with strategy, decision logic, guardrails, and your voice. The kind of brief you'd give a capable new hire -- except it writes itself.
             </p>
         </div>
-        <div class="deliverable">
-            <div class="title">Reddit Community Marketing</div>
-            <div class="meta">6 steps - 4 sessions learned - 89% confidence</div>
-
-            <div class="label">Strategy</div>
-            <div class="content">Target high-signal posts (10+ comments, <48h, not promotional). Write authentic replies: acknowledge problem, share experience, mention product.</div>
-
-            <div class="label">Steps</div>
-            <div class="content">
-                1. Open Reddit, navigate to target subreddit<br>
-                2. Scan posts - skip promotional, skip &lt;10 comments<br>
-                3. Open high-signal post, read top comments<br>
-                4. Write reply: acknowledge &rarr; experience &rarr; mention<br>
-                5. Submit, verify not auto-removed<br>
-                6. Repeat for 2 more subreddits (max 5/day)
+        <div class="deliverable-card">
+            <div class="del-header">
+                <div class="del-title">Reddit Community Marketing</div>
+                <div class="del-meta">6 steps - 4 sessions - daily workflow</div>
             </div>
-
-            <div class="label">Voice &amp; Style</div>
-            <div>
-                <span class="voice-tag">casual</span>
-                <span class="voice-tag">short sentences</span>
-                <span class="voice-tag">uses emoji</span>
+            <div class="del-section">
+                <div class="del-label">Strategy</div>
+                <div class="del-text">Target high-signal posts (10+ comments, &lt;48h). Write authentic replies: acknowledge problem, share experience, mention product.</div>
             </div>
-            <div class="sample">Hey great point about the engagement metrics! We should def try that approach</div>
-
-            <div class="label">Guardrails</div>
-            <div class="content">Max 5 replies/day - Never identical phrasing - Never reply to own posts - Empathy-first tone</div>
+            <div class="del-section">
+                <div class="del-label">Guardrails</div>
+                <div class="del-text">Max 5/day - Never identical phrasing - Never own posts - Empathy-first</div>
+            </div>
+            <div class="del-voice">
+                <div class="del-label">Voice &amp; Style</div>
+                <div class="voice-tags">
+                    <span class="vtag">casual</span>
+                    <span class="vtag">short sentences</span>
+                    <span class="vtag">uses emoji</span>
+                </div>
+                <div class="del-sample">Hey great point about the engagement metrics! We should def try that approach</div>
+            </div>
+            <div class="del-footer">
+                <span>~15 min daily - 9-10am</span>
+                <span class="conf">89% confidence</span>
+            </div>
         </div>
     </div>
 </section>
 
-<!-- INTELLIGENCE PIPELINE -->
-<section class="sect">
-    <div class="sect-split">
+<!-- ================================================================
+     STATS STRIP
+     ================================================================ -->
+<div class="stats">
+    <div class="stat">
+        <div class="stat-num">11</div>
+        <div class="stat-label">pipeline stages</div>
+    </div>
+    <div class="stat">
+        <div class="stat-num">768d</div>
+        <div class="stat-label">text embeddings</div>
+    </div>
+    <div class="stat">
+        <div class="stat-num">1152d</div>
+        <div class="stat-label">image embeddings</div>
+    </div>
+    <div class="stat">
+        <div class="stat-num">5</div>
+        <div class="stat-label">MCP tools</div>
+    </div>
+    <div class="stat">
+        <div class="stat-num">0</div>
+        <div class="stat-label">data sent to cloud</div>
+    </div>
+</div>
+
+<!-- ================================================================
+     FEATURES — light bg, bold cards
+     ================================================================ -->
+<section class="sect s-light">
+    <h2>What makes this <em>different</em>.</h2>
+    <p class="lead">Other tools record clicks. AgentHandover understands intent.</p>
+
+    <div class="features-grid">
+        <div class="feat">
+            <div class="feat-icon orange">&#127919;</div>
+            <h3>Strategy, not just steps</h3>
+            <p>Behavioral synthesis extracts the reasoning behind your actions. Not "click here" but "target high-signal posts because..."</p>
+        </div>
+        <div class="feat">
+            <div class="feat-icon yellow">&#128483;</div>
+            <h3>Your voice, per workflow</h3>
+            <p>Style analysis captures formality, sentence patterns, emoji. Casual on Reddit, formal in email. Strengthens across sessions.</p>
+        </div>
+        <div class="feat">
+            <div class="feat-icon green">&#128270;</div>
+            <h3>Semantic understanding</h3>
+            <p>Vector KB powered by nomic-embed-text. "Deploy to staging" matches "push to stage environment." Not keyword matching.</p>
+        </div>
+        <div class="feat">
+            <div class="feat-icon orange">&#128065;</div>
+            <h3>Visual intelligence</h3>
+            <p>Optional SigLIP image embeddings let agents find visually similar screens even when text differs entirely.</p>
+        </div>
+        <div class="feat">
+            <div class="feat-icon yellow">&#128279;</div>
+            <h3>Universal agent support</h3>
+            <p>MCP server, Claude Code /skills, Codex AGENTS.md, OpenClaw SOPs, REST API. One observation, every format.</p>
+        </div>
+        <div class="feat">
+            <div class="feat-icon green">&#128274;</div>
+            <h3>Your machine, your data</h3>
+            <p>Local VLM. Screenshots deleted after annotation. Auto-redaction. XChaCha20 encryption. No telemetry. Ever.</p>
+        </div>
+    </div>
+</section>
+
+<!-- ================================================================
+     HOW IT WORKS — cream bg, timeline
+     ================================================================ -->
+<section class="sect s-cream">
+    <div class="grid-2">
         <div>
-            <h2>It doesn't just record.<br>It <em>understands</em>.</h2>
-            <p>
-                A local vision model annotates every frame. A vector knowledge base links activity by meaning, not keywords. A style analyzer captures how you write. A behavioral synthesizer extracts the strategy behind your actions. <strong>All on your machine.</strong>
+            <h2>An 11-stage intelligence<br><em>pipeline</em>.</h2>
+            <p class="lead">
+                From raw screenshot to agent-ready procedure with strategy, voice, and guardrails. Runs continuously on your Mac.
             </p>
         </div>
-        <div class="pipe-viz">
-            <div class="pipe-step"><span class="pipe-num">01</span> screen capture + perceptual dedup</div>
-            <div class="pipe-step"><span class="pipe-num">02</span> local VLM annotation (Qwen 3.5)</div>
-            <div class="pipe-step"><span class="pipe-num">03</span> activity classification (8 types)</div>
-            <div class="pipe-step new-tag"><span class="pipe-num">04</span> vector embedding (nomic-embed-text)</div>
-            <div class="pipe-step new-tag"><span class="pipe-num">05</span> image embedding (SigLIP, optional)</div>
-            <div class="pipe-step"><span class="pipe-num">06</span> semantic clustering + session linking</div>
-            <div class="pipe-step"><span class="pipe-num">07</span> behavioral synthesis (strategy + guardrails)</div>
-            <div class="pipe-step new-tag"><span class="pipe-num">08</span> voice &amp; style analysis</div>
-            <div class="pipe-step"><span class="pipe-num">09</span> procedure generation + semantic dedup</div>
-            <div class="pipe-step"><span class="pipe-num">10</span> human review + approval</div>
-            <div class="pipe-step"><span class="pipe-num">11</span> export to every agent format</div>
+        <div class="timeline">
+            <div class="tl-step"><div class="tl-node">01</div><div class="tl-text">Screen capture + perceptual dedup</div><div class="tl-line"></div></div>
+            <div class="tl-step"><div class="tl-node">02</div><div class="tl-text">Local VLM annotation (Qwen 3.5)</div><div class="tl-line"></div></div>
+            <div class="tl-step"><div class="tl-node">03</div><div class="tl-text">Activity classification (8 types)</div><div class="tl-line"></div></div>
+            <div class="tl-step"><div class="tl-node highlight">04</div><div class="tl-text">Vector embedding (768d) <span class="tl-new">new</span></div><div class="tl-line"></div></div>
+            <div class="tl-step"><div class="tl-node highlight">05</div><div class="tl-text">Image embedding (1152d) <span class="tl-new">new</span></div><div class="tl-line"></div></div>
+            <div class="tl-step"><div class="tl-node">06</div><div class="tl-text">Semantic clustering + session linking</div><div class="tl-line"></div></div>
+            <div class="tl-step"><div class="tl-node">07</div><div class="tl-text">Behavioral synthesis</div><div class="tl-line"></div></div>
+            <div class="tl-step"><div class="tl-node highlight">08</div><div class="tl-text">Voice &amp; style analysis <span class="tl-new">new</span></div><div class="tl-line"></div></div>
+            <div class="tl-step"><div class="tl-node">09</div><div class="tl-text">Procedure generation + semantic dedup</div><div class="tl-line"></div></div>
+            <div class="tl-step"><div class="tl-node">10</div><div class="tl-text">Human review + approval</div><div class="tl-line"></div></div>
+            <div class="tl-step"><div class="tl-node">11</div><div class="tl-text">Export to every agent format</div></div>
         </div>
     </div>
 </section>
 
-<!-- CONNECT YOUR AGENT -->
-<section class="sect">
+<!-- ================================================================
+     CONNECT — navy bg
+     ================================================================ -->
+<section class="sect s-navy">
     <h2>Connect <em>any</em> agent.</h2>
-    <p style="max-width: 560px;">One observation pipeline, every agent format. MCP for universal access. Slash commands for Claude Code. AGENTS.md for Codex. Auto-sync for OpenClaw.</p>
+    <p class="lead">One observation pipeline. Every agent format. One command.</p>
 
     <div class="connect-grid">
-        <div class="connect-card">
-            <span class="badge badge-rec">recommended</span>
+        <div class="cc">
+            <span class="cc-badge rec">recommended</span>
             <h3>MCP Server</h3>
-            <p>Works with Claude Code, Cursor, Windsurf, and any MCP client. One config line. 5 tools including semantic search.</p>
+            <p>Claude Code, Cursor, Windsurf, any MCP client. 5 tools including semantic search. One config line.</p>
         </div>
-        <div class="connect-card">
-            <span class="badge badge-gen">slash commands</span>
+        <div class="cc">
+            <span class="cc-badge gen">/commands</span>
             <h3>Claude Code</h3>
-            <p>Procedures appear as /slash-commands. Type /reddit-marketing and Claude Code gets the full procedure with voice.</p>
+            <p>Procedures as /slash-commands. Type /reddit-marketing and get the full procedure with voice guidance.</p>
         </div>
-        <div class="connect-card">
-            <span class="badge badge-gen">generates file</span>
+        <div class="cc">
+            <span class="cc-badge gen">agents.md</span>
             <h3>Codex</h3>
-            <p>Auto-generates AGENTS.md with all agent-ready procedures, strategy, guardrails, and voice guidance.</p>
+            <p>Auto-generated AGENTS.md with procedures, strategy, guardrails, and voice. Codex reads it automatically.</p>
         </div>
-        <div class="connect-card">
-            <span class="badge badge-auto">auto-sync</span>
+        <div class="cc">
+            <span class="cc-badge auto">auto-sync</span>
             <h3>OpenClaw</h3>
-            <p>Procedures sync to the OpenClaw workspace automatically. SOP markdown + v3 JSON. Nothing to configure.</p>
+            <p>Procedures sync to OpenClaw workspace automatically. SOP markdown + v3 JSON. Zero config.</p>
+        </div>
+    </div>
+
+    <div class="mcp-code">
+        <span class="key">"mcpServers"</span>: {<br>
+        &nbsp;&nbsp;<span class="key">"agenthandover"</span>: {<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;<span class="key">"command"</span>: <span style="color: var(--green)">"agenthandover-mcp"</span><br>
+        &nbsp;&nbsp;}<br>
+        }
+    </div>
+</section>
+
+<!-- ================================================================
+     TRUST + PRIVACY — cream bg
+     ================================================================ -->
+<section class="sect s-cream">
+    <div class="grid-2">
+        <div>
+            <h2>Nothing runs without<br>your <em>say</em>.</h2>
+            <p class="lead">Every procedure starts as a draft. Six gates must pass before an agent can execute. The system suggests -- you decide.</p>
+            <div class="trust-row">
+                <div class="trust-stage">observed</div>
+                <div class="trust-stage">draft</div>
+                <div class="trust-stage">reviewed</div>
+                <div class="trust-stage">verified</div>
+                <div class="trust-stage active">agent ready</div>
+            </div>
+        </div>
+        <div>
+            <h2>Everything stays on<br>your <em>machine</em>.</h2>
+            <div class="privacy-pills">
+                <div class="ppill"><span class="dot"></span> Local VLM inference</div>
+                <div class="ppill"><span class="dot"></span> Screenshots deleted after annotation</div>
+                <div class="ppill"><span class="dot"></span> Auto-redaction of secrets</div>
+                <div class="ppill"><span class="dot"></span> XChaCha20 encryption at rest</div>
+                <div class="ppill"><span class="dot"></span> No telemetry ever</div>
+            </div>
         </div>
     </div>
 </section>
 
-<!-- TRUST -->
-<section class="sect">
-    <div class="sect-split">
-        <div>
-            <h2>Nothing runs<br>without your <em>say</em>.</h2>
-            <p>
-                Every procedure starts as a draft. <strong>You review the strategy, steps, and guardrails.</strong> You decide what's ready. Only then can agents use it. Six gates must pass. The system never auto-promotes.
-            </p>
-            <div class="trust-bar">
-                <div class="stage">observed</div>
-                <div class="stage">draft</div>
-                <div class="stage">reviewed</div>
-                <div class="stage">verified</div>
-                <div class="stage active">agent ready</div>
-            </div>
-        </div>
-        <div>
-            <h2 style="font-size: 1.4rem; margin-bottom: 1rem;">Everything stays<br>on your <em>machine</em>.</h2>
-            <div class="privacy-grid">
-                <div class="pill"><span class="dot"></span> Local VLM inference</div>
-                <div class="pill"><span class="dot"></span> Screenshots deleted after annotation</div>
-                <div class="pill"><span class="dot"></span> Auto-redaction (API keys, tokens, passwords)</div>
-                <div class="pill"><span class="dot"></span> XChaCha20-Poly1305 encryption at rest</div>
-                <div class="pill"><span class="dot"></span> No telemetry, no cloud, no accounts</div>
-                <div class="pill"><span class="dot"></span> Configurable retention (14d events, 90d episodes)</div>
-            </div>
-        </div>
-    </div>
-</section>
-
-<!-- BOTTOM CTA -->
-<section class="bottom">
-    <h2>Your work, their playbook.</h2>
+<!-- ================================================================
+     CTA
+     ================================================================ -->
+<section class="cta">
+    <h2>Your work, <span>their playbook.</span></h2>
     <p>macOS only. Local by default. MIT licensed.</p>
-    <div class="actions" style="justify-content:center;">
-        <a href="https://github.com/sandroandric/AgentHandover/releases" class="dl">Download</a>
-        <a href="https://github.com/sandroandric/AgentHandover" class="gh">View source</a>
+    <div class="btn-row" style="justify-content: center;">
+        <a href="https://github.com/sandroandric/AgentHandover/releases" class="btn btn-dark">Download</a>
+        <a href="https://github.com/sandroandric/AgentHandover" class="btn btn-ghost">View source</a>
     </div>
 </section>
 
