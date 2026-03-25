@@ -128,6 +128,10 @@ Procedure compiled to every agent format simultaneously:
   MCP tools, Claude Code /skills, Codex AGENTS.md, OpenClaw SOPs
 ```
 
+### The Knowledge Base
+
+Everything AgentHandover learns lives in a local knowledge base on your machine. Every observation is embedded into a vector store (nomic-embed-text, 768d) so the system can find similar workflows by meaning, deduplicate procedures that describe the same task differently, and link activity across sessions. Optional image embeddings (SigLIP, 1152d) capture what your screen looked like. Your writing style accumulates into a voice profile that strengthens over sessions -- one reply is a guess, twenty is a fingerprint. Agents can search this knowledge base semantically via the MCP server or REST API.
+
 ### Focus Q&A
 
 After a focus recording, AgentHandover asks 1-3 targeted questions from the agent's perspective:
