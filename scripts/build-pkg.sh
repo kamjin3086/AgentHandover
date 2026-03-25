@@ -75,6 +75,20 @@ if [ -f "${APP_BINARY}" ]; then
     cp "${APP_BINARY}" "${APP_BUNDLE}/AgentHandover"
     cp "${REPO_ROOT}/app/AgentHandoverApp/Sources/AgentHandoverApp/Info.plist" \
        "${PKG_ROOT}/Applications/AgentHandover.app/Contents/Info.plist"
+
+    # Copy SPM resource bundle + icon to Contents/Resources
+    RESOURCES_DIR="${PKG_ROOT}/Applications/AgentHandover.app/Contents/Resources"
+    mkdir -p "${RESOURCES_DIR}"
+    RESOURCE_BUNDLE="${REPO_ROOT}/app/AgentHandoverApp/.build/release/AgentHandoverApp_AgentHandoverApp.bundle"
+    if [ -d "${RESOURCE_BUNDLE}" ]; then
+        cp -R "${RESOURCE_BUNDLE}" "${RESOURCES_DIR}/"
+        echo "  App resource bundle included."
+        # Copy icon to top-level Resources for Finder/Dock
+        if [ -f "${RESOURCE_BUNDLE}/AppIcon.icns" ]; then
+            cp "${RESOURCE_BUNDLE}/AppIcon.icns" "${RESOURCES_DIR}/AppIcon.icns"
+            echo "  App icon included."
+        fi
+    fi
 fi
 
 # Codesign all binaries with Developer ID Application + hardened runtime + timestamp
