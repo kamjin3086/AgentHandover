@@ -24,13 +24,13 @@
 
 You already know how to do your work. Your agents don't.
 
-AgentHandover watches you work on your Mac, understands what you're doing and *why*, and produces complete handoff documents that agents like **Claude Code**, **OpenClaw**, **Codex**, or any MCP-compatible agent can follow. Not macros. Not screen recordings. Actual procedures with strategy, decision logic, guardrails, and your voice.
+AgentHandover watches you work on your Mac, understands what you're doing and *why*, and produces **Skills** -- structured playbooks that tell AI agents exactly what to do and how to do it. Each Skill contains the steps, the strategy behind them, decision logic, guardrails, and your writing voice. Agents like **Claude Code**, **OpenClaw**, **Codex**, or any MCP-compatible agent can pick up a Skill and execute the workflow the way you would.
 
-The kind of handoff you'd give a capable new hire -- except the new hire is an AI agent, and the handoff writes itself.
+Not macros. Not screen recordings. Not a list of clicks. A complete understanding of your work -- the kind of handoff you'd give a sharp new hire, except it writes itself.
 
-## What Agents Actually Get
+## What a Skill Looks Like
 
-This is a real procedure generated from a few focus recording sessions:
+This is a real Skill generated from a few focus recording sessions:
 
 ```
 Reddit Community Marketing
@@ -83,7 +83,7 @@ Not just steps. Strategy, decisions, guardrails, and the user's actual voice -- 
 
 **Focus Recording** -- Click Record, name the task, do the work, click Stop. A few minutes later you have a complete procedure. Best for workflows you want to hand off now.
 
-**Passive Discovery** -- Just work normally. When the same task appears in 2+ sessions, AgentHandover generates a procedure automatically. You don't have to do anything.
+**Passive Discovery** -- Just work normally. AgentHandover recognizes recurring workflows across sessions using semantic similarity (not keyword matching), accumulates observations, and when it has enough evidence, runs behavioral analysis to extract the strategy, decisions, and patterns behind your actions -- then generates a complete Skill automatically. You don't have to do anything.
 
 ### What happens under the hood
 
@@ -213,7 +213,7 @@ curl -X POST http://localhost:9477/search/semantic \
 
 Download the latest `.pkg` from [**Releases**](https://github.com/sandroandric/OpenMimic/releases) and double-click.
 
-The app opens a guided setup: permissions, model download, Chrome extension, and optional image embeddings. Follow the prompts.
+The app opens a guided setup: permissions, AI model downloads (Qwen for screen understanding and SOP generation, nomic-embed-text for semantic search, optional SigLIP for image embeddings), Chrome extension install, and your first recording. Follow the prompts.
 
 <details>
 <summary><strong>Developer / advanced install</strong></summary>
