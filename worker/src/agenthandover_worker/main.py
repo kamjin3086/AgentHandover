@@ -4167,7 +4167,25 @@ def main(argv: list[str] | None = None) -> None:
     lifecycle_manager = LifecycleManager(knowledge_base)
     procedure_writer = ProcedureWriter(kb=knowledge_base, evidence=evidence_tracker, lifecycle_manager=lifecycle_manager, vector_kb=vector_kb)
     kb_export_adapter = KnowledgeBaseExportAdapter(knowledge_base)
-    privacy_checker = PrivacyZoneChecker()
+    # Build PrivacyZoneConfig from user's config.toml [privacy.zones]
+    _pz_cfg = PrivacyZoneConfig()
+    try:
+        _pz_raw = raw_config.get("privacy", {}).get("zones", {})
+        if _pz_raw:
+            _pz_cfg = PrivacyZoneConfig(
+                full_observation=_pz_raw.get("full_observation", []),
+                metadata_only=_pz_raw.get("metadata_only", []),
+                blocked=_pz_raw.get("blocked", []),
+                blocked_urls=_pz_raw.get("blocked_urls", []),
+                auto_pause=_pz_raw.get("auto_pause", []),
+            )
+            logger.info(
+                "Privacy zones loaded: %d blocked, %d metadata_only, %d blocked_urls",
+                len(_pz_cfg.blocked), len(_pz_cfg.metadata_only), len(_pz_cfg.blocked_urls),
+            )
+    except Exception:
+        logger.debug("Privacy zone config parsing failed, using defaults", exc_info=True)
+    privacy_checker = PrivacyZoneChecker(config=_pz_cfg)
     daily_processor = DailyBatchProcessor(knowledge_base=knowledge_base)
     staleness_detector = StalenessDetector(knowledge_base)
     profile_builder = ProfileBuilder(knowledge_base)

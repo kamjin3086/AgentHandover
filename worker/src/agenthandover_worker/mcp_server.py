@@ -84,6 +84,7 @@ def build_mcp_server():
                 else:
                     _state["vkb"] = None
             except Exception:
+                logger.warning("VectorKB init failed; semantic search disabled", exc_info=True)
                 _state["vkb"] = None
         return _state["vkb"]
 

@@ -114,7 +114,7 @@ sync_enabled = false
 [trust]
 # Default trust level for new procedures:
 #   "observe" | "suggest" | "draft" | "execute_with_approval" | "autonomous"
-default_level = "observe"
+default_trust_level = "observe"
 # Minimum observations before a procedure can be promoted beyond "observe"
 min_observations_for_promotion = 3
 # Minimum success rate (0.0–1.0) before suggesting promotion
