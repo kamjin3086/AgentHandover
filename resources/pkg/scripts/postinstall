@@ -150,6 +150,9 @@ fi
 chmod 755 /usr/local/bin/agenthandover-daemon
 chmod 755 /usr/local/bin/agenthandover
 
+# Reset onboarding flag so the app shows setup on fresh install/upgrade
+sudo -u "${CONSOLE_USER}" defaults write com.agenthandover.app hasCompletedOnboarding -bool false 2>/dev/null || true
+
 # Chrome extension setup (informational only — never fatal)
 EXT_DIR="${LIB_DIR}/extension"
 if [ -f "${EXT_DIR}/manifest.json" ] && [ -f "${EXT_DIR}/background.js" ]; then
