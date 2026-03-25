@@ -124,19 +124,24 @@ if [ ! -d "${LIB_DIR}/venv" ]; then
     PYTHON_VERSION=$("$PYTHON3" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null)
     echo "  Python version: ${PYTHON_VERSION}"
 
-    if ! "$PYTHON3" -m venv "${LIB_DIR}/venv"; then
+    # Create venv as the real user (not root) so future pip installs
+    # don't require sudo. The installer runs as root but the venv
+    # should be owned by the console user.
+    if ! sudo -u "${CONSOLE_USER}" "$PYTHON3" -m venv "${LIB_DIR}/venv"; then
         echo "ERROR: Failed to create Python virtual environment at ${LIB_DIR}/venv."
         echo "Try manually: $PYTHON3 -m venv ${LIB_DIR}/venv"
         exit 1
     fi
 
-    if ! "${LIB_DIR}/venv/bin/pip" install --quiet "${LIB_DIR}/worker/"; then
+    if ! sudo -u "${CONSOLE_USER}" "${LIB_DIR}/venv/bin/pip" install --quiet "${LIB_DIR}/worker/"; then
         echo "ERROR: Failed to install AgentHandover worker Python package."
         echo "Try manually: ${LIB_DIR}/venv/bin/pip install ${LIB_DIR}/worker/"
-        # Clean up the broken venv so a re-install retries
         rm -rf "${LIB_DIR}/venv"
         exit 1
     fi
+
+    # Ensure the venv is owned by the user, not root
+    chown -R "${CONSOLE_USER}" "${LIB_DIR}/venv"
 
     echo "  Python virtual environment created."
 fi

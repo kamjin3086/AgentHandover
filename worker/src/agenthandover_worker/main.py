@@ -4510,7 +4510,6 @@ def main(argv: list[str] | None = None) -> None:
         _image_embedder = None
         _image_emb_enabled = False
         try:
-            import platform as _platform
             import tomllib as _tomllib
             _cfg_path = (
                 Path.home() / "Library" / "Application Support" / "agenthandover" / "config.toml"
