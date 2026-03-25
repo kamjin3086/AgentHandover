@@ -109,6 +109,11 @@ enum Commands {
         #[arg(short = 'n', long, default_value = "20")]
         limit: usize,
     },
+    /// Connect an AI agent (claude-code, codex, openclaw, mcp)
+    Connect {
+        /// Which agent to connect: claude-code, codex, openclaw, mcp
+        agent: String,
+    },
     /// Recall what you were doing at a given time
     Recall {
         /// Date to recall (YYYY-MM-DD, default: today)
@@ -225,6 +230,37 @@ fn main() -> Result<()> {
             FocusAction::Finalize => commands::focus::finalize(),
             FocusAction::SkipQuestions => commands::focus::skip_questions(),
         },
+        Commands::Connect { agent } => {
+            // Delegate to the Python agent_connect script
+            let status = std::process::Command::new("agenthandover-connect")
+                .arg(&agent)
+                .status();
+            match status {
+                Ok(s) if s.success() => Ok(()),
+                Ok(s) => {
+                    // Try fallback: call Python directly
+                    let venv = "/usr/local/lib/agenthandover/venv/bin/python";
+                    let fallback = std::process::Command::new(venv)
+                        .args(["-m", "agenthandover_worker.agent_connect", &agent])
+                        .status();
+                    match fallback {
+                        Ok(fs) if fs.success() => Ok(()),
+                        _ => anyhow::bail!("agenthandover connect failed (exit {})", s.code().unwrap_or(-1)),
+                    }
+                }
+                Err(_) => {
+                    // agenthandover-connect not in PATH, try venv directly
+                    let venv = "/usr/local/lib/agenthandover/venv/bin/python";
+                    let fallback = std::process::Command::new(venv)
+                        .args(["-m", "agenthandover_worker.agent_connect", &agent])
+                        .status();
+                    match fallback {
+                        Ok(s) if s.success() => Ok(()),
+                        _ => anyhow::bail!("Could not run agent connect. Is the worker installed?"),
+                    }
+                }
+            }
+        }
         Commands::Export { format, sop, output } => {
             commands::export::run(&format, sop.as_deref(), output.as_deref())
         }
