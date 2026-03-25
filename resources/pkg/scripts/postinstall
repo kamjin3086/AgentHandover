@@ -84,25 +84,49 @@ JSON
 # The worker is required for VLM annotation and SOP generation — without it,
 # AgentHandover cannot function. Treat failure as fatal.
 if [ ! -d "${LIB_DIR}/venv" ]; then
-    # Verify Python 3.11+ is available
-    if ! command -v python3 >/dev/null 2>&1; then
-        echo "ERROR: python3 not found. AgentHandover requires Python 3.11 or later."
+    # Find Python 3.11+ — installer runs as root so PATH is minimal.
+    # Search common locations before falling back to system python3.
+    PYTHON3=""
+    for candidate in \
+        /opt/homebrew/bin/python3 \
+        /usr/local/bin/python3 \
+        /opt/homebrew/bin/python3.14 \
+        /opt/homebrew/bin/python3.13 \
+        /opt/homebrew/bin/python3.12 \
+        /opt/homebrew/bin/python3.11 \
+        /usr/local/bin/python3.13 \
+        /usr/local/bin/python3.12 \
+        /usr/local/bin/python3.11 \
+        /Library/Frameworks/Python.framework/Versions/3.14/bin/python3 \
+        /Library/Frameworks/Python.framework/Versions/3.13/bin/python3 \
+        /Library/Frameworks/Python.framework/Versions/3.12/bin/python3 \
+        /Library/Frameworks/Python.framework/Versions/3.11/bin/python3 \
+        "$(which python3 2>/dev/null)" \
+        python3; do
+        if [ -x "$candidate" ] 2>/dev/null; then
+            ver=$("$candidate" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null || echo "0.0")
+            major=$(echo "$ver" | cut -d. -f1)
+            minor=$(echo "$ver" | cut -d. -f2)
+            if [ "$major" -ge 3 ] 2>/dev/null && [ "$minor" -ge 11 ] 2>/dev/null; then
+                PYTHON3="$candidate"
+                break
+            fi
+        fi
+    done
+
+    if [ -z "$PYTHON3" ]; then
+        echo "ERROR: Python 3.11+ not found. AgentHandover requires Python 3.11 or later."
         echo "Install Python from https://www.python.org/downloads/ or via: brew install python@3.13"
         exit 1
     fi
 
-    PYTHON_VERSION=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null)
-    PYTHON_MAJOR=$(echo "$PYTHON_VERSION" | cut -d. -f1)
-    PYTHON_MINOR=$(echo "$PYTHON_VERSION" | cut -d. -f2)
-    if [ -z "$PYTHON_MAJOR" ] || [ "$PYTHON_MAJOR" -lt 3 ] || { [ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" -lt 11 ]; }; then
-        echo "ERROR: Python 3.11+ is required, but found Python ${PYTHON_VERSION:-unknown}."
-        echo "Install a newer Python from https://www.python.org/downloads/ or via: brew install python@3.13"
-        exit 1
-    fi
+    echo "  Using Python: $PYTHON3"
+    PYTHON_VERSION=$("$PYTHON3" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null)
+    echo "  Python version: ${PYTHON_VERSION}"
 
-    if ! python3 -m venv "${LIB_DIR}/venv"; then
+    if ! "$PYTHON3" -m venv "${LIB_DIR}/venv"; then
         echo "ERROR: Failed to create Python virtual environment at ${LIB_DIR}/venv."
-        echo "Try manually: python3 -m venv ${LIB_DIR}/venv"
+        echo "Try manually: $PYTHON3 -m venv ${LIB_DIR}/venv"
         exit 1
     fi
 
