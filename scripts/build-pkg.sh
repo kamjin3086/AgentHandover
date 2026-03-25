@@ -109,12 +109,23 @@ cp "${REPO_ROOT}/resources/pkg/scripts/preinstall" "${SCRIPTS_STAGING}/"
 cp "${REPO_ROOT}/resources/pkg/scripts/postinstall" "${SCRIPTS_STAGING}/"
 chmod +x "${SCRIPTS_STAGING}/preinstall" "${SCRIPTS_STAGING}/postinstall"
 
+# Generate component plist to disable app relocation.
+# Without this, macOS Installer "relocates" the app back to wherever
+# a previous copy was found (e.g. the build directory), instead of
+# installing to /Applications.
+echo "Generating component plist..."
+COMPONENT_PLIST="$(mktemp -d)/component.plist"
+pkgbuild --analyze --root "${PKG_ROOT}" "${COMPONENT_PLIST}" 2>/dev/null
+# Set BundleIsRelocatable to false for all bundles
+/usr/libexec/PlistBuddy -c "Set :0:BundleIsRelocatable false" "${COMPONENT_PLIST}" 2>/dev/null || true
+
 # Build component .pkg
 echo "Building component package..."
 COMPONENT_PKG="$(mktemp -d)/agenthandover-component.pkg"
 pkgbuild \
     --root "${PKG_ROOT}" \
     --scripts "${SCRIPTS_STAGING}" \
+    --component-plist "${COMPONENT_PLIST}" \
     --identifier "com.agenthandover.pkg" \
     --version "${VERSION}" \
     --install-location "/" \
