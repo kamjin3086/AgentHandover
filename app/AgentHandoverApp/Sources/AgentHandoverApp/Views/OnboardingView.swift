@@ -59,6 +59,9 @@ struct OnboardingView: View {
     @State private var apiKeyValid: Bool? = nil
     @State private var enableImageEmbeddings = false
     @State private var remoteConsentGiven = false
+    @State private var useCustomModels = false
+    @State private var customAnnotationModel = "qwen3.5:2b"
+    @State private var customSOPModel = "qwen3.5:4b"
 
     // Focus recording from onboarding
     @State private var firstRecordingTitle: String = ""
@@ -1115,7 +1118,7 @@ struct OnboardingView: View {
                                 .labelsHidden()
 
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("Visual search (optional)")
+                                Text("Visual search (recommended)")
                                     .font(.system(size: 13, weight: .semibold, design: .rounded))
                                     .foregroundColor(darkNavy)
                                 Text("Embeds screenshots so agents can find visually similar screens. Downloads ~1 GB SigLIP model on first use. Requires Apple Silicon.")
@@ -1147,10 +1150,56 @@ struct OnboardingView: View {
                         )
                         .buttonStyle(.plain)
 
-                        Text("Or use any Ollama-compatible model - edit annotation_model and sop_model in config.toml after setup.")
-                            .font(.system(size: 11))
-                            .foregroundColor(darkNavy.opacity(0.4))
-                            .frame(maxWidth: 380)
+                        // Custom model option
+                        DisclosureGroup(isExpanded: $useCustomModels) {
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack(spacing: 8) {
+                                    Text("Annotation:")
+                                        .font(.system(size: 12, weight: .medium))
+                                        .foregroundColor(darkNavy.opacity(0.6))
+                                        .frame(width: 80, alignment: .trailing)
+                                    TextField("qwen3.5:2b", text: $customAnnotationModel)
+                                        .textFieldStyle(.plain)
+                                        .font(.system(size: 12, design: .monospaced))
+                                        .padding(6)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 6)
+                                                .fill(Color.white)
+                                        )
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 6)
+                                                .stroke(darkNavy.opacity(0.15), lineWidth: 1)
+                                        )
+                                }
+                                HStack(spacing: 8) {
+                                    Text("Generation:")
+                                        .font(.system(size: 12, weight: .medium))
+                                        .foregroundColor(darkNavy.opacity(0.6))
+                                        .frame(width: 80, alignment: .trailing)
+                                    TextField("qwen3.5:4b", text: $customSOPModel)
+                                        .textFieldStyle(.plain)
+                                        .font(.system(size: 12, design: .monospaced))
+                                        .padding(6)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 6)
+                                                .fill(Color.white)
+                                        )
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 6)
+                                                .stroke(darkNavy.opacity(0.15), lineWidth: 1)
+                                        )
+                                }
+                                Text("Enter any Ollama model name (e.g. llama3.2-vision, gemma3)")
+                                    .font(.system(size: 10))
+                                    .foregroundColor(darkNavy.opacity(0.4))
+                            }
+                            .padding(.top, 6)
+                        } label: {
+                            Text("Use different models")
+                                .font(.system(size: 12, weight: .medium, design: .rounded))
+                                .foregroundColor(darkNavy.opacity(0.5))
+                        }
+                        .tint(warmOrange)
                     }
                     .padding(20)
                     .background(
@@ -2057,9 +2106,11 @@ struct OnboardingView: View {
         vlmPullInProgress = true
         vlmPullOutput = "Starting download..."
 
+        let annModel = useCustomModels ? customAnnotationModel : "qwen3.5:2b"
+        let sopModel = useCustomModels ? customSOPModel : "qwen3.5:4b"
         let models = [
-            ("qwen3.5:2b", "scene annotation"),
-            ("qwen3.5:4b", "SOP generation"),
+            (annModel, "scene annotation"),
+            (sopModel, "Skill generation"),
             ("nomic-embed-text", "semantic search"),
         ]
 
@@ -2112,9 +2163,12 @@ struct OnboardingView: View {
                 }
             }
 
-            // Save embedding config
+            // Save embedding config + custom models
             let imageEmbEnabled = self.enableImageEmbeddings
             self.saveEmbeddingConfig(imageEmbeddings: imageEmbEnabled)
+            if self.useCustomModels {
+                self.saveCustomModelConfig(annotation: annModel, sop: sopModel)
+            }
 
             DispatchQueue.main.async {
                 vlmPullInProgress = false
@@ -2153,6 +2207,40 @@ struct OnboardingView: View {
         }
 
         content += embeddingSection
+        try? content.write(to: configPath, atomically: true, encoding: .utf8)
+    }
+
+    private func saveCustomModelConfig(annotation: String, sop: String) {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let configDir = home
+            .appendingPathComponent("Library/Application Support/agenthandover")
+        let configPath = configDir.appendingPathComponent("config.toml")
+
+        try? FileManager.default.createDirectory(at: configDir, withIntermediateDirectories: true)
+
+        var content = (try? String(contentsOf: configPath, encoding: .utf8)) ?? ""
+
+        // Update or add annotation_model and sop_model in [vlm] section
+        let vlmFields = "annotation_model = \"\(annotation)\"\nsop_model = \"\(sop)\"\n"
+
+        if content.contains("[vlm]") {
+            // Remove existing model keys
+            for key in ["annotation_model", "sop_model"] {
+                let pattern = "(?m)^[ \\t]*\(key)[ \\t]*=[ \\t]*\"[^\"]*\"[ \\t]*\\n?"
+                if let regex = try? NSRegularExpression(pattern: pattern) {
+                    let range = NSRange(content.startIndex..., in: content)
+                    content = regex.stringByReplacingMatches(in: content, range: range, withTemplate: "")
+                }
+            }
+            // Insert after [vlm]
+            if let vlmRange = content.range(of: "[vlm]") {
+                let insertIdx = content.index(vlmRange.upperBound, offsetBy: 1, limitedBy: content.endIndex) ?? vlmRange.upperBound
+                content.insert(contentsOf: "\n" + vlmFields, at: insertIdx)
+            }
+        } else {
+            content += "\n[vlm]\n" + vlmFields
+        }
+
         try? content.write(to: configPath, atomically: true, encoding: .utf8)
     }
 }
