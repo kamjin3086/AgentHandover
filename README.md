@@ -9,8 +9,9 @@
 </p>
 
 <p align="center">
-  <a href="#what-agents-actually-get">What Agents Get</a> &middot;
+  <a href="#what-a-skill-looks-like">What a Skill Looks Like</a> &middot;
   <a href="#how-it-works">How It Works</a> &middot;
+  <a href="#the-knowledge-base">Knowledge Base</a> &middot;
   <a href="#connect-your-agent">Connect Your Agent</a> &middot;
   <a href="#install">Install</a> &middot;
   <a href="#privacy">Privacy</a>
@@ -24,7 +25,7 @@
 
 You already know how to do your work. Your agents don't.
 
-AgentHandover watches you work on your Mac, understands what you're doing and *why*, and produces **Skills** -- structured playbooks that tell AI agents exactly what to do and how to do it. Each Skill contains the steps, the strategy behind them, decision logic, guardrails, and your writing voice. Agents like **Claude Code**, **OpenClaw**, **Codex**, or any MCP-compatible agent can pick up a Skill and execute the workflow the way you would.
+AgentHandover watches you work on your Mac, understands what you're doing and *why*, and produces **Skills** -- structured playbooks that tell AI agents exactly what to do and how to do it. Each Skill contains the steps, the strategy behind them, decision logic, guardrails, and your writing voice. **Claude Code**, **OpenClaw**, **Codex**, or any MCP-compatible agent can pick up a Skill and execute the workflow the way you would.
 
 Not macros. Not screen recordings. Not a list of clicks. A complete understanding of your work -- the kind of handoff you'd give a sharp new hire, except it writes itself.
 
@@ -64,93 +65,68 @@ Tone: casual | Sentences: short and punchy | Uses emoji
 ~15 min daily - 9-10am                     Confidence: 89%
 ```
 
-Not just steps. Strategy, decisions, guardrails, and the user's actual voice -- so the agent doesn't just do the work, it does it the way you would.
-
-### What makes this different
-
-| What | How |
-|------|-----|
-| **Strategy, not just steps** | Behavioral synthesis extracts the reasoning behind your actions -- not "click here" but "target high-signal posts because..." |
-| **Your voice, not generic text** | Style analysis captures formality, sentence patterns, vocabulary, emoji -- per workflow. Casual on Reddit, formal in email. |
-| **Semantic understanding** | Vector KB (nomic-embed-text, 768d) powers similarity search, deduplication, and cross-session linking. "Deploy to staging" matches "push to stage environment." |
-| **Visual intelligence** | Optional SigLIP image embeddings (1152d) let agents find visually similar screens even when text differs. |
-| **Universal agent support** | MCP server, Claude Code /skills, Codex AGENTS.md, OpenClaw SOPs, REST API. One observation, every agent format. |
-| **Voice strengthens over time** | Style confidence builds across sessions. One reply is a guess. Twenty replies is a voice profile the agent can match. |
+Not just steps. Strategy, decisions, guardrails, timing, and the user's actual voice -- so the agent doesn't just do the work, it does it the way you would.
 
 ## How It Works
 
 ### Two ways to teach
 
-**Focus Recording** -- Click Record, name the task, do the work, click Stop. A few minutes later you have a complete procedure. Best for workflows you want to hand off now.
+**Focus Recording** -- Click Record in the menu bar, name the task, perform it, click Stop. AgentHandover asks 1-3 targeted questions from the agent's perspective ("What determines which posts you engage with vs. skip?"), then generates a complete Skill. Best for workflows you want to hand off right now.
 
-**Passive Discovery** -- Just work normally. AgentHandover recognizes recurring workflows across sessions using semantic similarity (not keyword matching), accumulates observations, and when it has enough evidence, runs behavioral analysis to extract the strategy, decisions, and patterns behind your actions -- then generates a complete Skill automatically. You don't have to do anything.
+**Passive Discovery** -- Just work normally. AgentHandover recognizes recurring workflows across sessions using semantic similarity, accumulates observations, and when it has enough evidence, runs behavioral analysis to extract the strategy, decisions, and patterns behind your actions -- then generates a Skill automatically. You don't have to do anything.
 
-### What happens under the hood
+### An 11-stage intelligence pipeline
 
-```
-You work normally
-    |
-    v
-Daemon captures screenshots + OS events + clipboard + DOM context
-    |
-    v
-Local VLM (Qwen 3.5) annotates each frame:
-  what app, what URL, what you're doing, what you'll do next
-    |
-    v
-Activity classifier separates signal from noise
-  (your expense filing is "work", YouTube is "entertainment")
-    |
-    v
-Vector KB embeds each annotation (nomic-embed-text, 768d)
-  + optional image embeddings (SigLIP, 1152d)
-    |
-    v
-Task segmenter clusters similar activity by semantic similarity
-  (not keywords -- "deploy staging" = "push to stage")
-    |
-    v
-Session linker connects the same workflow across days
-  (vector cosine similarity, not brittle token matching)
-    |
-    v
-After 3+ observations: behavioral synthesis extracts
-  strategy, selection criteria, content templates, guardrails,
-  decision branches, timing patterns
-    |
-    v
-Style analyzer captures your voice from typed text:
-  formality, sentence length, vocabulary, emoji, tone
-  (strengthens over sessions -- not a one-shot guess)
-    |
-    v
-Procedure compiled to every agent format simultaneously:
-  MCP tools, Claude Code /skills, Codex AGENTS.md, OpenClaw SOPs
-```
+This is not a screen recorder with ChatGPT on top. AgentHandover runs an 11-stage pipeline that turns raw screen activity into agent-ready Skills:
 
-### The Knowledge Base
+| Stage | What it does |
+|-------|-------------|
+| **1. Screen capture** | Half-resolution screenshots, deduplicated by perceptual hashing (70% of frames are duplicates and get dropped) |
+| **2. VLM annotation** | Local Qwen 3.5 model reads each frame -- what app, what URL, what you're doing, what you'll do next |
+| **3. Activity classification** | 8-class taxonomy separates work from noise. Your expense filing is "work." Your YouTube break is "entertainment." |
+| **4. Text embedding** | Every annotation embedded into a vector knowledge base (nomic-embed-text, 768d) for semantic matching |
+| **5. Image embedding** | Optional SigLIP embeddings (1152d) capture what your screen looked like -- find visually similar screens even when text differs |
+| **6. Semantic clustering** | Groups related activity by meaning, not keywords. "Deploy to staging" matches "push to stage environment." |
+| **7. Cross-session linking** | Connects the same workflow across days and interruptions using vector cosine similarity |
+| **8. Behavioral synthesis** | After 3+ observations: extracts strategy, selection criteria, content templates, guardrails, decision branches, and timing patterns |
+| **9. Voice analysis** | Captures your writing style from typed text -- formality, sentence length, vocabulary, emoji. Per workflow. Strengthens over sessions. |
+| **10. Skill generation** | Produces a canonical Skill with semantic dedup (won't create duplicates even if you describe the same workflow differently) |
+| **11. Human review** | You approve before any agent can execute. Six readiness gates must pass. Nothing auto-promotes. |
 
-Everything AgentHandover learns lives in a local knowledge base on your machine. Every observation is embedded into a vector store (nomic-embed-text, 768d) so the system can find similar workflows by meaning, deduplicate procedures that describe the same task differently, and link activity across sessions. Optional image embeddings (SigLIP, 1152d) capture what your screen looked like. Your writing style accumulates into a voice profile that strengthens over sessions -- one reply is a guess, twenty is a fingerprint. Agents can search this knowledge base semantically via the MCP server or REST API.
+Every stage runs locally on your Mac. No cloud APIs required.
 
-### Focus Q&A
+### You stay in control
 
-After a focus recording, AgentHandover asks 1-3 targeted questions from the agent's perspective:
+Every Skill starts as a draft in your menu bar app. Six gates must pass before an agent can execute:
 
-- "Does this workflow require logging into Reddit?"
-- "What determines which posts you engage with vs. skip?"
-- "How do you verify the reply wasn't auto-removed?"
+| Gate | What it checks |
+|------|---------------|
+| **Lifecycle** | You reviewed and promoted it through each stage (Observed > Draft > Reviewed > Verified > Agent Ready) |
+| **Trust** | You authorized the agent to execute, not just observe |
+| **Freshness** | The Skill was observed recently -- stale Skills auto-demote |
+| **Preflight** | Required apps are running, no blocked domains |
+| **Evidence** | Enough observations, high confidence, no contradictions |
+| **Execution history** | Past success rate -- 3+ failures auto-demote |
 
-Answers merge into the procedure. Skip any question and it uses reasonable defaults.
+The system suggests promotions based on evidence. You decide.
 
-### Screenshots are temporary
+## The Knowledge Base
 
-Screenshots are captured at half resolution, deduplicated via perceptual hashing (70% are duplicates and get dropped), then deleted after VLM processing. Only the structured annotation (~500 bytes) survives. If image embeddings are enabled, the visual embedding is computed before deletion -- the screenshot itself never accumulates on disk.
+Everything AgentHandover learns lives in a local knowledge base on your machine. It's not a flat list of files -- it's an active intelligence layer that gets smarter the more you work.
+
+**Vector store** -- Every observation is embedded (nomic-embed-text, 768d) so the system finds similar workflows by meaning, deduplicates Skills that describe the same task differently, and links activity across sessions. Optional image embeddings (SigLIP, 1152d) capture what your screen looked like.
+
+**Voice profiles** -- Your writing style accumulates per workflow and strengthens over sessions. One reply is a guess. Twenty replies is a fingerprint the agent can match. Casual on Reddit, formal in client emails -- the system knows the difference.
+
+**User profile** -- Aggregated across all workflows: your tools, working hours, communication patterns, and overall writing style. Agents read this to adapt to you.
+
+**Semantic search** -- Agents can search the knowledge base by meaning via the MCP server or REST API. "Find something about deploying" returns your staging deployment Skill even if it's titled "Push to Prod."
 
 ## Connect Your Agent
 
-### MCP Server (recommended -- works with any agent)
+### MCP Server (recommended)
 
-Add one line to your agent's settings:
+One config line, any agent. Works with Claude Code, Cursor, Windsurf, and any MCP-compatible tool.
 
 ```json
 {
@@ -162,14 +138,14 @@ Add one line to your agent's settings:
 }
 ```
 
-Works with Claude Code, Cursor, Windsurf, and any MCP-compatible tool. Exposes 5 tools:
+Exposes 5 tools:
 
 | Tool | What it does |
 |------|-------------|
-| `list_ready_procedures` | Procedures ready for execution (all gates passed) |
-| `get_procedure(slug)` | Full procedure with steps, strategy, voice, guardrails |
-| `search_procedures(query)` | Semantic search -- find workflows by meaning |
-| `list_all_procedures` | All procedures including drafts |
+| `list_ready_procedures` | Skills ready for execution (all gates passed) |
+| `get_procedure(slug)` | Full Skill with steps, strategy, voice, guardrails |
+| `search_procedures(query)` | Semantic search -- find Skills by meaning |
+| `list_all_procedures` | All Skills including drafts |
 | `get_user_profile` | User's tools, working hours, writing style |
 
 ### Claude Code
@@ -178,7 +154,7 @@ Works with Claude Code, Cursor, Windsurf, and any MCP-compatible tool. Exposes 5
 agenthandover connect claude-code
 ```
 
-Procedures appear as `/slash-commands`. Type `/reddit-community-marketing` and Claude Code gets the full procedure.
+Skills appear as `/slash-commands`. Type `/reddit-community-marketing` and Claude Code gets the full Skill.
 
 ### Codex
 
@@ -186,7 +162,7 @@ Procedures appear as `/slash-commands`. Type `/reddit-community-marketing` and C
 agenthandover connect codex
 ```
 
-Generates `AGENTS.md` in your project with all agent-ready procedures, strategy, guardrails, and voice guidance.
+Generates `AGENTS.md` with all agent-ready Skills, strategy, guardrails, and voice guidance.
 
 ### OpenClaw
 
@@ -194,14 +170,14 @@ Generates `AGENTS.md` in your project with all agent-ready procedures, strategy,
 agenthandover connect openclaw
 ```
 
-Procedures auto-sync to `~/.openclaw/workspace/memory/apprentice/sops/`. Nothing to configure.
+Skills auto-sync to the OpenClaw workspace. Nothing to configure.
 
 ### REST API
 
 Already running on localhost:9477:
 
 ```bash
-curl http://localhost:9477/ready              # Executable procedures
+curl http://localhost:9477/ready              # Agent-ready Skills
 curl http://localhost:9477/bundle/my-workflow  # Full handoff bundle
 curl -X POST http://localhost:9477/search/semantic \
   -d '{"query": "deploy to production"}'      # Semantic search
@@ -213,7 +189,7 @@ curl -X POST http://localhost:9477/search/semantic \
 
 Download the latest `.pkg` from [**Releases**](https://github.com/sandroandric/OpenMimic/releases) and double-click.
 
-The app opens a guided setup: permissions, AI model downloads (Qwen for screen understanding and SOP generation, nomic-embed-text for semantic search, optional SigLIP for image embeddings), Chrome extension install, and your first recording. Follow the prompts.
+The onboarding app walks you through: permissions, AI model downloads (Qwen for screen understanding and Skill generation, nomic-embed-text for semantic search, optional SigLIP for image embeddings), Chrome extension, and your first recording.
 
 <details>
 <summary><strong>Developer / advanced install</strong></summary>
@@ -229,7 +205,7 @@ agenthandover start all  # Start daemon + worker
 
 ```bash
 ollama pull qwen3.5:2b         # Scene annotation (~2.7 GB)
-ollama pull qwen3.5:4b         # SOP generation (~3.4 GB)
+ollama pull qwen3.5:4b         # Skill generation (~3.4 GB)
 ollama pull nomic-embed-text   # Semantic search (~274 MB)
 ```
 
@@ -254,7 +230,9 @@ just build-all
 
 </details>
 
-### Choose your vision model
+### Choose your AI model
+
+AgentHandover defaults to local Qwen models via Ollama -- free, fast, private. Six backends supported:
 
 | Backend | Best for |
 |---------|----------|
@@ -269,30 +247,78 @@ Switch via `config.toml` or `agenthandover setup --vlm`.
 
 AgentHandover lives in your menu bar:
 
-- **Status** -- daemon and worker health with green/yellow/red indicator
-- **Today's stats** -- events captured, annotations completed, procedures generated
+- **Status** -- daemon and worker health
+- **Today's stats** -- events captured, annotations completed, Skills generated
 - **Attention items** -- Focus Q&A questions waiting, drafts ready for review
-- **Record button** -- one click to start a focus recording
-- **Workflows** -- browse procedures, approve drafts, see confidence scores
+- **Record** -- one click to start a focus recording
+- **Workflows** -- browse all Skills, approve drafts, see confidence and evidence
 - **Digest** -- daily summary of what was learned and what needs attention
 
-### Review and approve
-
-Procedures appear as drafts. Review the strategy, steps, and guardrails. Click "Approve for Agents" when it looks right. One click.
-
-No procedure reaches agents without your sign-off. The system suggests promotions based on evidence but never auto-promotes.
+Review the strategy, steps, and guardrails. Click "Approve for Agents" when it looks right. One click. No Skill reaches agents without your sign-off.
 
 ## Privacy
 
 Everything runs on your machine:
 
 - **Local-first.** VLM inference via Ollama. Cloud APIs are opt-in with explicit consent.
-- **Screenshots are temporary.** Deleted after VLM annotation. Only structured text survives.
+- **Screenshots are temporary.** Deleted after VLM annotation. Only structured text survives. Image embeddings computed before deletion.
 - **Auto-redaction.** API keys, tokens, passwords, credit card numbers scrubbed before storage.
 - **Secure field exclusion.** Password and credit card inputs are never captured.
+- **Knowledge base is local.** Vector store, voice profiles, and all Skills live on your machine. Never uploaded.
 - **Encryption at rest.** Artifacts use zstd + XChaCha20-Poly1305.
 - **Configurable retention.** Raw events pruned at 14 days. Valuable evidence extracted and preserved permanently before expiry.
 - **No telemetry.** Nothing phones home. Ever.
+
+<details>
+<summary><strong>Architecture</strong></summary>
+
+```
+                              You work normally
+                                    |
+                                    v
+Chrome Extension -----> Daemon (Rust) ---SQLite WAL---> Worker (Python)
+  DOM snapshots           Screenshots                     |
+  Click targets           OS events                       v
+  Form field IDs          Clipboard                  11-stage pipeline:
+                          Perceptual dedup           VLM annotation
+                                                     Activity classification
+                    Menu Bar App (SwiftUI)            Text + image embedding
+                    Status - Record - Workflows      Semantic clustering
+                    Digest - Focus Q&A               Behavioral synthesis
+                                                     Voice analysis
+                                                     Skill generation
+                                                          |
+                                                          v
+                                              +------------------------+
+                                              |    Knowledge Base      |
+                                              |                        |
+                                              |  Skills (v3 schema)    |
+                                              |  Vector store (768d)   |
+                                              |  Image vectors (1152d) |
+                                              |  Voice profiles        |
+                                              |  User profile          |
+                                              |  Evidence + history    |
+                                              +-----+------+-----------+
+                                                    |      |
+                                      +-------------+      +------------+
+                                      v              v                  v
+                                MCP Server     Claude Code       OpenClaw SOPs
+                                (any agent)    /slash-commands    (auto-sync)
+                                Codex          REST API
+                                AGENTS.md      localhost:9477
+```
+
+| Component | Language | Role |
+|-----------|----------|------|
+| **Daemon** | Rust | Always-on observer -- screenshots, OS events, clipboard, dedup |
+| **Worker** | Python | Intelligence -- 11-stage pipeline, vector KB, behavioral synthesis, voice analysis, lifecycle, export |
+| **Extension** | TypeScript | Chrome MV3 -- DOM snapshots, click targets, form field context, ARIA labels |
+| **CLI** | Rust | Service management, focus recording, agent connection |
+| **App** | SwiftUI | Menu bar -- status, recording, workflows, digest, Focus Q&A |
+| **MCP Server** | Python | Universal agent interface -- 5 tools + 3 resources via MCP protocol |
+| **Knowledge Base** | SQLite + JSON | Vector store, Skills, voice profiles, user profile, evidence |
+
+</details>
 
 <details>
 <summary><strong>CLI reference</strong></summary>
@@ -304,70 +330,13 @@ Everything runs on your machine:
 | `agenthandover stop all` | Stop services |
 | `agenthandover focus start "title"` | Record a workflow |
 | `agenthandover focus stop` | Stop recording |
-| `agenthandover sops list` | List all procedures |
+| `agenthandover sops list` | List all Skills |
 | `agenthandover sops approve <slug>` | Approve for agents |
 | `agenthandover sops promote <slug> <state>` | Promote lifecycle |
 | `agenthandover connect <agent>` | Set up agent integration |
 | `agenthandover doctor` | Pre-flight health check |
 | `agenthandover watch` | Live dashboard |
 | `agenthandover logs worker -f` | Follow worker logs |
-
-</details>
-
-<details>
-<summary><strong>Architecture</strong></summary>
-
-```
-Chrome Extension ----> Daemon (Rust) --SQLite WAL--> Worker (Python)
-  DOM snapshots          Screenshots                   Pipeline v2 + VLM
-  Click intent           OS events                     Vector KB (nomic-embed-text)
-  Secure fields          Clipboard                     Style analyzer
-                         dHash dedup                   Behavioral synthesis
-                                                       |
-                    Menu Bar App (SwiftUI)              |
-                    Status - Record - Workflows         |
-                                                       v
-                                            +---------------------+
-                                            |   Knowledge Base    |
-                                            |   Procedures (v3)   |
-                                            |   Vector store      |
-                                            |   Voice profiles    |
-                                            +-----+-----+--------+
-                                                  |     |
-                                    +-------------+     +-------------+
-                                    v             v                   v
-                              MCP Server    Claude Code        OpenClaw SOPs
-                              (any agent)   /slash-commands    (auto-sync)
-```
-
-| Component | Language | Role |
-|-----------|----------|------|
-| **Daemon** | Rust | Always-on observer -- screenshots, OS events, clipboard, dedup |
-| **Worker** | Python | Intelligence -- VLM, classification, segmentation, vector KB, behavioral synthesis, style analysis, lifecycle, export |
-| **Extension** | TypeScript | Chrome MV3 -- DOM snapshots, click intent, form field context |
-| **CLI** | Rust | Service management, focus recording, agent connection |
-| **App** | SwiftUI | Menu bar -- status, recording, workflows, digest |
-| **MCP Server** | Python | Universal agent interface -- tools + resources via MCP protocol |
-
-</details>
-
-<details>
-<summary><strong>Lifecycle gates</strong></summary>
-
-```
-Observed -> Draft -> Reviewed -> Verified -> Agent Ready
-```
-
-Six gates must pass before an agent can execute:
-
-| Gate | Checks | Decides |
-|------|--------|---------|
-| **Lifecycle** | Human reviewed and promoted? | Human |
-| **Trust** | Agent authorized to execute? | Human |
-| **Freshness** | Observed recently? Stale = auto-demote | System |
-| **Preflight** | Required apps running? Blocked domains? | System |
-| **Evidence** | Observation count, confidence, contradictions | System |
-| **Execution** | Prior success rate? 3+ failures = auto-demote | System |
 
 </details>
 
@@ -380,4 +349,4 @@ agenthandover uninstall --purge-data # Remove everything
 
 ## License
 
-[BSL 1.1](LICENSE) — source available, non-commercial. Converts to Apache 2.0 on 2030-03-25.
+[BSL 1.1](LICENSE) -- source available, non-commercial. Converts to Apache 2.0 on 2030-03-25.
