@@ -145,6 +145,10 @@ if [ ! -d "${LIB_DIR}/venv" ]; then
     chown -R "${CONSOLE_USER}" "${LIB_DIR}/venv"
 
     echo "  Python virtual environment created."
+else
+    # Venv exists — reinstall worker package to pick up code changes
+    echo "  Updating worker package..."
+    sudo -u "${CONSOLE_USER}" "${LIB_DIR}/venv/bin/pip" install --quiet --force-reinstall --no-deps "${LIB_DIR}/worker/" 2>/dev/null || true
 fi
 
 # Set proper permissions

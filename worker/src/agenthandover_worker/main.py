@@ -4163,6 +4163,12 @@ def main(argv: list[str] | None = None) -> None:
     feature_flags = _read_feature_flags()
     logger.info("Feature flags: %s", {k: v for k, v in feature_flags.items() if not v} or "all enabled")
 
+    # Forward declarations — these are initialized later but referenced
+    # by module constructors. Python 3.14 requires locals to be assigned
+    # before any use in the same function scope.
+    vector_kb = None
+    llm_reasoner = None
+
     evidence_tracker = EvidenceTracker(knowledge_base=knowledge_base)
     lifecycle_manager = LifecycleManager(knowledge_base)
     procedure_writer = ProcedureWriter(kb=knowledge_base, evidence=evidence_tracker, lifecycle_manager=lifecycle_manager, vector_kb=vector_kb, llm_reasoner=llm_reasoner)
