@@ -1864,7 +1864,6 @@ def _process_focus_sessions_v2(
                     )
 
                 # Cleanup temp files
-                import os
                 os.unlink(_qa_input.name)
                 os.unlink(_qa_script_file.name)
                 try:
