@@ -1807,22 +1807,29 @@ def _process_focus_sessions_v2(
 
                 _qa_output = _qa_input.name + ".out"
 
-                # Run Q&A generation in a separate process with hard 60s timeout
-                _qa_script = (
-                    "import json, sys; "
-                    "from agenthandover_worker.focus_questioner import FocusQuestioner; "
-                    "from agenthandover_worker.llm_reasoning import LLMReasoner, ReasoningConfig; "
-                    "from agenthandover_worker.vlm_queue import VLMFallbackQueue; "
-                    "data = json.load(open(sys.argv[1])); "
-                    "reasoner = LLMReasoner(config=ReasoningConfig(), vlm_queue=VLMFallbackQueue()); "
-                    "fq = FocusQuestioner(llm_reasoner=reasoner); "
-                    "qs = fq.generate_questions(data['procedure'], data['sop']); "
-                    "json.dump(qs, open(sys.argv[2], 'w'))"
+                # Write Q&A script to temp file (avoids -c line length issues)
+                _qa_script_file = _tf.NamedTemporaryFile(
+                    mode="w", suffix=".py", delete=False,
                 )
+                _qa_script_file.write(
+                    "import json, sys\n"
+                    "from dataclasses import asdict\n"
+                    "from agenthandover_worker.focus_questioner import FocusQuestioner\n"
+                    "from agenthandover_worker.llm_reasoning import LLMReasoner, ReasoningConfig\n"
+                    "from agenthandover_worker.vlm_queue import VLMFallbackQueue\n"
+                    "data = json.load(open(sys.argv[1]))\n"
+                    "reasoner = LLMReasoner(config=ReasoningConfig(), vlm_queue=VLMFallbackQueue())\n"
+                    "fq = FocusQuestioner(llm_reasoner=reasoner)\n"
+                    "qs = fq.generate_questions(data['procedure'], data['sop'])\n"
+                    "out = [asdict(q) if hasattr(q, '__dataclass_fields__') else q for q in qs]\n"
+                    "json.dump(out, open(sys.argv[2], 'w'))\n"
+                )
+                _qa_script_file.close()
 
+                # Run in separate process with 120s timeout
                 _qa_result = _sp.run(
-                    [sys.executable, "-c", _qa_script, _qa_input.name, _qa_output],
-                    timeout=60,
+                    [sys.executable, _qa_script_file.name, _qa_input.name, _qa_output],
+                    timeout=120,
                     capture_output=True,
                 )
 
@@ -1841,6 +1848,7 @@ def _process_focus_sessions_v2(
                 # Cleanup temp files
                 import os
                 os.unlink(_qa_input.name)
+                os.unlink(_qa_script_file.name)
                 try:
                     os.unlink(_qa_output)
                 except FileNotFoundError:
