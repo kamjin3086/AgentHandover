@@ -67,6 +67,7 @@ struct WorkflowInboxView: View {
         Group {
             if let sop = selectedSOP {
                 SOPDetailView(sop: sop, sopManager: sopManager)
+                    .id(sop.slug)
             } else {
                 VStack(spacing: 14) {
                     ZStack {
