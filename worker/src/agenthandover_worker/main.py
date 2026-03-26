@@ -1767,8 +1767,12 @@ def _process_focus_sessions_v2(
             _clear_focus_signal(signal_path)
             return 0
 
-        # --- Behavioral synthesis for focus (single demo, force=True) ---
-        procedure_dict = dict(result.sop)
+        # --- Convert to v3 procedure and set user's title ---
+        from agenthandover_worker.procedure_schema import sop_to_procedure
+        procedure_dict = sop_to_procedure(result.sop)
+        procedure_dict["id"] = slug
+        procedure_dict["title"] = title  # User's focus session title, not VLM's guess
+        procedure_dict["source"] = "focus"
         if behavioral_synthesizer is not None:
             try:
                 # Build a single-demo observations list from the SOP steps
