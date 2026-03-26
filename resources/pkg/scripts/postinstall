@@ -128,6 +128,7 @@ if [ ! -d "${LIB_DIR}/venv" ]; then
     # Create venv as the real user (not root) so future pip installs
     # don't require sudo. The installer runs as root but the venv
     # should be owned by the console user.
+    chown -R "${CONSOLE_USER}" "${LIB_DIR}"
     if ! sudo -u "${CONSOLE_USER}" "$PYTHON3" -m venv "${LIB_DIR}/venv"; then
         echo "ERROR: Failed to create Python virtual environment at ${LIB_DIR}/venv."
         echo "Try manually: $PYTHON3 -m venv ${LIB_DIR}/venv"
