@@ -5207,6 +5207,14 @@ def main(argv: list[str] | None = None) -> None:
                         ):
                             should_segment = True
 
+                    # Skip passive discovery if a focus session is pending
+                    # (focus gets absolute priority)
+                    _focus_pending = Path(
+                        _status_dir()
+                    ).joinpath("focus-session.json").exists()
+                    if _focus_pending:
+                        should_segment = False
+
                     if should_segment:
                         try:
                             pd_sops = _process_passive_discovery(
