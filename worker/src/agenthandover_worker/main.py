@@ -857,14 +857,30 @@ def _write_sops_index(
         all_sops_raw = db.get_generated_sops()
         failed = db.get_failed_generations()
 
-        # Only include v2 pipeline SOPs in the user-facing index.
-        # v1 PrefixSpan SOPs (source="sop_pipeline", "focus_recording") are
-        # mechanical patterns (switch_app, navigate) not worth reviewing.
-        _V2_SOURCES = {"v2_focus_recording", "v2_passive_discovery", "focus"}
-        all_sops = [
-            s for s in all_sops_raw
-            if s.get("source", "") in _V2_SOURCES
-        ]
+        # Include all generated SOPs in the user-facing index.
+        all_sops = list(all_sops_raw)
+
+        # Fallback: also include procedures from the KB directory
+        # that aren't already in the DB (covers v1 pipeline exports
+        # and any procedures written directly to the KB).
+        existing_slugs = {s.get("slug", "") for s in all_sops}
+        try:
+            kb_procs = knowledge_base.list_procedures()
+            for proc in kb_procs:
+                slug = proc.get("id", "")
+                if slug and slug not in existing_slugs:
+                    all_sops.append({
+                        "slug": slug,
+                        "title": proc.get("title", slug),
+                        "source": proc.get("source", "unknown"),
+                        "status": "draft",
+                        "confidence": proc.get("confidence_avg", 0),
+                        "source_id": "",
+                        "created_at": proc.get("generated_at", ""),
+                    })
+                    existing_slugs.add(slug)
+        except Exception:
+            pass
 
         # draft_count and approved_count computed after dedup below
 
@@ -1771,23 +1787,14 @@ def _process_focus_sessions_v2(
                     title, exc_info=True,
                 )
 
-        # --- Generate targeted questions (with timeout protection) ---
-        if focus_questioner is not None:
+        # --- Focus Q&A disabled for v0.1 launch (causes worker hangs) ---
+        # TODO: Re-enable after fixing LLM timeout reliability on Python 3.14
+        questions = []
+        if False and focus_questioner is not None:
             try:
-                import concurrent.futures
-                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                    future = pool.submit(
-                        focus_questioner.generate_questions,
-                        procedure_dict, result.sop,
-                    )
-                    try:
-                        questions = future.result(timeout=60)  # 60s max
-                    except concurrent.futures.TimeoutError:
-                        logger.warning(
-                            "Focus Q&A timed out after 60s for '%s' — skipping questions",
-                            title,
-                        )
-                        questions = []
+                questions = focus_questioner.generate_questions(
+                    procedure_dict, result.sop,
+                )
                 if questions:
                     from agenthandover_worker.focus_questioner import (
                         write_focus_questions,
