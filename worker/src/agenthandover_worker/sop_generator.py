@@ -632,6 +632,10 @@ def _vlm_sop_to_template(
     # Convert VLM steps to internal format
     steps = []
     for step_idx, raw_step in enumerate(vlm_sop.get("steps", [])):
+        # Handle steps that are strings (Qwen sometimes returns plain text)
+        if isinstance(raw_step, str):
+            raw_step = {"action": raw_step}
+
         step = {
             "step": raw_step.get("action", "action"),
             "target": raw_step.get("location", ""),
