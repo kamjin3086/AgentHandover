@@ -73,6 +73,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
                     self?.showOnboarding(appState: nil)
                 }
             }
+        } else {
+            // Onboarding done — start services if user hasn't paused
+            let userPaused = UserDefaults.standard.bool(forKey: "observingPaused")
+            if !userPaused {
+                ServiceController.startAll()
+            }
         }
     }
 

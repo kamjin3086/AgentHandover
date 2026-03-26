@@ -485,6 +485,7 @@ struct MenuBarView: View {
             if appState.daemonRunning || appState.workerRunning {
                 Button(action: {
                     appState.userStopped = true
+                    UserDefaults.standard.set(true, forKey: "observingPaused")
                     ServiceController.stopAll()
                 }) {
                     HStack(spacing: 4) {
@@ -499,6 +500,7 @@ struct MenuBarView: View {
             } else {
                 Button(action: {
                     appState.userStopped = false
+                    UserDefaults.standard.set(false, forKey: "observingPaused")
                     ServiceController.startAll()
                 }) {
                     HStack(spacing: 4) {
