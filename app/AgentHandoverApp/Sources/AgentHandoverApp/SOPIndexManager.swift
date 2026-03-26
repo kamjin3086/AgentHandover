@@ -41,7 +41,10 @@ struct SOPEntry: Identifiable, Codable, Hashable {
 
     /// Short display title: use short_title from worker, fallback to cleaned title.
     var displayTitle: String {
-        if let st = short_title, !st.isEmpty {
+        // Use user's title first (from focus session name or slug),
+        // fall back to VLM short_title only if title is a hash slug
+        let isHashSlug = title.contains("_") && title.count > 30
+        if isHashSlug, let st = short_title, !st.isEmpty {
             return st
         }
         // Fallback: strip "The user is..." prefix, take first 6 words

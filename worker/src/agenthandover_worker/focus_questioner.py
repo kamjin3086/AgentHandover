@@ -398,10 +398,10 @@ def write_focus_questions(
         "questions": [
             {
                 "index": i,
-                "question": q.question,
-                "category": q.category,
-                "context": q.context,
-                "default": q.default,
+                "question": q.question if hasattr(q, "question") else q.get("question", ""),
+                "category": q.category if hasattr(q, "category") else q.get("category", ""),
+                "context": q.context if hasattr(q, "context") else q.get("context", ""),
+                "default": q.default if hasattr(q, "default") else q.get("default", ""),
             }
             for i, q in enumerate(questions)
         ],
