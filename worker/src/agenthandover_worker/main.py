@@ -857,22 +857,27 @@ def _write_sops_index(
         all_sops_raw = db.get_generated_sops()
         failed = db.get_failed_generations()
 
-        # Include all generated SOPs in the user-facing index.
-        all_sops = list(all_sops_raw)
+        # Only surface v2 pipeline SOPs and focus recordings — v1 PrefixSpan
+        # patterns (switch_app, navigate) are mechanical noise not worth reviewing.
+        _REVIEWABLE_SOURCES = {"v2_focus_recording", "v2_passive_discovery", "focus"}
+        all_sops = [
+            s for s in all_sops_raw
+            if s.get("source", "") in _REVIEWABLE_SOURCES
+        ]
 
-        # Fallback: also include procedures from the KB directory
-        # that aren't already in the DB (covers v1 pipeline exports
-        # and any procedures written directly to the KB).
+        # Also include KB procedures from focus sessions that may not
+        # be in the generated_sops DB table yet.
         existing_slugs = {s.get("slug", "") for s in all_sops}
         try:
             kb_procs = knowledge_base.list_procedures()
             for proc in kb_procs:
                 slug = proc.get("id", "")
-                if slug and slug not in existing_slugs:
+                source = proc.get("source", "")
+                if slug and slug not in existing_slugs and source in _REVIEWABLE_SOURCES:
                     all_sops.append({
                         "slug": slug,
                         "title": proc.get("title", slug),
-                        "source": proc.get("source", "unknown"),
+                        "source": source,
                         "status": "draft",
                         "confidence": proc.get("confidence_avg", 0),
                         "source_id": "",
