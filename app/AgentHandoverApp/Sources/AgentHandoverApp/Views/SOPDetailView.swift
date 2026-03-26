@@ -57,6 +57,8 @@ struct SOPDetailView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear { loadSkillFile() }
         .onChange(of: sop.slug) { _ in loadSkillFile() }
+        .onChange(of: sop.sop_id) { _ in loadSkillFile() }
+        .id(sop.slug)  // Force view recreation when slug changes
     }
 
     // MARK: - Header
