@@ -148,11 +148,12 @@ def _detect_edge_case(
         if gap > config.session_gap_seconds:
             return _make_session_gap_marker(gap, "time_gap")
 
-    # App switch check
+    # App switch: don't short-circuit — fall through to LLM diff.
+    # App switches are often the most meaningful transitions (e.g.,
+    # "copied product info from PH, switched to Gmail, pasted into email").
+    # The LLM diff will capture what happened during the switch.
     prev_app = prev_annotation.get("app", "")
     curr_app = curr_annotation.get("app", "")
-    if prev_app and curr_app and prev_app != curr_app:
-        return _make_app_switch_marker(prev_app, curr_app)
 
     # No-change check: same app + location + same visible values
     prev_loc = prev_annotation.get("location", "")

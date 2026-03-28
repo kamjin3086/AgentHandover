@@ -9,6 +9,7 @@ use tracing_subscriber::EnvFilter;
 use tracing_appender::rolling;
 use sha2::{Digest, Sha256};
 
+use agenthandover_daemon::control::{ControlContext, DaemonState};
 use agenthandover_daemon::ipc::native_messaging;
 use agenthandover_daemon::observer::event_loop::{
     ObserverConfig, ObserverMessage, run_observer_loop, run_storage_writer,
@@ -81,15 +82,10 @@ async fn main() -> Result<()> {
         .expect("Failed to write daemon PID file");
     info!(path = %pid_path.display(), "PID file written");
 
-    // Request accessibility permission with system prompt.
-    // This registers the current binary's CDHash in the TCC database,
-    // so permission survives rebuilds. If not yet granted, macOS opens
-    // System Settings > Accessibility.
-    #[cfg(target_os = "macos")]
-    {
-        use agenthandover_daemon::platform::accessibility;
-        accessibility::request_accessibility_with_prompt();
-    }
+    // Do NOT prompt for permissions on startup. Permission requests are
+    // now triggered explicitly via the control socket (request_accessibility,
+    // request_screen_recording commands). This prevents surprise prompts
+    // when the daemon starts for focus recording, resume, or health checks.
 
     let start_time = chrono::Utc::now();
 
@@ -184,6 +180,34 @@ async fn main() -> Result<()> {
         info!("Received Ctrl+C, shutting down...");
         let _ = shutdown_tx_clone.send(true);
     });
+
+    // Handle SIGTERM (sent by launchctl bootout)
+    #[cfg(unix)]
+    {
+        let shutdown_tx_term = shutdown_tx.clone();
+        tokio::spawn(async move {
+            let mut sigterm = tokio::signal::unix::signal(
+                tokio::signal::unix::SignalKind::terminate(),
+            )
+            .expect("failed to register SIGTERM handler");
+            sigterm.recv().await;
+            info!("Received SIGTERM, shutting down gracefully...");
+            let _ = shutdown_tx_term.send(true);
+        });
+    }
+
+    // Shared mutable daemon state for the control API
+    let shared_state = Arc::new(tokio::sync::Mutex::new(DaemonState::new()));
+
+    // Spawn Unix domain socket control server
+    let control_status_dir = agenthandover_common::status::status_dir();
+    let control_handle = tokio::spawn(agenthandover_daemon::control::serve(ControlContext {
+        status_dir: control_status_dir,
+        start_time,
+        event_counter: Arc::clone(&event_counter),
+        state: Arc::clone(&shared_state),
+        shutdown_rx: shutdown_tx.subscribe(),
+    }));
 
     let db_path = config.db_path.clone();
 
@@ -472,6 +496,7 @@ async fn main() -> Result<()> {
     native_handle.abort();
     health_handle.abort();
     maint_handle.abort();
+    control_handle.abort();
     #[cfg(target_os = "macos")]
     clipboard_handle.abort();
 

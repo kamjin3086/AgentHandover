@@ -1,53 +1,130 @@
 import Foundation
+import AppKit
 
-/// Controls AgentHandover services via launchctl.
+/// Controls AgentHandover services.
+///
+/// **Daemon**: Launched as an app bundle via `open` / `NSWorkspace`.
+/// This keeps the helper in a normal user-session app context on Tahoe,
+/// which is more reliable for Accessibility and background lifecycle.
+///
+/// **Worker**: Managed via launchd (no TCC requirements).
 final class ServiceController {
 
-    static let daemonLabel = "com.agenthandover.daemon"
     static let workerLabel = "com.agenthandover.worker"
+
+    /// Path to the daemon app bundle inside the main app.
+    static var daemonAppURL: URL {
+        let mainApp = Bundle.main.bundleURL
+        return mainApp
+            .appendingPathComponent("Contents/Helpers/AgentHandoverDaemon.app")
+    }
+
+    /// Path to the daemon executable (for PID checking).
+    private static var daemonExecPath: String {
+        daemonAppURL
+            .appendingPathComponent("Contents/MacOS/agenthandover-daemon").path
+    }
+
+    private static var uid: uid_t { getuid() }
+    private static var guiDomain: String { "gui/\(uid)" }
 
     private static var launchAgentsDir: URL {
         FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/LaunchAgents")
     }
 
-    // MARK: - Start
+    // MARK: - Daemon (app-launched)
 
-    /// Start daemon and return whether the job is actually running afterward.
+    /// Start daemon as an app bundle. Returns true if process is running.
     @discardableResult
     static func startDaemon() -> Bool {
-        launchctl(["load", "-w", plistPath(daemonLabel)])
-        Thread.sleep(forTimeInterval: 0.5)
-        return isJobRunning(label: daemonLabel)
+        // Check if already running
+        if isDaemonRunning() { return true }
+
+        // Launch as an app bundle so the helper runs in a normal
+        // user-session context instead of as a raw path-executed binary.
+        let config = NSWorkspace.OpenConfiguration()
+        config.activates = false  // background, no dock icon
+        config.addsToRecentItems = false
+
+        let semaphore = DispatchSemaphore(value: 0)
+        var launched = false
+
+        NSWorkspace.shared.openApplication(
+            at: daemonAppURL,
+            configuration: config
+        ) { app, error in
+            launched = error == nil
+            semaphore.signal()
+        }
+
+        // Wait up to 5 seconds for launch
+        _ = semaphore.wait(timeout: .now() + 5.0)
+
+        // Give daemon time to initialize
+        if launched {
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        return launched || isDaemonRunning()
     }
 
-    /// Start worker and return whether the job is actually running afterward.
+    /// Stop daemon by sending SIGTERM to its process.
+    static func stopDaemon() {
+        guard let pid = daemonPid() else { return }
+        kill(pid, SIGTERM)
+    }
+
+    /// Check if the daemon process is running.
+    static func isDaemonRunning() -> Bool {
+        if let pid = daemonPid() {
+            return kill(pid, 0) == 0
+        }
+        // Fallback: check by process name
+        let result = shell("/bin/ps", args: ["-ax", "-o", "pid,comm"])
+        return result.contains("agenthandover-daemon")
+    }
+
+    /// Read the daemon's PID from its PID file.
+    private static func daemonPid() -> Int32? {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let pidPath = home.appendingPathComponent(
+            "Library/Application Support/agenthandover/daemon.pid")
+        guard let content = try? String(contentsOf: pidPath, encoding: .utf8),
+              let pid = Int32(content.trimmingCharacters(in: .whitespacesAndNewlines)),
+              pid > 0 else { return nil }
+        return pid
+    }
+
+    /// Block until the daemon process exits (up to timeout).
+    static func waitForDaemonExit(timeoutSeconds: Int = 5) {
+        let iterations = timeoutSeconds * 5
+        for _ in 0..<iterations {
+            if !isDaemonRunning() { return }
+            Thread.sleep(forTimeInterval: 0.2)
+        }
+    }
+
+    // MARK: - Worker (launchd-managed)
+
     @discardableResult
     static func startWorker() -> Bool {
-        launchctl(["load", "-w", plistPath(workerLabel)])
+        bootstrapIfNeeded(label: workerLabel)
+        kickstart(label: workerLabel)
         Thread.sleep(forTimeInterval: 0.5)
         return isJobRunning(label: workerLabel)
     }
 
-    /// Start all services and return true only if both are verified healthy
-    /// (running with a fresh heartbeat).
+    static func stopWorker() {
+        bootout(label: workerLabel)
+    }
+
+    // MARK: - Combined
+
     @discardableResult
     static func startAll() -> Bool {
         let d = startDaemon()
         let w = startWorker()
-        guard d && w else { return false }
-        return isServiceHealthy(label: daemonLabel)
-            && isServiceHealthy(label: workerLabel)
-    }
-
-    // MARK: - Stop
-
-    static func stopDaemon() {
-        launchctl(["unload", plistPath(daemonLabel)])
-    }
-
-    static func stopWorker() {
-        launchctl(["unload", plistPath(workerLabel)])
+        return d && w
     }
 
     static func stopAll() {
@@ -55,77 +132,59 @@ final class ServiceController {
         stopWorker()
     }
 
-    // MARK: - Restart
-
-    /// Restart daemon: unload, wait for process to exit, then reload.
     static func restartDaemon() {
         stopDaemon()
-        waitForPidExit(label: daemonLabel) {
-            startDaemon()
-        }
+        waitForDaemonExit(timeoutSeconds: 3)
+        startDaemon()
     }
 
-    /// Restart worker: unload, wait for process to exit, then reload.
     static func restartWorker() {
         stopWorker()
-        waitForPidExit(label: workerLabel) {
-            startWorker()
-        }
+        Thread.sleep(forTimeInterval: 0.5)
+        startWorker()
     }
 
-    /// Restart all: stop both, wait for exit, then start both.
-    static func restartAll() {
-        stopAll()
-        waitForPidExit(label: daemonLabel) {
-            self.waitForPidExit(label: self.workerLabel) {
-                startAll()
-            }
-        }
+    // MARK: - Launchd (worker only)
+
+    private static func bootstrapIfNeeded(label: String) {
+        launchctl(["bootstrap", guiDomain, plistPath(label)])
     }
 
-    /// Poll until the launchd job is no longer running, then call completion.
-    /// Falls back to a 2-second timeout if the job doesn't exit cleanly.
-    private static func waitForPidExit(label: String, attempt: Int = 0, completion: @escaping () -> Void) {
-        let result = launchctl(["list", label])
-        if result.exitCode != 0 || attempt >= 10 {
-            // Job is gone or we've waited long enough (10 × 0.2s = 2s max)
-            DispatchQueue.main.async { completion() }
-        } else {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                waitForPidExit(label: label, attempt: attempt + 1, completion: completion)
-            }
-        }
-    }
-
-    // MARK: - Helpers
-
-    /// Check whether a launchd job is actually running via `launchctl list <label>`.
-    static func isJobRunning(label: String) -> Bool {
-        let result = launchctl(["list", label])
+    @discardableResult
+    private static func kickstart(label: String) -> Bool {
+        let result = launchctl(["kickstart", "\(guiDomain)/\(label)"])
         return result.exitCode == 0
     }
 
-    /// Check whether a service is healthy: running AND heartbeat is fresh.
-    ///
-    /// Returns `true` if:
-    /// - The launchd job is running, AND
-    /// - The heartbeat timestamp in the service's status file is within the last 30 seconds.
-    ///
-    /// Falls back to `isJobRunning` if the status file doesn't exist (first run)
-    /// or can't be parsed.
-    static func isServiceHealthy(label: String) -> Bool {
-        guard isJobRunning(label: label) else {
-            return false
+    private static func bootout(label: String) {
+        launchctl(["bootout", "\(guiDomain)/\(label)"])
+    }
+
+    static func isJobRunning(label: String) -> Bool {
+        let result = launchctl(["print", "\(guiDomain)/\(label)"])
+        if result.exitCode != 0 { return false }
+        let lines = result.output.components(separatedBy: "\n")
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("pid =") || trimmed.hasPrefix("pid=") {
+                let parts = trimmed.components(separatedBy: "=")
+                if let pidStr = parts.last?.trimmingCharacters(in: .whitespaces),
+                   let pid = Int(pidStr), pid > 0 {
+                    return true
+                }
+            }
         }
+        return false
+    }
+
+    static func isServiceHealthy(label: String) -> Bool {
+        guard isJobRunning(label: label) else { return false }
 
         let statusFileName: String
         switch label {
-        case daemonLabel:
-            statusFileName = "daemon-status.json"
         case workerLabel:
             statusFileName = "worker-status.json"
         default:
-            // Unknown service — fall back to job-running check only
             return true
         }
 
@@ -136,8 +195,6 @@ final class ServiceController {
         guard let data = try? Data(contentsOf: statusFile),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let heartbeatString = json["heartbeat"] as? String else {
-            // Status file missing or unreadable — service may not have written it yet.
-            // Fall back to launchd check (already passed above).
             return true
         }
 
@@ -145,16 +202,11 @@ final class ServiceController {
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         var heartbeatDate = formatter.date(from: heartbeatString)
         if heartbeatDate == nil {
-            // Retry without fractional seconds
             formatter.formatOptions = [.withInternetDateTime]
             heartbeatDate = formatter.date(from: heartbeatString)
         }
 
-        guard let date = heartbeatDate else {
-            // Can't parse timestamp — fall back to launchd check
-            return true
-        }
-
+        guard let date = heartbeatDate else { return true }
         return Date().timeIntervalSince(date) <= 30
     }
 
@@ -181,6 +233,22 @@ final class ServiceController {
             return (process.terminationStatus, output)
         } catch {
             return (-1, "Failed to run launchctl: \(error)")
+        }
+    }
+
+    private static func shell(_ path: String, args: [String]) -> String {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: path)
+        process.arguments = args
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        do {
+            try process.run()
+            process.waitUntilExit()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            return String(data: data, encoding: .utf8) ?? ""
+        } catch {
+            return ""
         }
     }
 }

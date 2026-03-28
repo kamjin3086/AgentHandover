@@ -27,17 +27,15 @@ chown -R "${CONSOLE_USER}" "${DATA_DIR}"
 mkdir -p "${LAUNCH_AGENTS}"
 LOG_DIR="${DATA_DIR}/logs"
 
-cp "${LIB_DIR}/launchd/com.agenthandover.daemon.plist" "${LAUNCH_AGENTS}/"
-sed -i '' \
-    -e "s|/tmp/com.agenthandover.daemon.stdout.log|${LOG_DIR}/daemon.stdout.log|" \
-    -e "s|/tmp/com.agenthandover.daemon.stderr.log|${LOG_DIR}/daemon.stderr.log|" \
-    "${LAUNCH_AGENTS}/com.agenthandover.daemon.plist"
-
+# Daemon is launched as an app bundle by the menu bar app (not launchd).
+# Only the worker uses launchd.
 cp "${LIB_DIR}/launchd/com.agenthandover.worker.plist" "${LAUNCH_AGENTS}/"
 sed -i '' \
     -e "s|/tmp/com.agenthandover.worker.stdout.log|${LOG_DIR}/worker.stdout.log|" \
     -e "s|/tmp/com.agenthandover.worker.stderr.log|${LOG_DIR}/worker.stderr.log|" \
     "${LAUNCH_AGENTS}/com.agenthandover.worker.plist"
+
+chown "${CONSOLE_USER}" "${LAUNCH_AGENTS}/com.agenthandover.worker.plist"
 
 # Create default config if none exists
 if [ ! -f "${DATA_DIR}/config.toml" ]; then
@@ -72,7 +70,7 @@ cat > "${NM_DIR}/com.agenthandover.host.json" << JSON
 {
     "name": "com.agenthandover.host",
     "description": "AgentHandover native messaging host",
-    "path": "/usr/local/bin/agenthandover-daemon",
+    "path": "/Applications/AgentHandover.app/Contents/Helpers/AgentHandoverDaemon.app/Contents/MacOS/agenthandover-daemon",
     "type": "stdio",
     "args": ["--native-messaging"],
     "allowed_origins": [
@@ -142,6 +140,9 @@ if [ ! -d "${LIB_DIR}/venv" ]; then
         exit 1
     fi
 
+    # Install optional dependencies for image embeddings (Apple Silicon only)
+    sudo -u "${CONSOLE_USER}" "${LIB_DIR}/venv/bin/pip" install --quiet "mlx-embeddings>=0.0.4" 2>/dev/null || true
+
     # Ensure the venv is owned by the user, not root
     chown -R "${CONSOLE_USER}" "${LIB_DIR}/venv"
 
@@ -150,10 +151,12 @@ else
     # Venv exists — reinstall worker package to pick up code changes
     echo "  Updating worker package..."
     sudo -u "${CONSOLE_USER}" "${LIB_DIR}/venv/bin/pip" install --quiet --force-reinstall --no-deps "${LIB_DIR}/worker/" 2>/dev/null || true
+    # Ensure mlx-embeddings is installed
+    sudo -u "${CONSOLE_USER}" "${LIB_DIR}/venv/bin/pip" install --quiet "mlx-embeddings>=0.0.4" 2>/dev/null || true
 fi
 
 # Set proper permissions
-chmod 755 /usr/local/bin/agenthandover-daemon
+chmod 755 /Applications/AgentHandover.app/Contents/Helpers/AgentHandoverDaemon.app/Contents/MacOS/agenthandover-daemon
 chmod 755 /usr/local/bin/agenthandover
 
 # Only reset onboarding on FRESH install (data dir didn't exist before)
@@ -185,9 +188,11 @@ else
 fi
 
 # Register launchd services (RunAtLoad=false, so they won't start yet)
-# The app starts them when the user clicks "Start Observing"
-sudo -u "${CONSOLE_USER}" launchctl load "${LAUNCH_AGENTS}/com.agenthandover.daemon.plist" 2>/dev/null || true
-sudo -u "${CONSOLE_USER}" launchctl load "${LAUNCH_AGENTS}/com.agenthandover.worker.plist" 2>/dev/null || true
+# The app starts them via kickstart when the user clicks "Start Observing"
+# Use modern launchctl bootstrap (load/unload deprecated on macOS 13+)
+CONSOLE_UID=$(id -u "${CONSOLE_USER}")
+sudo -u "${CONSOLE_USER}" launchctl bootstrap "gui/${CONSOLE_UID}" "${LAUNCH_AGENTS}/com.agenthandover.daemon.plist" 2>/dev/null || true
+sudo -u "${CONSOLE_USER}" launchctl bootstrap "gui/${CONSOLE_UID}" "${LAUNCH_AGENTS}/com.agenthandover.worker.plist" 2>/dev/null || true
 echo "  Services registered (will start when app launches)."
 
 # Launch the menu bar app (as the real user, not root)

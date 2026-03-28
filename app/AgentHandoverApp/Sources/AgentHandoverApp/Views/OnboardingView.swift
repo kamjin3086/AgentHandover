@@ -75,7 +75,7 @@ struct OnboardingView: View {
     /// Called when onboarding completes (sets hasCompletedOnboarding).
     var onComplete: (() -> Void)?
 
-    private let totalSteps = 8
+    private let totalSteps = 9
 
     // MARK: - Design Tokens (Contra-inspired)
 
@@ -203,25 +203,42 @@ struct OnboardingView: View {
                 }
 
             case 4:
-                // Permissions -- always allow proceeding, user sees status
+                // Accessibility
                 VStack(spacing: 6) {
                     contraButton(
-                        appState.accessibilityGranted && appState.screenRecordingGranted ? "Next" : "Continue anyway",
+                        appState.accessibilityGranted ? "Next" : "Continue anyway",
                         icon: "arrow.right",
                         style: .darkFilled,
                         disabled: false
                     ) {
                         withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { currentStep += 1 }
                     }
-
-                    if !appState.accessibilityGranted || !appState.screenRecordingGranted {
-                        Text("You can grant permissions later via agenthandover doctor")
+                    if !appState.accessibilityGranted {
+                        Text("You can grant this later via agenthandover doctor")
                             .font(.system(size: 11))
                             .foregroundColor(darkNavy.opacity(0.35))
                     }
                 }
 
             case 5:
+                // Screen Recording
+                VStack(spacing: 6) {
+                    contraButton(
+                        appState.screenRecordingGranted ? "Next" : "Continue anyway",
+                        icon: "arrow.right",
+                        style: .darkFilled,
+                        disabled: false
+                    ) {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { currentStep += 1 }
+                    }
+                    if !appState.screenRecordingGranted {
+                        Text("You can grant this later via agenthandover doctor")
+                            .font(.system(size: 11))
+                            .foregroundColor(darkNavy.opacity(0.35))
+                    }
+                }
+
+            case 6:
                 // VLM Setup -- blocked until model ready
                 VStack(spacing: 4) {
                     contraButton(
@@ -240,7 +257,7 @@ struct OnboardingView: View {
                     }
                 }
 
-            case 6:
+            case 7:
                 // Browser extension -- optional
                 HStack(spacing: 12) {
                     if !appState.extensionConnected {
@@ -254,7 +271,7 @@ struct OnboardingView: View {
                     }
                 }
 
-            case 7:
+            case 8:
                 // Ready -- final step, no Next button
                 EmptyView()
 
@@ -344,10 +361,11 @@ struct OnboardingView: View {
         case 1: teachByDoingStep
         case 2: whatYoullGetStep
         case 3: reviewCycleStep
-        case 4: permissionsStep
-        case 5: vlmSetupStep
-        case 6: chromeExtensionStep
-        case 7: readyStep
+        case 4: accessibilityStep
+        case 5: screenRecordingStep
+        case 6: vlmSetupStep
+        case 7: chromeExtensionStep
+        case 8: readyStep
         default: EmptyView()
         }
     }
@@ -850,60 +868,112 @@ struct OnboardingView: View {
         }
     }
 
-    // MARK: - Screen 5: Permissions (WHITE BACKGROUND)
+    // MARK: - Screen 5: Accessibility (WHITE BACKGROUND)
 
-    @State private var permissionCheckPending = false
+    private enum PermissionKind {
+        case accessibility
+        case screenRecording
+    }
 
-    private var permissionsStep: some View {
-        VStack(spacing: sectionSpacing) {
-            Text("Two permissions to enable")
+    @State private var probingPermission: PermissionKind? = nil
+    @State private var awaitingSettingsReturn: PermissionKind? = nil
+    @State private var screenRecordingNeedsRestart = false
+    private let captureClient = CaptureAgentClient()
+
+    private var accessibilityStep: some View {
+        singlePermissionStep(
+            icon: "hand.raised.circle.fill",
+            title: "Enable Accessibility",
+            description: "AgentHandover reads window titles and UI elements to understand your workflow.",
+            instruction: "Toggle on AgentHandoverDaemon in the list",
+            granted: appState.accessibilityGranted,
+            settingsUrl: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
+            isScreenRecording: false
+        )
+    }
+
+    // MARK: - Screen 6: Screen Recording (WHITE BACKGROUND)
+
+    private var screenRecordingStep: some View {
+        singlePermissionStep(
+            icon: "rectangle.dashed.badge.record",
+            title: "Enable Screen Recording",
+            description: "AgentHandover captures screenshots to analyze what you see on screen.",
+            instruction: "Toggle on AgentHandover in the list",
+            granted: appState.screenRecordingGranted,
+            settingsUrl: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
+            isScreenRecording: true
+        )
+    }
+
+    /// Shared view for a single permission step.
+    private func singlePermissionStep(
+        icon: String,
+        title: String,
+        description: String,
+        instruction: String,
+        granted: Bool,
+        settingsUrl: String,
+        isScreenRecording: Bool
+    ) -> some View {
+        let permission: PermissionKind = isScreenRecording ? .screenRecording : .accessibility
+        let isProbing = probingPermission == permission
+
+        return VStack(spacing: sectionSpacing) {
+            Text(title)
                 .font(titleFont)
                 .foregroundColor(darkNavy)
 
-            VStack(spacing: 14) {
-                // Accessibility card
-                permissionCard(
-                    icon: "hand.raised.circle.fill",
-                    title: "Accessibility",
-                    description: "Read window titles and UI elements. Add agenthandover-daemon from /usr/local/bin/",
-                    granted: appState.accessibilityGranted,
-                    action: {
-                        // Open Accessibility pane — don't start daemon yet
-                        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
-                            NSWorkspace.shared.open(url)
+            Text(description)
+                .font(bodyFont)
+                .foregroundColor(darkNavy.opacity(0.6))
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 400)
+
+            permissionCard(
+                icon: icon,
+                title: title.replacingOccurrences(of: "Enable ", with: ""),
+                description: instruction,
+                granted: granted,
+                action: {
+                    openPermissionSettings(url: settingsUrl, isScreenRecording: isScreenRecording)
+                },
+                actionLabel: isProbing ? "Starting..." : "Open Settings"
+            )
+
+            if !granted {
+                if screenRecordingNeedsRestart && isScreenRecording {
+                    // macOS requires app restart for Screen Recording to take effect
+                    Button(action: { restartApp() }) {
+                        HStack(spacing: 7) {
+                            Image(systemName: "arrow.triangle.2.circlepath")
+                                .font(.system(size: 11))
+                            Text("Restart AgentHandover to apply")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundColor(warmOrange)
                         }
-                        PermissionChecker.requestAccessibility()
-                        permissionCheckPending = true
-                        pollPermissionsAfterGrant()
-                    },
-                    actionLabel: "Open Settings"
-                )
-
-                // Screen Recording card
-                permissionCard(
-                    icon: "rectangle.dashed.badge.record",
-                    title: "Screen Recording",
-                    description: "Capture screenshots for AI analysis",
-                    granted: appState.screenRecordingGranted,
-                    action: {
-                        // Open Screen Recording settings — don't start daemon yet
-                        PermissionChecker.openScreenRecordingSettings()
-                        permissionCheckPending = true
-                        pollPermissionsAfterGrant()
-                    },
-                    actionLabel: "Open Settings"
-                )
-            }
-
-            if permissionCheckPending && (!appState.accessibilityGranted || !appState.screenRecordingGranted) {
-                HStack(spacing: 7) {
-                    ProgressView()
-                        .controlSize(.small)
-                    Text("Checking permissions - toggle them on in System Settings, then come back here")
-                        .font(.system(size: 12))
-                        .foregroundColor(darkNavy.opacity(0.5))
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.top, 4)
+                } else {
+                    Button(action: { recheckPermission(permission) }) {
+                        HStack(spacing: 7) {
+                            if isProbing {
+                                ProgressView()
+                                    .controlSize(.small)
+                            } else {
+                                Image(systemName: "arrow.clockwise")
+                                    .font(.system(size: 11))
+                            }
+                            Text(isProbing ? "Checking..." : "I've granted it - recheck")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundColor(darkNavy.opacity(0.6))
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isProbing)
+                    .padding(.top, 4)
                 }
-                .padding(.top, 4)
             }
 
             HStack(spacing: 7) {
@@ -917,37 +987,127 @@ struct OnboardingView: View {
             .multilineTextAlignment(.center)
             .frame(maxWidth: 440)
         }
+        // Auto-recheck ONLY when returning from System Settings (not on step entry)
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            if awaitingSettingsReturn == permission && !granted {
+                awaitingSettingsReturn = nil
+                recheckPermission(permission, returnedFromSettings: true)
+            }
+        }
     }
 
-    /// Poll permissions aggressively after user clicks Grant
-    private func pollPermissionsAfterGrant() {
-        // Check every 2 seconds for 30 seconds
-        var checks = 0
-        Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { timer in
-            checks += 1
-            Task { @MainActor in
-                // Re-check our own permissions
-                appState.accessibilityGranted = PermissionChecker.isAccessibilityGranted()
-                appState.screenRecordingGranted = PermissionChecker.isScreenRecordingGranted()
+    /// Open Settings for a specific permission.
+    /// For Screen Recording: trigger the app-owned grant flow first, then
+    /// only fall back to Settings if macOS still needs a manual toggle.
+    /// For Accessibility: just open Settings directly (daemon registers on first real use).
+    private func openPermissionSettings(url: String, isScreenRecording: Bool = false) {
+        let permission: PermissionKind = isScreenRecording ? .screenRecording : .accessibility
+        guard probingPermission != permission else { return }
+        probingPermission = permission
 
-                // Also check daemon status file for its permission report
-                let home = FileManager.default.homeDirectoryForCurrentUser
-                let daemonStatusPath = home
-                    .appendingPathComponent("Library/Application Support/agenthandover/daemon-status.json")
-                if let data = try? Data(contentsOf: daemonStatusPath),
-                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                    if json["accessibility_permitted"] as? Bool == true {
-                        appState.accessibilityGranted = true
+        Task { @MainActor in
+            if isScreenRecording {
+                let granted = await PermissionChecker.requestScreenRecordingAndOpenSettingsIfNeeded()
+                appState.screenRecordingGranted = granted
+                screenRecordingNeedsRestart = false
+                probingPermission = nil
+                awaitingSettingsReturn = granted ? nil : .screenRecording
+            } else {
+                // Accessibility should feel immediate. Open Settings right away,
+                // then bring the daemon up in the background so its entry can
+                // register in the list without freezing the onboarding UI.
+                awaitingSettingsReturn = .accessibility
+                probingPermission = nil
+                if let settingsUrl = URL(string: url) {
+                    NSWorkspace.shared.open(settingsUrl)
+                }
+
+                Task { @MainActor in
+                    await ensureDaemonRunning()
+                    if CaptureAgentClient.socketResponsive() {
+                        _ = await captureClient.requestAccessibility()
                     }
-                    if json["screen_recording_permitted"] as? Bool == true {
+                }
+            }
+        }
+    }
+
+    /// Restart the app so macOS applies Screen Recording permission.
+    private func restartApp() {
+        let url = URL(fileURLWithPath: Bundle.main.bundlePath)
+        let config = NSWorkspace.OpenConfiguration()
+        config.createsNewApplicationInstance = true
+        NSWorkspace.shared.openApplication(at: url, configuration: config) { _, _ in
+            DispatchQueue.main.async {
+                NSApp.terminate(nil)
+            }
+        }
+    }
+
+    /// Start the daemon and wait for the control socket to appear.
+    private func ensureDaemonRunning() async {
+        if captureClient.isAvailable { return }
+        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+            DispatchQueue.global(qos: .userInitiated).async {
+                ServiceController.startDaemon()
+                for _ in 0..<20 {
+                    if CaptureAgentClient.socketResponsive() { break }
+                    Thread.sleep(forTimeInterval: 0.25)
+                }
+                cont.resume()
+            }
+        }
+    }
+
+    /// Recheck a single permission without cross-contaminating the other screen.
+    private func recheckPermission(
+        _ permission: PermissionKind,
+        returnedFromSettings: Bool = false
+    ) {
+        guard probingPermission != permission else { return }
+        probingPermission = permission
+
+        Task { @MainActor in
+            switch permission {
+            case .screenRecording:
+                // Only attempt a real capture after TCC says the app is already granted.
+                if PermissionChecker.isScreenRecordingGranted() {
+                    let service = ScreenCaptureService()
+                    if let _ = await service.captureMainDisplay() {
                         appState.screenRecordingGranted = true
+                        screenRecordingNeedsRestart = false
+                    } else {
+                        appState.screenRecordingGranted = false
+                        screenRecordingNeedsRestart = returnedFromSettings
+                    }
+                } else {
+                    appState.screenRecordingGranted = false
+                    screenRecordingNeedsRestart = false
+                }
+
+            case .accessibility:
+                // Daemon owns this; restart it so fresh TCC state is reflected
+                // in the control socket status before we update onboarding UI.
+                await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+                    DispatchQueue.global(qos: .userInitiated).async {
+                        ServiceController.stopDaemon()
+                        ServiceController.waitForDaemonExit(timeoutSeconds: 3)
+                        ServiceController.startDaemon()
+                        for _ in 0..<20 {
+                            if CaptureAgentClient.socketResponsive() { break }
+                            Thread.sleep(forTimeInterval: 0.25)
+                        }
+                        cont.resume()
                     }
                 }
 
-                if (appState.accessibilityGranted && appState.screenRecordingGranted) || checks >= 15 {
-                    permissionCheckPending = false
-                    timer.invalidate()
+                if let status = await captureClient.getStatus() {
+                    appState.accessibilityGranted = status.accessibilityPermitted
                 }
+            }
+
+            if probingPermission == permission {
+                probingPermission = nil
             }
         }
     }
@@ -1021,7 +1181,7 @@ struct OnboardingView: View {
         )
     }
 
-    // MARK: - Screen 6: VLM Setup (Required, WHITE BACKGROUND)
+    // MARK: - Screen 7: VLM Setup (Required, WHITE BACKGROUND)
 
     private var vlmSetupStep: some View {
         VStack(spacing: 18) {
@@ -1446,7 +1606,7 @@ struct OnboardingView: View {
         try? content.write(to: configPath, atomically: true, encoding: .utf8)
     }
 
-    // MARK: - Screen 7: Browser Extension (Optional, Load Unpacked, WHITE BACKGROUND)
+    // MARK: - Screen 8: Browser Extension (Optional, Load Unpacked, WHITE BACKGROUND)
 
     private var chromeExtensionStep: some View {
         VStack(spacing: sectionSpacing) {
@@ -1704,7 +1864,7 @@ struct OnboardingView: View {
             )
     }
 
-    // MARK: - Screen 8: Ready -- First Recording (WARM CREAM BACKGROUND)
+    // MARK: - Screen 9: Ready -- First Recording (WARM CREAM BACKGROUND)
 
     private var readyStep: some View {
         VStack(spacing: 20) {
@@ -1752,6 +1912,7 @@ struct OnboardingView: View {
 
                 let isDisabled = firstRecordingTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                     || !appState.accessibilityGranted
+                    || !appState.screenRecordingGranted
                     || !appState.vlmAvailable
 
                 Button {
@@ -1801,17 +1962,19 @@ struct OnboardingView: View {
                     .stroke(darkNavy, lineWidth: contraBorder)
             )
 
-            // Secondary: Just start observing
+            // Secondary: Just start observing (disabled without Screen Recording)
             Button("Or start observing \u{2192}") {
                 startServicesOnly()
             }
-            .foregroundColor(darkNavy.opacity(0.5))
+            .foregroundColor(darkNavy.opacity(appState.screenRecordingGranted ? 0.5 : 0.2))
             .buttonStyle(.plain)
             .font(.system(size: 13, weight: .semibold, design: .rounded))
+            .disabled(!appState.screenRecordingGranted)
 
             // Tertiary: Just close, start later
             Button("I'll start later") {
                 UserDefaults.standard.set(true, forKey: "observingPaused")
+                appState.userStopped = true
                 onComplete?()
                 // Brief delay so the menu bar icon appears before the window closes
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {

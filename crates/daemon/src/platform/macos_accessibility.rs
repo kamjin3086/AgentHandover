@@ -1,7 +1,7 @@
 use core_foundation::base::{CFType, TCFType};
 use core_foundation::string::CFString;
 use std::sync::atomic::{AtomicU32, Ordering};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 
 /// Tracks consecutive AX API timeouts for degradation visibility.
 static AX_CONSECUTIVE_TIMEOUTS: AtomicU32 = AtomicU32::new(0);

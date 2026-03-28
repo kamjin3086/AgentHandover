@@ -3,22 +3,21 @@ import SwiftUI
 @main
 struct AgentHandoverApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var delegate
-    @StateObject private var appState = AppState()
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
 
     var body: some Scene {
         MenuBarExtra {
             MenuBarView()
-                .environmentObject(appState)
+                .environmentObject(delegate.sharedAppState)
                 .environmentObject(delegate)
                 .onAppear {
                     if !hasCompletedOnboarding && !delegate.hasTriggeredOnboarding {
                         delegate.hasTriggeredOnboarding = true
-                        delegate.showOnboarding(appState: appState)
+                        delegate.showOnboarding()
                     }
                 }
         } label: {
-            Image(systemName: appState.menuBarIcon)
+            Image(systemName: delegate.sharedAppState.menuBarIcon)
         }
         .menuBarExtraStyle(.window)
 
@@ -43,7 +42,7 @@ struct AgentHandoverApp: App {
 
         Window("Focus Q&A", id: "focus-qa") {
             FocusQAView()
-                .environmentObject(appState)
+                .environmentObject(delegate.sharedAppState)
         }
         .defaultSize(width: 560, height: 620)
         .windowResizability(.contentMinSize)
@@ -52,15 +51,24 @@ struct AgentHandoverApp: App {
 
 /// App delegate — handles first-launch onboarding window directly via NSWindow.
 ///
-/// SwiftUI `Window` scenes are lazy and can't be opened from AppDelegate.
-/// Instead, we create the onboarding window ourselves using NSHostingController,
-/// which guarantees it appears immediately on first launch.
+/// Owns the single shared `AppState` so both onboarding (opened from
+/// applicationDidFinishLaunching) and the menu bar use the same instance.
 final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     @Published var pendingOnboarding = false
     var hasTriggeredOnboarding = false
     private var onboardingWindow: NSWindow?
 
+    /// Single shared AppState used by onboarding, menu bar, and all windows.
+    @MainActor let sharedAppState = AppState()
+
+    /// Screenshot capture server — serves pixels to the daemon via Unix socket.
+    private let captureServer = ScreenCaptureServer()
+
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Start the capture server so the daemon can request screenshots.
+        // This must run before services start.
+        captureServer.start()
+
         if !UserDefaults.standard.bool(forKey: "hasCompletedOnboarding") {
             hasTriggeredOnboarding = true
 
@@ -70,10 +78,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             // Create the onboarding window directly — don't wait for SwiftUI
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 Task { @MainActor [weak self] in
-                    self?.showOnboarding(appState: nil)
+                    self?.showOnboarding()
                 }
             }
         } else {
+            // Keep the bundle a normal app principal for TCC purposes, but
+            // present it as a menu bar app once onboarding is already done.
+            hideFromDock()
+
             // Onboarding done — start services if user hasn't paused
             let userPaused = UserDefaults.standard.bool(forKey: "observingPaused")
             if !userPaused {
@@ -83,18 +95,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     }
 
     @MainActor
-    func showOnboarding(appState: AppState?) {
+    func showOnboarding() {
         // Don't create duplicates
         if onboardingWindow != nil { return }
 
-        let state = appState ?? AppState()
         let onboardingView = OnboardingView(onComplete: { [weak self] in
             UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
             self?.onboardingWindow?.close()
             self?.onboardingWindow = nil
             self?.hideFromDock()
         })
-        .environmentObject(state)
+        .environmentObject(sharedAppState)
         .frame(width: 620, height: 720)
 
         let hostingController = NSHostingController(rootView: onboardingView)

@@ -575,10 +575,15 @@ _THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
 def _parse_sop_response(raw: str) -> dict | None:
     """Parse the VLM's JSON response into a SOP dict.
 
-    Handles markdown fences, thinking tags, and basic validation.
+    Handles markdown fences, thinking tags, truncated JSON, and Qwen noise.
     """
     # Strip thinking tags
     text = _THINK_RE.sub("", raw).strip()
+
+    # Strip Qwen end-of-text tokens and trailing noise
+    for token in ("<|endoftext|>", "<|im_end|>", "<|end|>"):
+        text = text.split(token)[0]
+    text = text.strip()
 
     # Try to extract from markdown fences
     match = _FENCE_RE.search(text)
@@ -588,19 +593,18 @@ def _parse_sop_response(raw: str) -> dict | None:
     if not text:
         return None
 
+    # Find the first { to locate JSON start
+    json_start = text.find("{")
+    if json_start < 0:
+        return None
+    text = text[json_start:]
+
+    # Try direct parse
     try:
         data = json.loads(text)
     except json.JSONDecodeError:
-        # Try to find JSON object in the text
-        for i, ch in enumerate(text):
-            if ch == "{":
-                try:
-                    data = json.loads(text[i:])
-                    break
-                except json.JSONDecodeError:
-                    continue
-        else:
-            return None
+        # Try to repair truncated JSON by closing open brackets
+        data = _try_repair_json(text)
 
     if not isinstance(data, dict):
         return None
@@ -612,6 +616,65 @@ def _parse_sop_response(raw: str) -> dict | None:
         return None
 
     return data
+
+
+def _try_repair_json(text: str) -> dict | None:
+    """Attempt to repair truncated JSON from a model that hit its token limit.
+
+    Strategy: progressively trim from the end and close open brackets.
+    """
+    # Count open brackets
+    opens = 0
+    open_sq = 0
+    in_string = False
+    escape = False
+
+    for ch in text:
+        if escape:
+            escape = False
+            continue
+        if ch == "\\":
+            escape = True
+            continue
+        if ch == '"' and not escape:
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if ch == "{":
+            opens += 1
+        elif ch == "}":
+            opens -= 1
+        elif ch == "[":
+            open_sq += 1
+        elif ch == "]":
+            open_sq -= 1
+
+    # Try closing open brackets
+    if opens > 0 or open_sq > 0:
+        # Trim any trailing partial value (incomplete string, number, etc.)
+        # Find last complete value (ends with }, ], ", number, true, false, null)
+        trimmed = text.rstrip()
+        # Remove trailing comma if present
+        if trimmed.endswith(","):
+            trimmed = trimmed[:-1]
+
+        # Close open brackets
+        repair = trimmed + ("]" * max(0, open_sq)) + ("}" * max(0, opens))
+        try:
+            return json.loads(repair)
+        except json.JSONDecodeError:
+            pass
+
+    # Try finding a valid JSON substring by trimming from the end
+    for end in range(len(text), max(len(text) - 500, 0), -1):
+        candidate = text[:end]
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+
+    return None
 
 
 def _vlm_sop_to_template(
@@ -636,15 +699,24 @@ def _vlm_sop_to_template(
         if isinstance(raw_step, str):
             raw_step = {"action": raw_step}
 
-        # Qwen returns step descriptions in various field names
+        # Qwen returns step descriptions in various field names.
+        # Reject literal "action" — it's a placeholder, not a real description.
+        def _non_placeholder(val):
+            return val and val.strip().lower() not in ("action", "step", "")
+
+        params = raw_step.get("parameters", {}) if isinstance(raw_step.get("parameters"), dict) else {}
         step_text = (
-            raw_step.get("action")
-            or raw_step.get("description")
-            or raw_step.get("step")
+            (raw_step.get("action") if _non_placeholder(raw_step.get("action")) else None)
+            or (raw_step.get("description") if _non_placeholder(raw_step.get("description")) else None)
+            or (raw_step.get("step") if _non_placeholder(raw_step.get("step")) else None)
             or raw_step.get("step_name")
             or raw_step.get("name")
             or raw_step.get("instruction")
-            or str(raw_step) if isinstance(raw_step, str) else "action"
+            or params.get("description")
+            or params.get("verify")
+            or raw_step.get("verify")
+            or raw_step.get("target")
+            or str(raw_step)
         )
         step = {
             "step": step_text,
@@ -1017,6 +1089,7 @@ def _call_ollama(
     system: str = "",
     timeout: float = 180.0,
     think: bool = True,
+    format_json: bool = False,
 ) -> tuple[str, float]:
     """Call Ollama's /api/generate for text-only SOP generation.
 
@@ -1038,11 +1111,21 @@ def _call_ollama(
         "think": think,
         "options": {
             "num_predict": num_predict,
+            # Ollama defaults to 4096 context which truncates our prompts.
+            # 16K accommodates timeline (~4-6K) + output (8K) comfortably.
+            "num_ctx": 16384,
+            # Lower temperature for reliable JSON output.
+            # Ollama defaults to 0.8 which is too creative for structured data.
+            "temperature": 0.3,
         },
     }
 
     if system:
         payload["system"] = system
+    # format: "json" forces Ollama to use GBNF grammar for valid JSON.
+    # Only safe when think=False (incompatible with thinking mode).
+    if format_json and not think:
+        payload["format"] = "json"
 
     body = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
@@ -1146,35 +1229,72 @@ class SOPGenerator:
                 error=f"VLM call failed: {exc}",
             )
 
-        # Parse response
+        # Parse response — up to 3 attempts with increasingly strict prompting
         vlm_sop = _parse_sop_response(raw_response)
         if vlm_sop is None:
-            # Retry with explicit JSON-only instruction
             logger.warning(
-                "SOP generation: invalid JSON on first attempt, retrying "
-                "with JSON-only suffix"
+                "SOP generation: invalid JSON on attempt 1 (len=%d), retrying with JSON-only suffix",
+                len(raw_response),
             )
+            logger.debug("Raw response (attempt 1): %.500s", raw_response[:500])
             try:
                 raw_response2, elapsed2 = _call_ollama(
                     model=self.config.model,
-                    prompt=prompt + "\n\nIMPORTANT: Respond with ONLY valid JSON.",
+                    prompt=prompt + "\n\nIMPORTANT: Respond with ONLY valid JSON. No commentary, no markdown.",
                     host=self.config.ollama_host,
                     num_predict=self.config.num_predict,
                     system=SOP_SYSTEM_PROMPT,
                     timeout=self.config.timeout,
-                    think=True,
+                    think=False,
+                    format_json=True,  # Force JSON grammar on retry
                 )
                 elapsed += elapsed2
                 vlm_sop = _parse_sop_response(raw_response2)
             except Exception:
                 pass
 
+        if vlm_sop is None:
+            # Third attempt: shorter prompt, no thinking, explicit JSON start
+            logger.warning(
+                "SOP generation: invalid JSON on attempt 2, trying minimal prompt"
+            )
+            try:
+                # Simplified prompt that's less likely to confuse smaller models
+                minimal_prompt = (
+                    f'Generate a JSON SOP for the task "{title}" based on these observations:\n\n'
+                )
+                for i, frame in enumerate(meaningful[:10]):
+                    ann = frame.get("annotation", {})
+                    what = ann.get("task_context", {}).get("what_doing", "")
+                    app = ann.get("app", "")
+                    if what:
+                        minimal_prompt += f"  {i+1}. [{app}] {what}\n"
+                minimal_prompt += (
+                    '\nRespond with ONLY this JSON structure: '
+                    '{"title": "...", "steps": [{"action": "...", "app": "...", "verify": "..."}]}'
+                )
+                raw_response3, elapsed3 = _call_ollama(
+                    model=self.config.model,
+                    prompt=minimal_prompt,
+                    host=self.config.ollama_host,
+                    num_predict=4000,
+                    system="You output ONLY valid JSON. No explanation.",
+                    timeout=self.config.timeout,
+                    think=False,
+                    format_json=True,
+                )
+                elapsed += elapsed3
+                vlm_sop = _parse_sop_response(raw_response3)
+            except Exception:
+                pass
+
             if vlm_sop is None:
+                logger.error("SOP generation: all 3 attempts failed for '%s'", title)
                 return GeneratedSOP(
                     sop={},
                     inference_time_seconds=elapsed,
                     success=False,
-                    error="Failed to parse VLM response as valid SOP JSON",
+                    error="Failed to parse VLM response as valid SOP JSON after 3 attempts",
                 )
 
         # Convert to internal template format

@@ -114,7 +114,7 @@ final class AppState: ObservableObject {
     @Published var health: ServiceHealth = .down
     @Published var userStopped = UserDefaults.standard.bool(forKey: "observingPaused")
 
-    // Permissions
+    // Permissions — updated via control socket or daemon status file.
     @Published var accessibilityGranted = false
     @Published var screenRecordingGranted = false
 
@@ -418,22 +418,18 @@ final class AppState: ObservableObject {
     // MARK: - Permissions
 
     private func checkPermissions() {
-        // Check this app's own permissions first
-        var accOk = PermissionChecker.isAccessibilityGranted()
-        var scrOk = PermissionChecker.isScreenRecordingGranted()
+        // Screen Recording: app owns this permission directly.
+        // CGPreflightScreenCaptureAccess checks the calling process (this app),
+        // which is the correct TCC principal on Tahoe.
+        screenRecordingGranted = PermissionChecker.isScreenRecordingGranted()
 
-        // Also check the daemon's reported permissions from its status file.
-        // The user grants permissions to the daemon binary, not this app,
-        // so AXIsProcessTrusted() returns false for us even when the daemon
-        // has permission. The daemon reports its permission state in its
-        // status file.
+        // Accessibility: daemon owns this (reads window titles).
+        // Trust daemon status when available.
         if let status = daemonStatus {
-            if status.accessibility_permitted { accOk = true }
-            if status.screen_recording_permitted { scrOk = true }
+            accessibilityGranted = status.accessibility_permitted
         }
-
-        accessibilityGranted = accOk
-        screenRecordingGranted = scrOk
+        // Without daemon status: leave permissions unchanged (default false).
+        // They'll be updated when the daemon runs and writes its status.
     }
 
     // MARK: - Helpers

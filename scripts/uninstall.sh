@@ -16,8 +16,9 @@ rm -f ~/Library/LaunchAgents/com.agenthandover.worker.plist
 
 # Remove binaries
 echo "Removing binaries..."
-sudo rm -f /usr/local/bin/agenthandover-daemon
 sudo rm -f /usr/local/bin/agenthandover
+# Note: agenthandover-daemon lives inside /Applications/AgentHandover.app
+# (removed below with the app bundle)
 
 # Remove native messaging host
 echo "Removing native messaging host..."

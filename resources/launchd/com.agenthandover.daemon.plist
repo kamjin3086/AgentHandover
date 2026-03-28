@@ -7,7 +7,7 @@
 
     <key>ProgramArguments</key>
     <array>
-        <string>/usr/local/bin/agenthandover-daemon</string>
+        <string>/Applications/AgentHandover.app/Contents/Helpers/AgentHandoverDaemon.app/Contents/MacOS/agenthandover-daemon</string>
     </array>
 
     <key>RunAtLoad</key>

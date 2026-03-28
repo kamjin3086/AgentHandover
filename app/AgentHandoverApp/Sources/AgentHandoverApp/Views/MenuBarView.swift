@@ -15,6 +15,8 @@ struct MenuBarView: View {
     @State private var elapsedTimer: Timer?
     @State private var elapsedSeconds: Int = 0
     @State private var showMoreActions = false
+    @State private var wasPausedBeforeFocus = false
+    @State private var openedScreenRecordingSettings = false
 
     // Record button idle pulse
     @State private var idlePulse = false
@@ -57,7 +59,7 @@ struct MenuBarView: View {
         .onChange(of: delegate.pendingOnboarding) { pending in
             if pending {
                 delegate.pendingOnboarding = false
-                delegate.showOnboarding(appState: appState)
+                delegate.showOnboarding()
             }
         }
         // Auto-open Q&A window when questions become available
@@ -69,12 +71,23 @@ struct MenuBarView: View {
         .onReceive(NotificationCenter.default.publisher(for: .focusQuestionsReady)) { _ in
             openAndActivate("focus-qa")
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            // Recheck Screen Recording after returning from Settings.
+            // App owns this permission directly; avoid forcing fresh capture
+            // attempts before TCC says the grant exists.
+            if openedScreenRecordingSettings && !appState.screenRecordingGranted {
+                openedScreenRecordingSettings = false
+                Task {
+                    appState.screenRecordingGranted = PermissionChecker.isScreenRecordingGranted()
+                }
+            }
+        }
         .onAppear {
             // Refresh immediately when user opens menu bar
             appState.refreshStatus()
             if !hasCompletedOnboarding && delegate.pendingOnboarding {
                 delegate.pendingOnboarding = false
-                delegate.showOnboarding(appState: appState)
+                delegate.showOnboarding()
             }
             syncFocusState()
         }
@@ -87,6 +100,7 @@ struct MenuBarView: View {
     // MARK: - Status Header
 
     private var statusHeader: some View {
+        VStack(spacing: 0) {
         HStack(spacing: 10) {
             // Status indicator with thick border
             ZStack {
@@ -111,8 +125,8 @@ struct MenuBarView: View {
             Spacer()
 
             // Setup needed indicator
-            if !hasCompletedOnboarding || !appState.accessibilityGranted {
-                Button(action: { delegate.showOnboarding(appState: appState) }) {
+            if !hasCompletedOnboarding || !appState.accessibilityGranted || !appState.screenRecordingGranted {
+                Button(action: { delegate.showOnboarding() }) {
                     Image(systemName: "exclamationmark.circle.fill")
                         .font(.system(size: 16))
                         .foregroundColor(warmOrange)
@@ -124,17 +138,42 @@ struct MenuBarView: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
         .background(Color.primary.opacity(0.03))
+
+        // Screen Recording missing banner
+        if hasCompletedOnboarding && !appState.screenRecordingGranted {
+            Button(action: { ensureDaemonAndOpenScreenRecording() }) {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 12))
+                        .foregroundColor(warmOrange)
+                    Text("Screen Recording not granted - recordings may fail")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(darkNavy.opacity(0.7))
+                    Spacer()
+                    Text("Fix")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(warmOrange)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(warmOrange.opacity(0.08))
+            }
+            .buttonStyle(.plain)
+        }
+        } // VStack
     }
 
     private var statusTitle: String {
         if isRecording { return "Recording..." }
         if appState.userStopped { return "Paused" }
-        switch appState.health {
-        case .healthy: return "Observing"
-        case .warning: return "Observing"
-        case .down: return "Offline"
-        case .stopped: return "Stopped"
+        // Derive title from actual daemon state, not combined health
+        if appState.daemonRunning {
+            return "Observing"
         }
+        if appState.workerRunning {
+            return "Processing"
+        }
+        return "Offline"
     }
 
     private var statusSubtitle: String {
@@ -142,13 +181,19 @@ struct MenuBarView: View {
             return "\(focusSessionTitle) \u{00B7} \(formattedElapsed)"
         }
         if appState.userStopped { return "Tap Start to resume learning" }
-        if !appState.daemonRunning && !appState.workerRunning {
-            return "Services not running"
+        if appState.daemonRunning && appState.workerRunning {
+            if appState.eventsToday > 0 {
+                return "Learning from your work"
+            }
+            return "Waiting for activity"
         }
-        if appState.eventsToday > 0 {
-            return "Learning from your work"
+        if appState.workerRunning && !appState.daemonRunning {
+            return "Processing captured data"
         }
-        return "Waiting for activity"
+        if appState.daemonRunning && !appState.workerRunning {
+            return "Capturing - worker starting"
+        }
+        return "Services not running"
     }
 
     // MARK: - Today Card
@@ -350,7 +395,7 @@ struct MenuBarView: View {
                 )
                 .shadow(color: Color.red.opacity(0.04), radius: 8, y: 2)
             } else if showTitlePrompt {
-                // Title input
+                // Title input + optional Screen Recording gate
                 VStack(alignment: .leading, spacing: 8) {
                     Text("What are you about to do?")
                         .font(.system(size: 12, weight: .medium))
@@ -358,6 +403,19 @@ struct MenuBarView: View {
                     TextField("e.g. File expense report", text: $focusSessionTitle)
                         .textFieldStyle(.roundedBorder)
                         .font(.system(size: 12))
+
+                    // Screen Recording gate
+                    if !appState.screenRecordingGranted {
+                        HStack(spacing: 6) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.system(size: 10))
+                                .foregroundColor(warmOrange)
+                            Text("Screen Recording required for workflow capture")
+                                .font(.system(size: 10))
+                                .foregroundColor(warmOrange)
+                        }
+                        .padding(.top, 2)
+                    }
 
                     HStack {
                         Button("Cancel") {
@@ -369,20 +427,42 @@ struct MenuBarView: View {
 
                         Spacer()
 
-                        Button(action: { startFocusSession(title: focusSessionTitle) }) {
-                            HStack(spacing: 4) {
-                                Image(systemName: "record.circle")
-                                    .font(.system(size: 10))
-                                Text("Start")
+                        if !appState.screenRecordingGranted {
+                            // Primary: fix permission
+                            Button(action: { ensureDaemonAndOpenScreenRecording() }) {
+                                Text("Grant Permission")
                                     .font(.system(size: 12, weight: .medium))
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 6)
+                                    .background(warmOrange)
+                                    .foregroundColor(.white)
+                                    .cornerRadius(6)
                             }
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 6)
-                            .background(Color.red)
-                            .foregroundColor(.white)
-                            .cornerRadius(6)
+
+                            // Secondary: proceed anyway with warning
+                            Button(action: { startFocusSession(title: focusSessionTitle) }) {
+                                Text("Record anyway")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
+                            }
+                            .disabled(focusSessionTitle.trimmingCharacters(in: .whitespaces).isEmpty)
+                            .help("May fail to produce a workflow without Screen Recording")
+                        } else {
+                            Button(action: { startFocusSession(title: focusSessionTitle) }) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "record.circle")
+                                        .font(.system(size: 10))
+                                    Text("Start")
+                                        .font(.system(size: 12, weight: .medium))
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 6)
+                                .background(Color.red)
+                                .foregroundColor(.white)
+                                .cornerRadius(6)
+                            }
+                            .disabled(focusSessionTitle.trimmingCharacters(in: .whitespaces).isEmpty)
                         }
-                        .disabled(focusSessionTitle.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
                 }
                 .buttonStyle(.plain)
@@ -393,7 +473,7 @@ struct MenuBarView: View {
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: cardRadius)
-                        .stroke(darkNavy.opacity(0.12), lineWidth: contraBorder)
+                        .stroke(appState.screenRecordingGranted ? darkNavy.opacity(0.12) : warmOrange.opacity(0.3), lineWidth: contraBorder)
                 )
             } else if appState.focusSessionProcessing {
                 // Focus session stopped, worker is processing
@@ -578,8 +658,24 @@ struct MenuBarView: View {
         }
     }
 
+    /// Request Screen Recording from the app principal, then open Settings if
+    /// the user still needs to toggle permission manually.
+    private func ensureDaemonAndOpenScreenRecording() {
+        Task {
+            let granted = await PermissionChecker.requestScreenRecordingAndOpenSettingsIfNeeded()
+            appState.screenRecordingGranted = granted
+            openedScreenRecordingSettings = !granted
+        }
+    }
+
     private func startFocusSession(title: String) {
+        // Remember user's paused state so we restore it after recording
+        wasPausedBeforeFocus = appState.userStopped
+
         let sessionId = UUID()
+
+        // Write focus signal BEFORE starting daemon so it picks up the
+        // session on its first event loop iteration — no missed events.
         let signal: [String: Any] = [
             "session_id": sessionId.uuidString,
             "title": title,
@@ -587,6 +683,13 @@ struct MenuBarView: View {
             "status": "recording"
         ]
         writeFocusSignalFile(signal)
+
+        // Start daemon on background thread to avoid freezing the UI
+        if !appState.daemonRunning {
+            DispatchQueue.global(qos: .userInitiated).async {
+                ServiceController.startDaemon()
+            }
+        }
 
         focusSessionId = sessionId
         focusSessionTitle = title
@@ -620,6 +723,24 @@ struct MenuBarView: View {
             "status": "stopped"
         ]
         writeFocusSignalFile(signal)
+
+        // Stop daemon and start worker on background thread to avoid UI freeze.
+        // Wait for daemon PID to exit before starting worker so the SQLite
+        // WAL is fully flushed (not a fixed sleep — polls actual process state).
+        let restorePaused = wasPausedBeforeFocus
+        DispatchQueue.global(qos: .userInitiated).async {
+            ServiceController.stopDaemon()
+            // Poll until daemon process is gone (up to 5s), then start worker
+            ServiceController.waitForDaemonExit(timeoutSeconds: 5)
+            ServiceController.startWorker()
+
+            if restorePaused {
+                DispatchQueue.main.async {
+                    self.appState.userStopped = true
+                    UserDefaults.standard.set(true, forKey: "observingPaused")
+                }
+            }
+        }
 
         elapsedTimer?.invalidate()
         elapsedTimer = nil

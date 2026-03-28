@@ -1420,6 +1420,19 @@ def _process_focus_sessions(
     # Query events tagged with this focus session ID
     focus_events = db.get_focus_session_events(session_id)
     if not focus_events:
+        import time as _time
+        try:
+            file_age = _time.time() - signal_path.stat().st_mtime
+        except OSError:
+            file_age = 0
+        if file_age > 300:
+            logger.warning(
+                "Focus session '%s' (%s) has 0 events %.0fs after stop — cleaning up.",
+                title, session_id, file_age,
+            )
+            _clear_focus_signal(signal_path)
+            return 0
+
         logger.info(
             "Focus session '%s' (%s) has no events yet, will retry next cycle",
             title,
@@ -1726,6 +1739,22 @@ def _process_focus_sessions_v2(
     # Query events tagged with this focus session ID
     focus_events = db.get_focus_session_events(session_id)
     if not focus_events:
+        # Use the signal file's mtime (= when session was stopped/written)
+        # not started_at, so long recordings don't get cleaned up prematurely.
+        import time as _time
+        try:
+            file_age = _time.time() - signal_path.stat().st_mtime
+        except OSError:
+            file_age = 0
+        if file_age > 300:
+            logger.warning(
+                "Focus v2 session '%s' (%s) has 0 events %.0fs after stop — "
+                "daemon was likely not running. Cleaning up.",
+                title, session_id, file_age,
+            )
+            _clear_focus_signal(signal_path)
+            return 0
+
         logger.info(
             "Focus v2 session '%s' (%s) has no events yet, will retry",
             title, session_id,
@@ -1848,7 +1877,7 @@ def _process_focus_sessions_v2(
                 _qa_env["OLLAMA_HOST"] = _ollama_host
                 _qa_result = _sp.run(
                     [sys.executable, _qa_script_file.name, _qa_input.name, _qa_output],
-                    timeout=300,
+                    timeout=600,  # 10 min — larger context (16K) makes Qwen slower
                     capture_output=True,
                     env=_qa_env,
                 )

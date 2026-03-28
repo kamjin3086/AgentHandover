@@ -76,8 +76,8 @@ impl HealthWatcher {
         }
 
         HealthStatus {
-            accessibility_permitted: check_accessibility(),
-            screen_recording_permitted: check_screen_recording(),
+            accessibility_permitted: is_accessibility_permitted(),
+            screen_recording_permitted: is_screen_recording_permitted(),
             disk_space_ok,
             free_disk_gb,
             daemon_memory_mb,
@@ -148,25 +148,21 @@ fn get_process_memory_mb() -> Option<u64> {
 }
 
 #[cfg(target_os = "macos")]
-fn check_accessibility() -> bool {
+pub fn is_accessibility_permitted() -> bool {
+    // AXIsProcessTrusted() can return false for bundled helpers on Tahoe
+    // even when permission is granted. Still use it as primary check
+    // since it works in most cases and doesn't trigger any prompts.
     unsafe { accessibility_sys::AXIsProcessTrusted() }
 }
 
 #[cfg(not(target_os = "macos"))]
-fn check_accessibility() -> bool {
+pub fn is_accessibility_permitted() -> bool {
     true
 }
 
-fn check_screen_recording() -> bool {
-    // Screen recording permission is checked by attempting a CGDisplay capture
-    // On macOS 10.15+, CGDisplayCreateImage returns NULL without permission
-    #[cfg(target_os = "macos")]
-    {
-        use core_graphics::display::CGDisplay;
-        CGDisplay::main().image().is_some()
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        true
-    }
+pub fn is_screen_recording_permitted() -> bool {
+    // Screen Recording is owned by the main app process.
+    // The daemon gets pixels via the capture socket.
+    // Permission checking is the app's responsibility.
+    true
 }

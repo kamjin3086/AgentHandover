@@ -23,7 +23,7 @@ struct StatusDetailView: View {
                             )
                             PermissionBadge(
                                 name: "Screen Recording",
-                                granted: daemon.screen_recording_permitted
+                                granted: appState.screenRecordingGranted
                             )
                         }
                         .padding(.top, 4)

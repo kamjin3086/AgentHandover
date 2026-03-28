@@ -15,10 +15,19 @@ mkdir -p "${PKG_ROOT}/usr/local/lib/agenthandover/extension"
 mkdir -p "${PKG_ROOT}/usr/local/lib/agenthandover/launchd"
 mkdir -p "${PKG_ROOT}/Applications"
 
+# Daemon helper .app bundle path. Even though the main app owns Screen Recording,
+# the helper still runs more reliably on Tahoe when packaged as a real app bundle.
+DAEMON_APP="${PKG_ROOT}/Applications/AgentHandover.app/Contents/Helpers/AgentHandoverDaemon.app"
+DAEMON_APP_MACOS="${DAEMON_APP}/Contents/MacOS"
+
 # Copy binaries
 echo "Staging binaries..."
-cp "${REPO_ROOT}/target/universal-release/agenthandover-daemon" "${PKG_ROOT}/usr/local/bin/"
+# CLI goes to /usr/local/bin as a plain binary (no TCC needed)
 cp "${REPO_ROOT}/target/universal-release/agenthandover" "${PKG_ROOT}/usr/local/bin/"
+# Daemon goes into a helper .app bundle for TCC visibility
+mkdir -p "${DAEMON_APP_MACOS}"
+cp "${REPO_ROOT}/target/universal-release/agenthandover-daemon" "${DAEMON_APP_MACOS}/"
+cp "${REPO_ROOT}/resources/daemon-app/Info.plist" "${DAEMON_APP}/Contents/Info.plist"
 
 # Copy extension
 echo "Staging extension..."
@@ -102,9 +111,10 @@ fi
 
 if [ -n "${CODESIGN_IDENTITY}" ]; then
     echo "Codesigning binaries with: ${CODESIGN_IDENTITY}"
+    # Sign individual binaries first
     for binary in \
-        "${PKG_ROOT}/usr/local/bin/agenthandover-daemon" \
         "${PKG_ROOT}/usr/local/bin/agenthandover" \
+        "${DAEMON_APP_MACOS}/agenthandover-daemon" \
         "${PKG_ROOT}/Applications/AgentHandover.app/Contents/MacOS/AgentHandover"; do
         if [ -f "${binary}" ]; then
             codesign --force --options runtime --timestamp \
@@ -112,6 +122,12 @@ if [ -n "${CODESIGN_IDENTITY}" ]; then
             echo "  Signed: $(basename "${binary}")"
         fi
     done
+    # Sign the daemon helper .app bundle (must happen after its binary is signed)
+    if [ -d "${DAEMON_APP}" ]; then
+        codesign --force --options runtime --timestamp \
+            --sign "${CODESIGN_IDENTITY}" "${DAEMON_APP}"
+        echo "  Signed bundle: AgentHandoverDaemon.app"
+    fi
 else
     echo "Warning: No Developer ID Application certificate found. Binaries unsigned."
     echo "  Notarization will fail without codesigned binaries."

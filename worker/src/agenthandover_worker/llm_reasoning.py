@@ -325,6 +325,8 @@ class LLMReasoner:
             "think": use_think,
             "options": {
                 "num_predict": num_predict or self.config.num_predict,
+                "num_ctx": 16384,
+                "temperature": 0.3,
             },
         }
         if system:

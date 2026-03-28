@@ -1,5 +1,6 @@
 import Cocoa
 import CoreGraphics
+import ScreenCaptureKit
 
 /// Checks macOS system permissions required by AgentHandover.
 enum PermissionChecker {
@@ -21,10 +22,35 @@ enum PermissionChecker {
     // MARK: - Screen Recording
 
     /// Check if Screen Recording permission is granted (needed for screenshots).
-    /// Uses CGDisplayCreateImage as a probe — returns nil without permission.
+    /// Uses CGPreflightScreenCaptureAccess which checks the current state
+    /// without triggering the system permission prompt or capturing anything.
+    /// The old CGDisplayCreateImage probe triggered the prompt on first call
+    /// and returned non-nil on macOS 15+ even without permission.
     static func isScreenRecordingGranted() -> Bool {
-        let image = CGDisplayCreateImage(CGMainDisplayID())
-        return image != nil
+        CGPreflightScreenCaptureAccess()
+    }
+
+    /// Request Screen Recording permission from the main app bundle.
+    /// This uses the same capture service the daemon depends on so the
+    /// permission is exercised by the exact runtime principal users see.
+    @discardableResult
+    static func requestScreenRecording() async -> Bool {
+        await ScreenCaptureService().requestPermission()
+    }
+
+    /// Kick off the full Screen Recording grant flow from the main app.
+    ///
+    /// We first exercise the permission from the app principal, then only
+    /// fall back to opening System Settings if the permission is still absent.
+    @MainActor
+    @discardableResult
+    static func requestScreenRecordingAndOpenSettingsIfNeeded() async -> Bool {
+        NSApp.activate(ignoringOtherApps: true)
+        let granted = await requestScreenRecording()
+        if !granted {
+            openScreenRecordingSettings()
+        }
+        return granted
     }
 
     /// Open System Settings to the Screen Recording privacy pane.
