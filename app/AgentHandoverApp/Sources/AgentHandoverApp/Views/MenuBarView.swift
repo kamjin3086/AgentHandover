@@ -572,21 +572,45 @@ struct MenuBarView: View {
     // MARK: - Quick Links
 
     private var quickLinksGrid: some View {
-        LazyVGrid(columns: [
-            GridItem(.flexible()),
-            GridItem(.flexible()),
-            GridItem(.flexible()),
-        ], spacing: 8) {
-            QuickLink(icon: "tray.full", label: "Workflows", badge: appState.sopTotalCount) {
+        HStack(spacing: 6) {
+            compactLink("Skills", badge: appState.sopTotalCount) {
                 openAndActivate("workflows")
             }
-            QuickLink(icon: "calendar.badge.clock", label: "Digest") {
+            compactLink("Digest") {
                 openAndActivate("daily-digest")
             }
-            QuickLink(icon: "questionmark.circle", label: "FAQ") {
+            compactLink("FAQ") {
                 openAndActivate("faq")
             }
         }
+    }
+
+    private func compactLink(_ label: String, badge: Int = 0, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Text(label)
+                    .font(.system(size: 12, weight: .medium))
+                if badge > 0 {
+                    Text("\(badge)")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(Capsule().fill(Color.secondary))
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.primary.opacity(0.04))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color.primary.opacity(0.1), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Connected Agents

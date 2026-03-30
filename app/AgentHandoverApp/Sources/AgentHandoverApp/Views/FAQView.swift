@@ -185,6 +185,11 @@ struct FAQView: View {
                         question: "What is the Knowledge Base?",
                         answer: "The Knowledge Base is where AgentHandover stores everything it learns:\n\n- Skills (step-by-step procedures)\n- Your profile (tools you use, working hours, preferences)\n- Decision rules (when you choose X over Y)\n- Constraints and guardrails\n\nIt lives at ~/.agenthandover/knowledge/ and is readable by any tool. The MCP server reads from it to serve Skills to agents."
                     ),
+                    FAQItem(
+                        id: "voice-profile",
+                        question: "How does AgentHandover learn my voice and style?",
+                        answer: "As you work, AgentHandover builds a Voice Profile that captures how you communicate:\n\n- Writing tone (formal, casual, technical)\n- Common phrases and patterns you use\n- Email and message formatting preferences\n- How you address different people\n\nWhen an agent executes a Skill that involves writing (emails, messages, docs), it uses your Voice Profile to match your style — so the output sounds like you, not a generic AI.\n\nThe profile improves over time as AgentHandover observes more of your communication. Agents can access it via the MCP server's get_user_profile tool."
+                    ),
                 ]
             ),
             FAQSection(
