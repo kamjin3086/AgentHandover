@@ -18,3 +18,9 @@ __pycache__/
 *.pcm
 /.docdex/
 /.docdex-state/
+
+# Local AI assistant config / dev notes — not for distribution
+CLAUDE.md
+.claude/
+.cursor/
+.windsurf/
