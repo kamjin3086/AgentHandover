@@ -126,9 +126,29 @@ IMPORTANT: "opened X → went back → did Y" is NOT automatically a \
 mistake. If the user spent time on X (multiple frames, scrolled, \
 clicked, read content, copied something), then going back to Y is \
 part of the real workflow — a reference lookup, a context check, or \
-multi-tab research. Include these as legitimate steps. \
-When in doubt, KEEP the step. Only drop when it's clearly a \
-bailed-immediately action with no value extracted.
+multi-tab research. Include these as legitimate steps.
+- COHERENCE CHECK — distinguish workflow steps from distractions: \
+"spent time on X" is necessary but not sufficient for X to belong in \
+the SOP. Evaluate each candidate step in the context of the whole \
+recording. For each frame, apply this two-question test: \
+(a) Is the activity in this frame topically coherent with the \
+primary task inferred from the overall recording? \
+(b) Does the content the user interacted with in this frame get \
+referenced, quoted, copied, paraphrased, or otherwise USED in any \
+LATER frame of the same recording? \
+If the answer to BOTH is NO — topically disconnected from the task \
+AND leaves no downstream trace — treat the frame as a distraction \
+(side-reading, context-switch, app-flipping during a pause) and DROP \
+it from the steps. Do not use app names, content, or your training \
+priors to decide what is "relevant"; use only the internal consistency \
+of THIS recording. A legitimate reference lookup always leaves a \
+trace: the content the user consulted shows up downstream. A \
+distraction leaves no trace. That causal linkage, not how long the \
+user lingered, is what determines membership in the SOP.
+- When in doubt and the frame is NOT clearly a distraction, KEEP the \
+step. Drop only with clear evidence — either (i) bailed-immediately \
+within 1-2 frames with no interaction, or (ii) topically disjoint \
+from the task AND unused in any later frame.
 - DETECT TYPO CORRECTIONS: if the user types something, deletes \
 it, then types the correct version in the same field without switching \
 context — only include the final typed value as a single step. This \
@@ -139,6 +159,13 @@ something, say WHAT was typed/pasted, not just "enter text". Example: \
 field". Extract the actual value from visible content when possible.
 - Extract variables: values that would change each time (dates, amounts, \
 names) should be marked as {{{{variable_name}}}}
+- STRICT VARIABLE CONTRACT: every name you put in the "variables" array \
+MUST appear as {{{{variable_name}}}} in at least one step's "input", \
+"action", "location", or "verify" field. If you don't reference it in \
+any step, DO NOT declare it. Declaring an unused variable is a bug. \
+Conversely, if you use {{{{foo}}}} in a step, you MUST include "foo" in \
+the "variables" array. Variables declared without usage are silently \
+dropped downstream, so you gain nothing by declaring extra ones.
 - The "outcome" is a single sentence describing the end result of the whole workflow
 - The "prerequisites" list things the user needs before starting (accounts, \
 permissions, files, tools — not steps)
@@ -902,6 +929,43 @@ def _vlm_sop_to_template(
         tags = []
     # Normalise: lowercase, deduplicate, cap at 3
     tags = list(dict.fromkeys(t.lower().strip() for t in tags if isinstance(t, str)))[:3]
+
+    # Drop any declared variable that isn't actually referenced in any
+    # step text. Gemma 4 (and any other VLM) occasionally hallucinates
+    # "would be useful" variables that it then forgets to weave into the
+    # step text. The sop_linter catches this as a warning, but the
+    # variable still ships in the final procedure and clutters the Skill
+    # for no reason. Cleaner to drop them silently here and emit a
+    # single INFO log so we can still monitor prompt quality.
+    #
+    # The prompt rule above tells the VLM not to do this in the first
+    # place, but this post-processing pass is the safety net — don't
+    # rely on the model to follow the rule perfectly.
+    from agenthandover_worker.sop_linter import (
+        _collect_variable_refs,
+        _step_text_fields,
+    )
+    _referenced: set[str] = set()
+    for _s in steps:
+        if not isinstance(_s, dict):
+            continue
+        for _txt in _step_text_fields(_s):
+            _referenced.update(_collect_variable_refs(_txt))
+    _unused = [
+        v for v in variables
+        if isinstance(v, dict) and v.get("name") and v["name"] not in _referenced
+    ]
+    if _unused:
+        variables = [
+            v for v in variables
+            if not (isinstance(v, dict) and v.get("name") and v["name"] not in _referenced)
+        ]
+        logger.info(
+            "Dropped %d unused variable(s) from SOP '%s': %s",
+            len(_unused),
+            slug,
+            ", ".join(v.get("name", "?") for v in _unused),
+        )
 
     template = {
         "slug": slug,

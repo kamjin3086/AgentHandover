@@ -920,6 +920,10 @@ class TestTypedVariables:
                 "validation": "Starts with sk-",
             },
         ]
+        # Wire both declared variables into step text so the v0.2.3 unused-
+        # variable cleanup pass preserves them (that pass drops any variable
+        # declared but never referenced in steps).
+        vlm_sop["steps"][0]["input"] = "{{email_address}} {{api_key}}"
         # Parse round-trip through JSON
         raw = json.dumps(vlm_sop)
         parsed = _parse_sop_response(raw)
@@ -948,6 +952,9 @@ class TestTypedVariables:
         vlm_sop["variables"] = [
             {"name": "query", "description": "Search query", "example": "test"},
         ]
+        # Wire the variable into a step so the unused-variable cleanup pass
+        # (v0.2.3) doesn't drop it before we assert on its type.
+        vlm_sop["steps"][0]["input"] = "{{query}}"
         template = _vlm_sop_to_template(vlm_sop)
         assert template["variables"][0]["type"] == "text"
 
@@ -957,6 +964,7 @@ class TestTypedVariables:
         vlm_sop["variables"] = [
             {"name": "query", "type": "string", "example": "test"},
         ]
+        vlm_sop["steps"][0]["input"] = "{{query}}"
         template = _vlm_sop_to_template(vlm_sop)
         assert template["variables"][0]["type"] == "text"
 
@@ -964,6 +972,7 @@ class TestTypedVariables:
         """VLM returning a bare string variable gets full typed structure."""
         vlm_sop = _make_vlm_sop_json()
         vlm_sop["variables"] = ["search_query"]
+        vlm_sop["steps"][0]["input"] = "{{search_query}}"
         template = _vlm_sop_to_template(vlm_sop)
         var = template["variables"][0]
         assert var["name"] == "search_query"
@@ -978,8 +987,40 @@ class TestTypedVariables:
         vlm_sop["variables"] = [
             {"name": "token", "type": "password", "sensitive": False},
         ]
+        vlm_sop["steps"][0]["input"] = "{{token}}"
         template = _vlm_sop_to_template(vlm_sop)
         assert template["variables"][0]["sensitive"] is True
+
+    def test_unused_variables_are_dropped(self):
+        """v0.2.3 cleanup: VLM-declared variables that aren't referenced
+        in any step's text must be silently dropped from the final SOP.
+
+        Gemma 4 (and other VLMs) occasionally declare 'might be useful'
+        variables that never get woven into the step text. Before v0.2.3
+        these survived into the final Skill and cluttered it with fields
+        that the agent could never fill. The sop_linter caught it as a
+        warning but didn't remove them. v0.2.3 adds a post-processing
+        pass in _vlm_sop_to_template that drops any declared variable
+        whose name doesn't appear as {{name}} in at least one step's
+        action/input/location/verify field."""
+        vlm_sop = _make_vlm_sop_json()
+        # Declare two variables. `used_var` gets wired into a step;
+        # `ghost_var` does not — it should be dropped silently.
+        vlm_sop["variables"] = [
+            {"name": "used_var", "type": "text", "example": "foo"},
+            {"name": "ghost_var", "type": "text", "example": "bar"},
+        ]
+        vlm_sop["steps"][0]["input"] = "{{used_var}}"
+        template = _vlm_sop_to_template(vlm_sop)
+
+        names = [v["name"] for v in template["variables"]]
+        assert "used_var" in names, (
+            "used_var was wired into a step and should be preserved"
+        )
+        assert "ghost_var" not in names, (
+            "ghost_var was never referenced and should have been dropped "
+            "by the v0.2.3 unused-variable cleanup pass"
+        )
 
     def test_focus_prompt_contains_typed_variable_schema(self):
         """Focus prompt includes typed variable fields."""

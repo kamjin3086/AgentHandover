@@ -499,6 +499,29 @@ GitHub [Discussions](https://github.com/sandroandric/AgentHandover/discussions) 
 
 ## Changelog
 
+### v0.2.3 (2026-04-11)
+
+Hotfix for a v0.2.2 regression that crashed the worker on first launch, plus four other issues caught during deep testing. Recommended upgrade for everyone on v0.2.2.
+
+**Worker startup fix (critical)**
+- Fixed a Python scoping bug where a redundant `from agenthandover_worker.focus_processor import FocusProcessor` inside `main()` shadowed the module-level import and made Python treat `FocusProcessor` as local to the entire function, crashing the worker with `UnboundLocalError` on startup. Proactively removed 3 more latent shadow imports of the same class (`datetime`, `timezone`, `OpenClawWriter`, `VLMFallbackQueue`) and added a regression test that AST-scans the whole `main.py` for any module-level import re-imported inside any function body — catches the whole class of bug.
+
+**`agenthandover doctor` refresh**
+- Daemon binary check now points at `/usr/local/lib/agenthandover/ah-observer` (the v0.2.1 rename).
+- Accessibility + Screen Recording permission checks are advisory info lines pointing users at System Settings — the previous checks ran `AXIsProcessTrusted()` / `CGDisplayCreateImage()` against the CLI process instead of the app bundle, which always returned false.
+- Dead `com.agenthandover.daemon.plist` launchd check removed (the daemon hasn't used launchd since v0.2.1).
+- Required-models check now reads your configured `annotation_model` / `sop_model` / embedding model from `config.toml` instead of hardcoding `qwen3.5` — Gemma 4 users (16GB+ recommended tier) stop seeing false failures. Falls back gracefully if `config.toml` is missing fields, and skips the local-model check entirely when `vlm.mode = remote`.
+
+**SOP quality improvements**
+- SOP generation silently drops declared variables that aren't actually referenced in any step's text via a post-processing pass in `_vlm_sop_to_template()`. Gemma 4 occasionally hallucinates "might be useful" variables it then forgets to weave into the step text; these used to ship in the final Skill cluttering the `variables` array. Also tightened the SOP generation prompt with a strict "every declared variable must appear in at least one step" contract.
+- Added a coherence check to the SOP generation prompt that distinguishes workflow steps from incidental distractions (tab-switches, brief unrelated reads, app-flipping during pauses). Frames that are topologically disjoint from the inferred primary task AND leave no downstream trace (no content referenced in any later frame) get dropped, even if the user spent multiple frames on them. The rule is written abstractly — no hardcoded app names, no content anchors, no hardcoded examples — so it generalizes across every user's workflow.
+- Focus Q&A subprocess now uses your configured SOP model instead of hardcoding `qwen3.5:4b`. Previously, Gemma-4-only users (16GB+ recommended tier) had the Q&A silently fall back to a model they never pulled, and the Q&A phase would degrade to zero questions. v0.2.3 plumbs the configured model through via `AH_QNA_MODEL` env var.
+
+**Tests**
+- 3000/3000 Python tests pass (+1 new `test_unused_variables_are_dropped`, +1 new `test_no_module_imports_are_shadowed_anywhere`, 5 existing `TestTypedVariables` tests updated to wire declared variables into step text).
+- 11/11 Rust CLI tests pass.
+- Validated end-to-end on the installed pkg with two real focus recordings on Python 3.14.4 + Gemma 4 + Ollama 0.20.5: zero tracebacks, zero `UnboundLocalError`, zero `NameError`, zero `ImportError` across the full pipeline (capture → annotate → diff → synthesize → SOP generate → Q&A → save).
+
 ### v0.2.2 (2026-04-11)
 
 Small maintenance release that cleans up a lingering v0.2.0 → v0.2.1 upgrade wart and ports the v0.2.1 "rich observations" grounding to the daily re-synthesis path.

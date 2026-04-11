@@ -682,3 +682,158 @@ class TestCheckExportTrigger:
         assert (sops_dir / "sops" / "sop.test.md").exists()
         # Trigger consumed
         assert not (tmp_path / "export-trigger.json").exists()
+
+
+class TestMainFunctionScoping:
+    """Regression tests for Python scoping bugs inside main().
+
+    These are bytecode-level checks that catch 'accidentally-shadowed
+    module-level import' bugs that only surface at runtime — the exact
+    failure mode that caused v0.2.2's worker to crash on startup with
+    `UnboundLocalError: cannot access local variable 'FocusProcessor'`
+    (reported by hikoae, issue #1 follow-up).
+
+    The bug pattern: you add `from some_module import SomeClass` inside
+    main() for clarity, forgetting that the class is already imported at
+    module level. Python's scoping rule then treats SomeClass as local
+    to the ENTIRE main() function, and any earlier use of SomeClass
+    (including type annotations evaluated at runtime under PEP 563-ish
+    semantics) raises UnboundLocalError.
+
+    The unit tests never caught this because they only exercise helper
+    functions, not main() itself.
+    """
+
+    def _assert_name_is_global(self, name: str) -> None:
+        """Assert that `name` is resolved from globals inside main(), not
+        treated as a local variable. Checks Python's `co_varnames` table
+        directly — this works across Python versions regardless of which
+        specialized LOAD_FAST variant the compiler picks (LOAD_FAST,
+        LOAD_FAST_CHECK, LOAD_FAST_BORROW, etc. in 3.14+).
+
+        A name ends up in co_varnames when it's (a) a function parameter,
+        (b) assigned inside the function body, or (c) imported inside the
+        function body via `from ... import {name}`. For `main()`, none
+        of the module-level globals like FocusProcessor should appear in
+        co_varnames — if they do, someone shadowed them."""
+        from agenthandover_worker.main import main as main_fn
+        main_code = main_fn.__code__
+
+        assert name not in main_code.co_varnames, (
+            f"'{name}' is a local variable in main() (found in co_varnames). "
+            f"This means there's a redundant `from ... import {name}` or "
+            f"`{name} = ...` inside main() that shadows the module-level "
+            f"binding. Python's scoping rule makes {name} local to the ENTIRE "
+            f"main() function, causing UnboundLocalError on any earlier use. "
+            f"See v0.2.2 regression in issue #1 (hikoae). "
+            f"Fix: remove the inner import/assignment and rely on the "
+            f"module-level import at the top of main.py."
+        )
+        # Also confirm the module-level import is still present — if someone
+        # deletes the module-level import, co_varnames will still be clean
+        # but main() would crash with NameError instead. This catches that.
+        import agenthandover_worker.main as main_mod
+        assert hasattr(main_mod, name), (
+            f"'{name}' is neither a local in main() nor a module-level "
+            f"global in main.py. Either the module-level import was deleted "
+            f"or the name was renamed. Fix: re-add the module-level import "
+            f"at the top of main.py."
+        )
+
+    def test_focus_processor_is_global_in_main(self):
+        """Regression: v0.2.2 shipped with a late `from agenthandover_worker
+        .focus_processor import FocusProcessor` inside main() that shadowed
+        the module-level import at line 29, causing the worker to crash on
+        startup with UnboundLocalError. Caught by hikoae; fixed by removing
+        the redundant inner import."""
+        self._assert_name_is_global("FocusProcessor")
+
+    def test_no_module_imports_are_shadowed_anywhere(self):
+        """Sweep regression: any name that is imported at module level in
+        main.py must NOT be re-imported or re-assigned inside any function
+        body. Shadow-imports are a time-bomb class of bug — even if the
+        name is only used AFTER the inner import today, anyone adding a
+        reference above the inner import will re-trigger UnboundLocalError.
+
+        Caught 4 latent shadow imports during v0.2.3 investigation:
+          - datetime/timezone in _process_drift_reviewed_trigger
+          - OpenClawWriter in _check_export_trigger
+          - VLMFallbackQueue in main
+
+        All 4 were fixed in v0.2.3 by deleting the redundant inner imports.
+        This test ensures none of them come back and no new ones sneak in.
+        """
+        import ast
+        import pathlib
+
+        main_py = (
+            pathlib.Path(__file__).resolve().parent.parent
+            / "src"
+            / "agenthandover_worker"
+            / "main.py"
+        )
+        source = main_py.read_text()
+        tree = ast.parse(source)
+
+        # Collect all module-level imported names
+        module_imports: set[str] = set()
+        for node in tree.body:
+            if isinstance(node, ast.ImportFrom):
+                for alias in node.names:
+                    module_imports.add(alias.asname or alias.name)
+            elif isinstance(node, ast.Import):
+                for alias in node.names:
+                    module_imports.add(alias.asname or alias.name)
+
+        # Walk every function (sync + async) and collect any inner imports
+        # that shadow a module-level name.
+        findings: list[tuple[str, int, int, str]] = []
+
+        class ShadowImportAuditor(ast.NodeVisitor):
+            def visit_FunctionDef(self, node: ast.FunctionDef) -> None:  # noqa: N802
+                self._check_function(node)
+                self.generic_visit(node)
+
+            def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:  # noqa: N802
+                self._check_function(node)
+                self.generic_visit(node)
+
+            def _check_function(self, func: ast.AST) -> None:
+                for subnode in ast.walk(func):
+                    if subnode is func:
+                        continue
+                    # Don't descend into nested functions — they have
+                    # their own scope and their own test.
+                    if isinstance(
+                        subnode, (ast.FunctionDef, ast.AsyncFunctionDef)
+                    ):
+                        continue
+                    if isinstance(subnode, (ast.ImportFrom, ast.Import)):
+                        for alias in subnode.names:
+                            name = alias.asname or alias.name
+                            if name in module_imports:
+                                findings.append(
+                                    (
+                                        getattr(func, "name", "<anon>"),
+                                        getattr(func, "lineno", -1),
+                                        subnode.lineno,
+                                        name,
+                                    )
+                                )
+
+        ShadowImportAuditor().visit(tree)
+
+        assert not findings, (
+            "Found shadow-import(s) inside function bodies that already "
+            "exist as module-level imports in main.py:\n"
+            + "\n".join(
+                f"  {name} re-imported inside {func}() "
+                f"(func line {func_line}, inner import line {inner_line})"
+                for func, func_line, inner_line, name in findings
+            )
+            + "\n\nPython's scoping rule makes these names local to the "
+            "entire function body, causing UnboundLocalError on any "
+            "use that executes before the inner import. "
+            "Fix: remove the inner import and rely on the module-level "
+            "binding. See v0.2.3 release notes + issue #1 for context."
+        )

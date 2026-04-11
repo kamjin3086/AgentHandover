@@ -82,12 +82,17 @@ pub fn run() -> Result<()> {
     let mut counts = CheckCounts::new();
 
     // Check 1: Daemon binary exists
-    // Search pkg path, PATH, and source build directories.
-    let daemon_found = std::path::Path::new("/usr/local/bin/agenthandover-daemon").exists()
-        || which("agenthandover-daemon")
-        || source_build_daemon_exists();
-    if daemon_found {
-        check_pass(&mut counts, "Daemon binary");
+    //
+    // v0.2.1 renamed the installed daemon from `agenthandover-daemon` to
+    // `ah-observer` and moved it from `/usr/local/bin/` to
+    // `/usr/local/lib/agenthandover/`. The Swift menu bar app hardcodes
+    // that new path as the place to spawn the daemon from. We use
+    // paths::find_daemon_binary() so pkg/cask installs (ah-observer),
+    // legacy installs, homebrew libexec, and cargo source builds all
+    // resolve through a single helper.
+    let daemon_path = paths::find_daemon_binary();
+    if let Some(ref p) = daemon_path {
+        check_pass(&mut counts, &format!("Daemon binary ({})", p.display()));
     } else {
         check_fail(&mut counts, "Daemon binary");
         print_install_hint(channel);
@@ -112,28 +117,41 @@ pub fn run() -> Result<()> {
         check_skip(&mut counts, "Config file", "Using defaults");
     }
 
-    // Check 5: Accessibility permission
+    // Check 5 + 6: TCC permissions (Accessibility + Screen Recording)
+    //
+    // macOS TCC permissions are granted PER APP BUNDLE, not system-wide.
+    // The daemon runs under the AgentHandover.app TCC principal (because
+    // the menu bar app spawns it via Process() — see ServiceController
+    // .daemonExecutableURL), so what we actually need to check is whether
+    // AgentHandover.app has the permissions, NOT whether this CLI
+    // process has them.
+    //
+    // Calling AXIsProcessTrusted() / CGDisplayCreateImage() from the
+    // CLI checks THIS process, which is the wrong thing — the CLI will
+    // always read "no accessibility" because you never granted it, but
+    // the app can have full permissions. The previous version of doctor
+    // had this bug and falsely reported Accessibility as failed on
+    // every pkg install.
+    //
+    // There is no clean API to query TCC for a different bundle id
+    // without reading the TCC sqlite database, which itself requires
+    // Full Disk Access (ironic). Since we can't definitively check,
+    // print an advisory info line instead and let the user verify in
+    // System Settings directly.
     #[cfg(target_os = "macos")]
     {
-        if accessibility_sys_check() {
-            check_pass(&mut counts, "Accessibility permission");
-        } else {
-            check_fail(&mut counts, "Accessibility permission");
-        }
-    }
-
-    // Check 6: Screen Recording permission (optional)
-    #[cfg(target_os = "macos")]
-    {
-        if screen_recording_check() {
-            check_pass(&mut counts, "Screen Recording permission");
-        } else {
-            check_skip(
-                &mut counts,
-                "Screen Recording permission",
-                "Screenshots disabled",
-            );
-        }
+        println!(
+            "  {} Accessibility permission ({})",
+            "info".dimmed(),
+            "verify AgentHandover in System Settings > Privacy & Security > Accessibility"
+                .dimmed()
+        );
+        println!(
+            "  {} Screen Recording permission ({})",
+            "info".dimmed(),
+            "verify AgentHandover in System Settings > Privacy & Security > Screen Recording"
+                .dimmed()
+        );
     }
 
     // Check 7: Database exists and is writable
@@ -171,14 +189,14 @@ pub fn run() -> Result<()> {
         check_fail(&mut counts, "Native messaging host");
     }
 
-    // Check 9: launchd plists installed
+    // Check 9: Worker launchd plist
+    //
+    // Only the worker uses launchd in v0.2.1+. The daemon is spawned
+    // directly by the menu bar app via Process() (see ServiceController
+    // .startDaemon()) so it has no launchd plist anymore. The old
+    // com.agenthandover.daemon.plist was deleted in v0.2.1 — do NOT
+    // add a check for it here, it will always fail and mislead users.
     let launch_agents = launch_agents_dir();
-    if launch_agents.join("com.agenthandover.daemon.plist").exists() {
-        check_pass(&mut counts, "Daemon launchd plist");
-    } else {
-        check_fail(&mut counts, "Daemon launchd plist");
-        print_install_hint(channel);
-    }
     if launch_agents.join("com.agenthandover.worker.plist").exists() {
         check_pass(&mut counts, "Worker launchd plist");
     } else {
@@ -248,24 +266,67 @@ pub fn run() -> Result<()> {
     }
 
     // Check 16: Required models pulled
+    //
+    // v0.2.0 introduced RAM-based model tiers (Qwen 3.5 for 8GB, Gemma 4
+    // for 16GB+). The previous version of this check hardcoded
+    // `qwen3.5:2b` + `qwen3.5:4b` which is wrong for anyone on a 16GB+
+    // Mac — they'd have Gemma 4 installed and doctor would report both
+    // qwen models as missing. False failures.
+    //
+    // Correct approach: read the user's config.toml to find their
+    // ACTUALLY configured annotation_model + sop_model + embedding
+    // model, then check Ollama for those specific names. Gracefully
+    // fall back if config.toml is missing or fields aren't set.
+    //
+    // Also: if config has `vlm.mode = "remote"`, skip the local model
+    // check entirely — they're using a cloud provider.
     if ollama_ok {
-        let models_output = std::process::Command::new("ollama")
-            .arg("list")
-            .output()
-            .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
-            .unwrap_or_default();
+        let config_str = std::fs::read_to_string(&config_path).unwrap_or_default();
 
-        let required = [
-            ("qwen3.5:2b", "Screen annotation"),
-            ("qwen3.5:4b", "Skill generation"),
-            ("nomic-embed-text", "Semantic search"),
-        ];
-        for (model, purpose) in &required {
-            if models_output.contains(model) {
-                check_pass(&mut counts, &format!("Model {} ({})", model, purpose));
-            } else {
-                check_fail(&mut counts, &format!("Model {} ({})", model, purpose));
-                eprintln!("  Fix: ollama pull {}", model);
+        let vlm_mode = read_config_string_field(&config_str, "vlm", "mode")
+            .unwrap_or_else(|| "local".to_string());
+
+        if vlm_mode == "remote" {
+            check_skip(
+                &mut counts,
+                "Local models",
+                "vlm.mode = remote (using cloud API)",
+            );
+        } else {
+            let annotation_model = read_config_string_field(&config_str, "vlm", "annotation_model")
+                .unwrap_or_else(|| "qwen3.5:2b".to_string());
+            let sop_model = read_config_string_field(&config_str, "vlm", "sop_model")
+                .unwrap_or_else(|| "qwen3.5:4b".to_string());
+            let embedding_model = read_config_string_field(&config_str, "embedding", "model")
+                .unwrap_or_else(|| "nomic-embed-text".to_string());
+
+            let models_output = std::process::Command::new("ollama")
+                .arg("list")
+                .output()
+                .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+                .unwrap_or_default();
+
+            // Gemma 4 is a single-model tier where annotation_model ==
+            // sop_model; deduplicate so we don't report the same model
+            // twice with different purposes.
+            let mut models_to_check: Vec<(String, &str)> = Vec::new();
+            if !annotation_model.is_empty() {
+                models_to_check.push((annotation_model.clone(), "scene annotation"));
+            }
+            if !sop_model.is_empty() && sop_model != annotation_model {
+                models_to_check.push((sop_model.clone(), "SOP generation"));
+            }
+            if !embedding_model.is_empty() {
+                models_to_check.push((embedding_model, "semantic search"));
+            }
+
+            for (model, purpose) in &models_to_check {
+                if models_output.contains(model.as_str()) {
+                    check_pass(&mut counts, &format!("Model {} ({})", model, purpose));
+                } else {
+                    check_fail(&mut counts, &format!("Model {} ({})", model, purpose));
+                    eprintln!("  Fix: ollama pull {}", model);
+                }
             }
         }
     }
@@ -395,66 +456,59 @@ fn check_heartbeat_freshness(service_name: &str, status_filename: &str) {
     }
 }
 
-fn which(binary: &str) -> bool {
-    std::process::Command::new("which")
-        .arg(binary)
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
-}
-
-/// Check common source build output directories for the daemon binary.
-fn source_build_daemon_exists() -> bool {
-    let source_paths = [
-        "target/release/agenthandover-daemon",
-        "target/debug/agenthandover-daemon",
-        "target/universal-release/agenthandover-daemon",
-    ];
-    for sp in &source_paths {
-        if std::path::Path::new(sp).exists() {
-            return true;
-        }
-    }
-    false
-}
-
 // Path resolution functions (find_homebrew_libexec, find_venv_python,
-// find_extension_dir, find_local_extension_dist) are now in crate::paths.
+// find_extension_dir, find_local_extension_dist, find_daemon_binary)
+// live in crate::paths. Don't duplicate them here.
+//
+// The dead helpers `which`, `source_build_daemon_exists`,
+// `accessibility_sys_check`, and `screen_recording_check` were removed
+// in v0.2.3. The first two are subsumed by paths::find_daemon_binary;
+// the last two checked TCC permissions for the CLI process instead of
+// the app bundle (wrong semantics) and were replaced with advisory
+// info output — see Check 5/6 above.
 
-#[cfg(target_os = "macos")]
-fn accessibility_sys_check() -> bool {
-    // Use the same AXIsProcessTrusted() API the daemon uses.
-    // accessibility-sys wraps this but we call it via the C ABI directly
-    // to avoid pulling the full crate into the CLI.
-    #[link(name = "ApplicationServices", kind = "framework")]
-    extern "C" {
-        fn AXIsProcessTrusted() -> bool;
-    }
-    unsafe { AXIsProcessTrusted() }
-}
-
-#[cfg(target_os = "macos")]
-fn screen_recording_check() -> bool {
-    // Independently probe screen recording by attempting a display capture.
-    // CGDisplayCreateImage returns NULL without Screen Recording permission.
-    #[link(name = "CoreGraphics", kind = "framework")]
-    extern "C" {
-        fn CGMainDisplayID() -> u32;
-        fn CGDisplayCreateImage(display_id: u32) -> *const std::ffi::c_void;
-    }
-    #[link(name = "CoreFoundation", kind = "framework")]
-    extern "C" {
-        fn CFRelease(cf: *const std::ffi::c_void);
-    }
-    unsafe {
-        let image = CGDisplayCreateImage(CGMainDisplayID());
-        if image.is_null() {
-            false
-        } else {
-            CFRelease(image);
-            true
+/// Extract a string field from a TOML config file without pulling in
+/// a TOML parser dependency. Handles:
+///
+/// - Section headers (`[section]`)
+/// - `key = "value"` (quoted)
+/// - `key = value` (unquoted, e.g. numbers or booleans)
+/// - `#` comments (whole line or trailing)
+/// - Empty lines
+///
+/// Returns `None` if the section or key isn't found. Does NOT handle
+/// nested tables, arrays, or multi-line strings — only flat scalar
+/// fields, which is all doctor actually needs to read. If you need
+/// anything more, add the `toml` crate as a dependency instead.
+fn read_config_string_field(config: &str, section: &str, key: &str) -> Option<String> {
+    let target_header = format!("[{}]", section);
+    let mut in_section = false;
+    for line in config.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        // Section header
+        if trimmed.starts_with('[') && trimmed.ends_with(']') {
+            in_section = trimmed == target_header;
+            continue;
+        }
+        if !in_section {
+            continue;
+        }
+        // key = value
+        if let Some((k, v)) = trimmed.split_once('=') {
+            if k.trim() == key {
+                let v = v.trim();
+                // Strip trailing comment (after the value)
+                let v = v.split('#').next().unwrap_or(v).trim();
+                // Strip surrounding quotes
+                let v = v.trim_matches(|c| c == '"' || c == '\'');
+                return Some(v.to_string());
+            }
         }
     }
+    None
 }
 
 fn native_messaging_manifest_path() -> std::path::PathBuf {

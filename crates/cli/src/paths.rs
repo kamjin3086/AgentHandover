@@ -115,22 +115,43 @@ pub fn find_venv_python() -> Option<PathBuf> {
     None
 }
 
-/// Find the daemon binary (`agenthandover-daemon`) in known install locations.
+/// Find the daemon binary in known install locations.
+///
+/// **The v0.2.1 rename:** the installed binary is `ah-observer` at
+/// `/usr/local/lib/agenthandover/ah-observer` — this MUST match
+/// `ServiceController.daemonExecutableURL` in the Swift app, which is
+/// where the menu bar app spawns it from. The cargo build target name
+/// is still `agenthandover-daemon` (the crate binary name) — only the
+/// installed copy is renamed. Source builds find the cargo target;
+/// installed setups find `ah-observer`.
 ///
 /// Search order:
-/// 1. Packaged install: `/usr/local/bin/agenthandover-daemon`
-/// 2. Homebrew libexec: `<libexec>/bin/agenthandover-daemon`
-/// 3. Cargo build: walk up from current exe to find `target/{release,debug}/agenthandover-daemon`
+/// 1. Pkg/cask install: `/usr/local/lib/agenthandover/ah-observer`
+/// 2. Legacy pkg install (pre-v0.2.1): `/usr/local/bin/agenthandover-daemon`
+/// 3. Homebrew libexec: `<libexec>/bin/agenthandover-daemon` (old HEAD formula)
+/// 4. Cargo source build: `target/{release,debug,universal-release}/agenthandover-daemon`
 ///
 /// Returns the first path that exists and is executable.
 pub fn find_daemon_binary() -> Option<PathBuf> {
-    // 1. Packaged install
-    let pkg = PathBuf::from("/usr/local/bin/agenthandover-daemon");
-    if is_executable(&pkg) {
-        return Some(pkg);
+    // 1. Pkg/cask install (v0.2.1+). The Swift app hardcodes this exact
+    //    path as `ServiceController.daemonExecutableURL`, so any install
+    //    that goes through the pkg installer produces this layout.
+    let pkg_observer = PathBuf::from("/usr/local/lib/agenthandover/ah-observer");
+    if is_executable(&pkg_observer) {
+        return Some(pkg_observer);
     }
 
-    // 2. Homebrew libexec
+    // 2. Legacy pkg install (pre-v0.2.1). Only hit on machines that
+    //    installed v0.2.0 or earlier and never upgraded. Kept as a
+    //    fallback so doctor can still diagnose legacy state.
+    let legacy_pkg = PathBuf::from("/usr/local/bin/agenthandover-daemon");
+    if is_executable(&legacy_pkg) {
+        return Some(legacy_pkg);
+    }
+
+    // 3. Homebrew libexec (old HEAD formula). The current tap ships a
+    //    cask that runs the pkg installer, so this path is rarely hit,
+    //    but kept as a fallback for anyone still on the legacy formula.
     if let Some(libexec) = find_homebrew_libexec() {
         let brew = libexec.join("bin/agenthandover-daemon");
         if is_executable(&brew) {
@@ -138,7 +159,7 @@ pub fn find_daemon_binary() -> Option<PathBuf> {
         }
     }
 
-    // 3. Cargo build: walk up from current exe
+    // 4. Cargo source build: walk up from current exe
     if let Ok(exe) = std::env::current_exe() {
         if let Ok(real) = exe.canonicalize() {
             for ancestor in real.ancestors().take(6) {
@@ -286,9 +307,17 @@ mod tests {
         let result = find_daemon_binary();
         if let Some(ref path) = result {
             assert!(path.exists(), "Found binary should exist");
+            // Accept either the installed `ah-observer` name or the cargo
+            // source-build `agenthandover-daemon` name (the crate binary
+            // hasn't been renamed — only the installed copy is `ah-observer`
+            // per the pkg build script's cp-rename step).
+            let path_str = path.to_string_lossy();
+            let has_valid_name = path_str.contains("ah-observer")
+                || path_str.contains("agenthandover-daemon");
             assert!(
-                path.to_string_lossy().contains("agenthandover-daemon"),
-                "Path should contain daemon binary name"
+                has_valid_name,
+                "Path should contain daemon binary name (ah-observer or agenthandover-daemon): {}",
+                path_str
             );
         }
     }

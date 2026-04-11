@@ -1764,6 +1764,7 @@ def _process_focus_sessions_v2(
     knowledge_base=None,
     vector_kb=None,
     ollama_host: str = "http://localhost:11434",
+    qna_model: str = "qwen3.5:4b",
 ) -> int:
     """Process completed focus recording sessions via v2 VLM pipeline.
 
@@ -1986,7 +1987,12 @@ def _process_focus_sessions_v2(
                     "from agenthandover_worker.vlm_queue import VLMFallbackQueue\n"
                     "data = json.load(open(sys.argv[1]))\n"
                     "host = os.environ.get('OLLAMA_HOST', 'http://localhost:11434')\n"
-                    "reasoner = LLMReasoner(config=ReasoningConfig(ollama_host=host), vlm_queue=VLMFallbackQueue())\n"
+                    # Read the Q&A model from the env the parent sets in
+                    # _qa_env below (AH_QNA_MODEL). Defaulting to the
+                    # ReasoningConfig class default (qwen3.5:4b) would
+                    # silently fail for Gemma-4-only users — fixed in v0.2.3.
+                    "model = os.environ.get('AH_QNA_MODEL', 'qwen3.5:4b')\n"
+                    "reasoner = LLMReasoner(config=ReasoningConfig(model=model, ollama_host=host), vlm_queue=VLMFallbackQueue())\n"
                     "fq = FocusQuestioner(llm_reasoner=reasoner)\n"
                     "qs = fq.generate_questions(data['procedure'], data['sop'])\n"
                     "out = [asdict(q) if hasattr(q, '__dataclass_fields__') else q for q in qs]\n"
@@ -1994,9 +2000,11 @@ def _process_focus_sessions_v2(
                 )
                 _qa_script_file.close()
 
-                # Run in separate process with 120s timeout, passing Ollama host
+                # Run in separate process with 120s timeout, passing
+                # Ollama host + Q&A model through env.
                 _qa_env = dict(os.environ)
                 _qa_env["OLLAMA_HOST"] = _ollama_host
+                _qa_env["AH_QNA_MODEL"] = qna_model
                 _qa_result = _sp.run(
                     [sys.executable, _qa_script_file.name, _qa_input.name, _qa_output],
                     timeout=1800,  # 30 min — 16GB machines can take 10+ min per Qwen call
@@ -3692,10 +3700,13 @@ def _process_drift_reviewed_trigger(
                 procedure_curator.dismiss_drift(slug, drift_type)
                 logger.info("Drift signal dismissed: %s/%s", slug, drift_type)
             elif action in ("reviewed", "acknowledged"):
-                # Mark the procedure's staleness as confirmed
+                # Mark the procedure's staleness as confirmed.
+                # `datetime` and `timezone` are imported at module level
+                # (line 20) — do NOT add a late `from datetime import ...`
+                # here, Python would treat both as locals to this whole
+                # function. See the FocusProcessor regression (issue #1).
                 proc = procedure_curator._kb.get_procedure(slug)
                 if proc is not None:
-                    from datetime import datetime, timezone
                     proc.setdefault("staleness", {})["last_confirmed"] = datetime.now(timezone.utc).isoformat()
                     procedure_curator._kb.save_procedure(proc)
                     logger.info("Drift reviewed and confirmed for %s", slug)
@@ -4087,7 +4098,9 @@ def _check_export_trigger(
     if fmt in ("openclaw", "all"):
         try:
             if output_dir:
-                from agenthandover_worker.openclaw_writer import OpenClawWriter
+                # OpenClawWriter is imported at module level (line 33) —
+                # do NOT add a late import here, Python would treat it
+                # as local to this entire function.
                 oc_writer = OpenClawWriter(workspace_dir=Path(output_dir))
             else:
                 oc_writer = openclaw_writer
@@ -4501,8 +4514,13 @@ def main(argv: list[str] | None = None) -> None:
     pattern_detector = PatternDetector(knowledge_base)
     constraint_manager = ConstraintManager(knowledge_base)
 
-    # Shared LLM reasoning utility — must be created before modules that use it
-    from agenthandover_worker.vlm_queue import VLMFallbackQueue
+    # Shared LLM reasoning utility — must be created before modules that use it.
+    # VLMFallbackQueue is imported at module level (line 40) — do NOT re-import
+    # it here, that shadows the module-level binding and makes Python treat
+    # VLMFallbackQueue as local to this whole main() function (same class of
+    # bug as the FocusProcessor regression caught by hikoae in issue #1).
+    # LLMReasoner stays as a local import because it's not at module level —
+    # the worker/llm_reasoning module is deliberately loaded lazily here.
     vlm_queue = VLMFallbackQueue()
     from agenthandover_worker.llm_reasoning import LLMReasoner, ReasoningConfig
     llm_reasoner = LLMReasoner(config=ReasoningConfig(), vlm_queue=vlm_queue)
@@ -5224,6 +5242,13 @@ def main(argv: list[str] | None = None) -> None:
                         knowledge_base=knowledge_base,
                         vector_kb=vector_kb,
                         ollama_host=v2_cfg.get("ollama_host", "http://localhost:11434") if v2_cfg else "http://localhost:11434",
+                        # Use the SAME model the user configured for SOP
+                        # generation (from config.toml) for Q&A question
+                        # generation too. Previous versions hardcoded
+                        # qwen3.5:4b via ReasoningConfig's default, which
+                        # silently failed for Gemma-4-only users (16GB+
+                        # recommended tier) because they never pulled qwen.
+                        qna_model=v2_cfg.get("sop_model", "qwen3.5:4b") if v2_cfg else "qwen3.5:4b",
                     )
                 else:
                     focus_sops = _process_focus_sessions(
@@ -5732,7 +5757,18 @@ def main(argv: list[str] | None = None) -> None:
                                         # or where event lookup fails, fall
                                         # back to the abstracted SOP step list
                                         # so nothing gets worse.
-                                        from agenthandover_worker.focus_processor import FocusProcessor
+                                        #
+                                        # NOTE: FocusProcessor is imported at
+                                        # module level (line 29) — DO NOT add a
+                                        # late `from ... import FocusProcessor`
+                                        # here. A redundant inner import shadows
+                                        # the module-level binding and makes
+                                        # Python treat FocusProcessor as local
+                                        # to main() for the ENTIRE function,
+                                        # which causes earlier uses at lines
+                                        # 4842/4905 to raise UnboundLocalError.
+                                        # Regression caught by hikoae in v0.2.2
+                                        # (issue #1 follow-up comment).
                                         _synth_obs: list[list[dict]] = []
                                         evidence = proc.get("evidence", {})
                                         obs_records = evidence.get("observations", [])
