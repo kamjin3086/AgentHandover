@@ -36,12 +36,12 @@
 ## Demo
 
 <p align="center">
-  <a href="https://youtu.be/3nGH3rYbgfY">
-    <img src="https://img.youtube.com/vi/3nGH3rYbgfY/maxresdefault.jpg" alt="AgentHandover Demo" width="600" />
+  <a href="https://youtu.be/29YzD88y-f4">
+    <img src="https://img.youtube.com/vi/29YzD88y-f4/maxresdefault.jpg" alt="AgentHandover — New demo" width="600" />
   </a>
 </p>
 
-<p align="center"><a href="https://youtu.be/3nGH3rYbgfY">Watch the full demo on YouTube</a></p>
+<p align="center"><a href="https://youtu.be/29YzD88y-f4"><strong>New demo</strong></a> &middot; <a href="https://youtu.be/3nGH3rYbgfY">Original demo</a></p>
 
 ### Show it once. Hand it off forever.
 
