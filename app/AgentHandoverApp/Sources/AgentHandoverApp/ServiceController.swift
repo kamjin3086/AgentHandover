@@ -65,7 +65,26 @@ final class ServiceController {
         process.arguments = []
         process.standardInput = FileHandle.nullDevice
         process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
+
+        // Redirect stderr to a log file instead of /dev/null.  Previously
+        // piped to nullDevice, which swallowed Rust panic backtraces and
+        // ObjC NSException messages — so when the daemon died abnormally
+        // (hikoae's v0.2.7 OCR-timeout abort), there was no evidence
+        // anywhere of WHY it crashed.  Capturing stderr to a rotating log
+        // file means future mystery exits leave a diagnostic trail.
+        let logsDir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/agenthandover/logs")
+        try? FileManager.default.createDirectory(at: logsDir, withIntermediateDirectories: true)
+        let stderrLogURL = logsDir.appendingPathComponent("daemon.stderr.log")
+        if !FileManager.default.fileExists(atPath: stderrLogURL.path) {
+            FileManager.default.createFile(atPath: stderrLogURL.path, contents: nil)
+        }
+        if let stderrHandle = try? FileHandle(forWritingTo: stderrLogURL) {
+            stderrHandle.seekToEndOfFile()
+            process.standardError = stderrHandle
+        } else {
+            process.standardError = FileHandle.nullDevice
+        }
 
         do {
             try process.run()

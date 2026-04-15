@@ -75,6 +75,31 @@ async fn main() -> Result<()> {
         .with_ansi(false)
         .init();
 
+    // Install a panic hook so any panic in a Tokio task (or elsewhere) gets
+    // logged to daemon.log with a location + payload BEFORE the process
+    // exits. The default Rust panic printer writes to stderr, which the
+    // daemon spawn paths (Swift Process() + CLI Command::spawn) redirect to
+    // /dev/null — meaning panics vanished silently on hikoae's v0.2.7
+    // machine.  Logging via `error!` ensures the panic hits the tracing
+    // subscriber's file writer and is visible for diagnostics.
+    //
+    // Note: this does NOT prevent process termination — a panic still
+    // unwinds and (for `panic = "abort"` builds) aborts the process.  It
+    // just makes sure we see WHY before that happens.
+    std::panic::set_hook(Box::new(|info| {
+        let payload = info.payload();
+        let msg = payload
+            .downcast_ref::<&str>()
+            .copied()
+            .or_else(|| payload.downcast_ref::<String>().map(|s| s.as_str()))
+            .unwrap_or("<non-string panic payload>");
+        let location = info
+            .location()
+            .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()))
+            .unwrap_or_else(|| "<unknown>".to_string());
+        tracing::error!(location = %location, "PANIC: {}", msg);
+    }));
+
     info!("agenthandover-daemon starting");
 
     // Write PID file

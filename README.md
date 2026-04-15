@@ -499,6 +499,15 @@ GitHub [Discussions](https://github.com/sandroandric/AgentHandover/discussions) 
 
 ## Changelog
 
+### v0.2.8 (2026-04-15)
+
+Fixes a daemon abort caused by a Tokio-level OCR timeout that left an in-flight Vision framework call orphaned in the thread pool. When the timeout fired, Tokio dropped the future but the blocking thread kept running the ObjC Vision call; when Vision eventually finished, cleanup ran outside the `@try/@catch/@autoreleasepool` scope in `perform_ocr_safe()`, and the uncaught ObjC exception triggered `abort()` — killing the daemon with no signal handler invocation, no shutdown logs, no cleanup. Reported by hikoae with a precise diagnostic snapshot showing `OCR timed out after 500ms` as the last log line before silent process death.
+
+Three changes:
+- **Dropped the Tokio-level OCR timeout.** The blocking Vision call now runs to completion inside `spawn_blocking`. Vision returns in tens of milliseconds in the overwhelming majority of cases; outlier calls taking a second or two are vastly preferable to crashing the daemon. This is the actual fix.
+- **Installed a panic hook** at daemon startup that logs panics via `tracing::error!` before the process dies. Rust's default panic printer writes to stderr, which was being redirected to `/dev/null` — so any panic in a Tokio task was invisible.
+- **Redirected daemon stderr to `daemon.stderr.log`** in both the Swift menu bar app's `Process()` spawn and the Rust CLI's `Command::spawn` path (previously `/dev/null`). Future ObjC `NSException` messages and panic backtraces will now leave a diagnostic trail.
+
 ### v0.2.7 (2026-04-14)
 
 Fixes confusing status reporting after toggling "Observe Me" off. The main daemon correctly stopped on pause, but `daemon-status.json` was never deleted — so the CLI kept reading the stale file, seeing a dead PID, and reporting "not responding". Meanwhile Chrome would keep spawning stateless `ah-observer` native-messaging bridge instances whenever the extension tried to communicate, which would write fresh `extension-heartbeat.json` entries and show the extension as "connected" while the daemon showed red.

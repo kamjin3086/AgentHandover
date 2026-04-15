@@ -74,13 +74,32 @@ fn start_daemon_direct() -> Result<()> {
         );
     }
 
-    // Spawn detached: redirect std streams to /dev/null so the child
-    // doesn't hold onto the CLI's TTY, and drop the Child without
-    // waiting so the process keeps running after the CLI exits.
+    // Spawn detached: redirect std streams away from the CLI's TTY so the
+    // child doesn't hold onto it.  stdin/stdout → /dev/null, but stderr
+    // is appended to a log file so Rust panic backtraces and ObjC
+    // NSException messages are captured on abnormal exit (hikoae's
+    // v0.2.7 OCR-timeout abort produced zero diagnostic output with the
+    // previous /dev/null redirection).  Falls back to /dev/null if the
+    // log file can't be opened.
+    let stderr_log_path = {
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+        std::path::PathBuf::from(home)
+            .join("Library/Application Support/agenthandover/logs/daemon.stderr.log")
+    };
+    if let Some(parent) = stderr_log_path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let stderr_target: Stdio = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&stderr_log_path)
+        .map(Stdio::from)
+        .unwrap_or_else(|_| Stdio::null());
+
     let child = Command::new(DAEMON_BINARY_PATH)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stderr(stderr_target)
         .spawn();
 
     match child {

@@ -134,7 +134,25 @@ pub fn recognize_text(pixels: &[u8], width: usize, height: usize) -> Option<OcrR
     })
 }
 
-/// Async wrapper that runs OCR in a blocking thread with a 500ms timeout.
+/// Async wrapper that runs OCR in a blocking thread to completion.
+///
+/// Previously this wrapped the blocking call in `tokio::time::timeout(500ms, ...)`
+/// to bound latency.  That broke catastrophically in a specific way: when the
+/// timeout fired, Tokio dropped the future but the blocking thread kept running
+/// the Vision framework call.  When Vision eventually finished, ObjC cleanup
+/// (request deallocation, autoreleasepool drain) could run outside the
+/// `@try/@catch/@autoreleasepool` scope in `perform_ocr_safe()` — the Tokio
+/// future that owned the context had moved on.  The uncaught ObjC exception
+/// triggered `abort()`, killing the daemon without running any signal handlers
+/// or cleanup.  hikoae's v0.2.7 crash, last log line always
+/// `OCR timed out after 500ms` followed by process death.
+///
+/// Fix: let the blocking Vision call run to completion inside `spawn_blocking`.
+/// Vision returns in tens of milliseconds in the overwhelming majority of cases;
+/// outlier calls taking 1–2 seconds are vastly preferable to crashing the
+/// daemon.  If Vision ever hangs indefinitely (undocumented bug, not observed),
+/// one blocking worker gets stuck — the daemon keeps running.  That tradeoff
+/// is correct for a local observation daemon.
 pub async fn recognize_text_async(
     pixels: Vec<u8>,
     width: usize,
@@ -142,14 +160,10 @@ pub async fn recognize_text_async(
 ) -> Option<OcrResult> {
     let task = tokio::task::spawn_blocking(move || recognize_text(&pixels, width, height));
 
-    match tokio::time::timeout(std::time::Duration::from_millis(500), task).await {
-        Ok(Ok(result)) => result,
-        Ok(Err(e)) => {
+    match task.await {
+        Ok(result) => result,
+        Err(e) => {
             warn!(error = %e, "OCR task panicked");
-            None
-        }
-        Err(_) => {
-            warn!("OCR timed out after 500ms");
             None
         }
     }
