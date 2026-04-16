@@ -499,6 +499,10 @@ GitHub [Discussions](https://github.com/sandroandric/AgentHandover/discussions) 
 
 ## Changelog
 
+### v0.2.9 (2026-04-16)
+
+Removes three more instances of the same `tokio::time::timeout` + `spawn_blocking` pattern that caused the v0.2.8 OCR crash. v0.2.8 fixed one instance (Vision/OCR); three identical patterns remained in clipboard monitoring (`macos_clipboard.rs` — two timeouts), accessibility checks (`macos_accessibility.rs`), and AppleScript queries (`applescript_bridge.rs`). All have the same bug: Tokio drops the future on timeout but the blocking thread keeps running ObjC/system calls; when those calls complete, cleanup runs outside the `@try/@catch` scope and an uncaught ObjC exception aborts the process. The clipboard one is especially suspect because it fires immediately on daemon startup — matching the "daemon dies within seconds" timing reported on v0.2.8. All four blocking calls now run to completion without outer timeouts.
+
 ### v0.2.8 (2026-04-15)
 
 Fixes a daemon abort caused by a Tokio-level OCR timeout that left an in-flight Vision framework call orphaned in the thread pool. When the timeout fired, Tokio dropped the future but the blocking thread kept running the ObjC Vision call; when Vision eventually finished, cleanup ran outside the `@try/@catch/@autoreleasepool` scope in `perform_ocr_safe()`, and the uncaught ObjC exception triggered `abort()` — killing the daemon with no signal handler invocation, no shutdown logs, no cleanup. Reported by hikoae with a precise diagnostic snapshot showing `OCR timed out after 500ms` as the last log line before silent process death.
@@ -663,12 +667,3 @@ Small maintenance release that cleans up a lingering v0.2.0 → v0.2.1 upgrade w
 
 [Apache 2.0](LICENSE)
 
-## Star History
-
-<a href="https://www.star-history.com/?repos=sandroandric%2FAgentHandover&type=date&legend=top-left">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/image?repos=sandroandric/AgentHandover&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/image?repos=sandroandric/AgentHandover&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/image?repos=sandroandric/AgentHandover&type=date&legend=top-left" />
- </picture>
-</a>

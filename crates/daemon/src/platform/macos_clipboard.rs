@@ -240,20 +240,22 @@ pub async fn run_clipboard_monitor(
                     break;
                 }
 
-                // Check change count in a blocking thread with timeout.
-                let count_task = tokio::task::spawn_blocking(get_pasteboard_change_count);
-                let current_count = match tokio::time::timeout(Duration::from_millis(500), count_task).await {
-                    Ok(Ok(Some(c))) => c,
-                    Ok(Ok(None)) => {
+                // Check change count in a blocking thread. Runs to completion
+                // (no timeout) because the ObjC call inside
+                // pasteboard_change_count_safe() is wrapped in
+                // @try/@catch/@autoreleasepool and a Tokio-level timeout would
+                // orphan the blocking thread — when the thread eventually
+                // finishes, ObjC cleanup runs outside the @try/@catch scope
+                // and an uncaught exception triggers abort(). Same bug class
+                // as the v0.2.8 OCR timeout crash (hikoae issue #1).
+                let current_count = match tokio::task::spawn_blocking(get_pasteboard_change_count).await {
+                    Ok(Some(c)) => c,
+                    Ok(None) => {
                         warn!("Failed to read pasteboard changeCount");
                         continue;
                     }
-                    Ok(Err(e)) => {
+                    Err(e) => {
                         error!(error = %e, "Pasteboard changeCount task panicked");
-                        continue;
-                    }
-                    Err(_) => {
-                        warn!("Pasteboard changeCount check timed out");
                         continue;
                     }
                 };
@@ -261,17 +263,13 @@ pub async fn run_clipboard_monitor(
                 if current_count != last_change_count {
                     last_change_count = current_count;
 
-                    // Capture clipboard metadata in a blocking thread with timeout.
-                    let meta_task = tokio::task::spawn_blocking(capture_clipboard_meta);
-                    let meta = match tokio::time::timeout(Duration::from_millis(500), meta_task).await {
-                        Ok(Ok(Some(m))) => m,
-                        Ok(Ok(None)) => continue,
-                        Ok(Err(e)) => {
+                    // Capture clipboard metadata in a blocking thread.
+                    // No timeout — same reasoning as changeCount above.
+                    let meta = match tokio::task::spawn_blocking(capture_clipboard_meta).await {
+                        Ok(Some(m)) => m,
+                        Ok(None) => continue,
+                        Err(e) => {
                             error!(error = %e, "Clipboard meta capture panicked");
-                            continue;
-                        }
-                        Err(_) => {
-                            warn!("Clipboard meta capture timed out");
                             continue;
                         }
                     };

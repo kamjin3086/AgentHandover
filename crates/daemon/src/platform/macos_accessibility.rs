@@ -167,49 +167,25 @@ pub async fn is_secure_field_focused_async() -> bool {
         return false;
     }
 
-    match tokio::time::timeout(
-        Duration::from_millis(100),
-        tokio::task::spawn_blocking(is_secure_field_focused),
-    )
-    .await
-    {
-        Ok(Ok(result)) => {
+    // Run AX check in blocking thread to completion (no timeout). Same
+    // reasoning as the OCR and clipboard fixes: a Tokio-level timeout
+    // orphans the blocking thread and when it finishes, ObjC/AX cleanup
+    // can run outside @try/@catch → uncaught exception → abort().
+    //
+    // AX calls normally return in <10ms. If the AX Mach IPC server is
+    // hung (rare system issue), the blocking thread will block one worker
+    // in the Tokio thread pool. The observer loop continues running on
+    // other threads and the daemon stays alive — vastly preferable to
+    // crashing via the timeout-orphan race.
+    match tokio::task::spawn_blocking(is_secure_field_focused).await {
+        Ok(result) => {
             AX_CONSECUTIVE_TIMEOUTS.store(0, Ordering::Relaxed);
             result
         }
-        Ok(Err(e)) => {
+        Err(e) => {
             AX_CONSECUTIVE_TIMEOUTS.store(0, Ordering::Relaxed);
             warn!(error = %e, "AX secure field check task panicked");
             false
-        }
-        Err(_) => {
-            let count = AX_CONSECUTIVE_TIMEOUTS.fetch_add(1, Ordering::Relaxed) + 1;
-            if count >= 10 {
-                // After 10+ consecutive timeouts, the AX API is clearly broken
-                // (system-level Mach IPC hang, not a real secure field). Stop
-                // blocking all captures — return false to allow normal operation.
-                // This is logged as a warning on first transition.
-                if count == 10 {
-                    warn!(
-                        consecutive_timeouts = count,
-                        "AX API consistently timing out — disabling secure field check \
-                         (system issue, not a real password field). Captures will proceed normally."
-                    );
-                }
-                false
-            } else if count >= 3 {
-                warn!(
-                    consecutive_timeouts = count,
-                    "AX API timing out — assuming not secure field"
-                );
-                // After 3 consecutive timeouts, likely a system issue rather
-                // than an actual secure field. Allow captures to proceed.
-                false
-            } else {
-                // First 1-2 timeouts: could be a legitimate secure field.
-                // Err on the side of caution — skip capture.
-                true
-            }
         }
     }
 }

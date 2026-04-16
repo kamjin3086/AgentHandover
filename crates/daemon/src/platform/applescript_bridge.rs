@@ -234,18 +234,17 @@ pub fn query_app_state_by_bundle_id(bundle_id: &str) -> Option<AppState> {
     query_app_state(app_name)
 }
 
-/// Async wrapper that runs the AppleScript query in a blocking thread with a 1s timeout.
+/// Async wrapper that runs the AppleScript query in a blocking thread.
+///
+/// No outer Tokio timeout — the inner `run_osascript()` already has its
+/// own 500ms polling timeout that kills the `osascript` child process.
+/// A Tokio-level timeout on top would orphan the blocking thread
+/// (same class of bug as the v0.2.8 OCR/clipboard crash).
 pub async fn query_app_state_async(app_name: String) -> Option<AppState> {
-    let task = tokio::task::spawn_blocking(move || query_app_state(&app_name));
-
-    match tokio::time::timeout(Duration::from_secs(1), task).await {
-        Ok(Ok(result)) => result,
-        Ok(Err(e)) => {
+    match tokio::task::spawn_blocking(move || query_app_state(&app_name)).await {
+        Ok(result) => result,
+        Err(e) => {
             warn!(error = %e, "AppleScript query task panicked");
-            None
-        }
-        Err(_) => {
-            warn!("AppleScript query timed out after 1s");
             None
         }
     }
