@@ -53,6 +53,29 @@ async fn main() -> Result<()> {
         return run_native_messaging_bridge().await;
     }
 
+    // Detach from the parent shell's session and process group so SIGHUP
+    // from the launching shell closing doesn't propagate to us.
+    //
+    // Without this, hikoae's v0.2.9 repro was: run `agenthandover restart`
+    // from a shell, then let that shell exit. The daemon's PPID would
+    // correctly reparent to 1 (init/launchd), but its PGID stayed tied
+    // to the launching shell's process group. When the shell closed its
+    // controlling TTY, SIGHUP was sent to every process in that group —
+    // including the orphaned daemon. Default SIGHUP action is terminate
+    // (no signal handler invoked, no stderr output, no unified log entry,
+    // no crash report). The daemon just silently disappeared within
+    // seconds of the shell exiting.
+    //
+    // `setsid()` creates a new session with the daemon as leader, detaching
+    // it from the launching shell's session and process group. It fails
+    // with EPERM if the caller is already a session leader (the desired
+    // end state) — we ignore the error because both success and EPERM
+    // mean "daemon is now detached."
+    #[cfg(unix)]
+    unsafe {
+        let _ = libc::setsid();
+    }
+
     let log_dir = {
         let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
         if cfg!(target_os = "macos") {
@@ -217,6 +240,27 @@ async fn main() -> Result<()> {
             sigterm.recv().await;
             info!("Received SIGTERM, shutting down gracefully...");
             let _ = shutdown_tx_term.send(true);
+        });
+    }
+
+    // Handle SIGHUP as a clean shutdown signal.  With setsid() at startup
+    // the daemon is normally detached from the launching shell's session,
+    // so SIGHUP shouldn't arrive via that path.  This handler is defense
+    // in depth: if setsid() fails for any reason, or if something else
+    // sends SIGHUP (logrotate conventions, explicit `kill -HUP`), we
+    // exit cleanly with full shutdown logs + cleanup instead of dying
+    // silently on the default handler.
+    #[cfg(unix)]
+    {
+        let shutdown_tx_hup = shutdown_tx.clone();
+        tokio::spawn(async move {
+            let mut sighup = tokio::signal::unix::signal(
+                tokio::signal::unix::SignalKind::hangup(),
+            )
+            .expect("failed to register SIGHUP handler");
+            sighup.recv().await;
+            info!("Received SIGHUP, shutting down gracefully...");
+            let _ = shutdown_tx_hup.send(true);
         });
     }
 

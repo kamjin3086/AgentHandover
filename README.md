@@ -499,6 +499,14 @@ GitHub [Discussions](https://github.com/sandroandric/AgentHandover/discussions) 
 
 ## Changelog
 
+### v0.2.10 (2026-04-18)
+
+Fixes the daemon silently disappearing after the launching shell exits. When you ran `agenthandover restart` from a terminal and then closed that terminal (or the shell exited for any reason), the daemon would die within seconds — no crash, no logs, nothing. Root cause: the daemon's parent-process ID correctly reparented to 1 (init/launchd), but its **process group ID** stayed tied to the launching shell. When the shell closed its controlling TTY, SIGHUP was sent to every process in that group — including the daemon. Default SIGHUP action is immediate termination with no signal handler invocation, no stderr output, no unified log entry.
+
+**Fix (`crates/daemon/src/main.rs`):** the daemon now calls `libc::setsid()` at the very top of `main()`, making itself its own session leader. Detached from the launching shell's session and process group, so SIGHUP no longer reaches it when the shell exits. Also added a SIGHUP signal handler (defense in depth) that treats the signal as clean shutdown if it ever arrives via another path.
+
+Verified live: with the fix, daemon spawned from a subshell that exits immediately continues running with its own process group (`PGID == PID`) and is marked as a session leader in `ps`. Before the fix, the daemon's PGID matched the spawning shell's PGID and it died on shell exit.
+
 ### v0.2.9 (2026-04-16)
 
 Removes three more instances of the same `tokio::time::timeout` + `spawn_blocking` pattern that caused the v0.2.8 OCR crash. v0.2.8 fixed one instance (Vision/OCR); three identical patterns remained in clipboard monitoring (`macos_clipboard.rs` — two timeouts), accessibility checks (`macos_accessibility.rs`), and AppleScript queries (`applescript_bridge.rs`). All have the same bug: Tokio drops the future on timeout but the blocking thread keeps running ObjC/system calls; when those calls complete, cleanup runs outside the `@try/@catch` scope and an uncaught ObjC exception aborts the process. The clipboard one is especially suspect because it fires immediately on daemon startup — matching the "daemon dies within seconds" timing reported on v0.2.8. All four blocking calls now run to completion without outer timeouts.
